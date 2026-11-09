@@ -21,7 +21,7 @@ import { getActiveGeminiApiKey, setActiveGeminiApiKey, callGeminiChat } from '..
 interface AuthOnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: () => void;
+  onComplete: (authData?: { email: string; apiKey: string }) => void;
   activePalette: ColorPalette;
   darkMode: boolean;
 }
@@ -142,7 +142,10 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
           message: `Live Connection Confirmed · ${res.modelUsed || 'gemini-3.8-flash'} ready`,
         });
         setTimeout(() => {
-          onComplete();
+          localStorage.setItem('aether_gemini_api_key', keyToTest);
+          const email = signedInAccount || 'alex.learner@gmail.com';
+          localStorage.setItem('aether_auth_user', JSON.stringify({ email, name: 'Alex Learner' }));
+          onComplete({ email, apiKey: keyToTest });
         }, 600);
       } else {
         setKeyStatus({
@@ -165,10 +168,14 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
 
   // Proceed directly to app
   const handleProceedDirect = () => {
-    if (apiKeyInput.trim()) {
-      setActiveGeminiApiKey(apiKeyInput.trim());
+    const key = apiKeyInput.trim();
+    if (key) {
+      setActiveGeminiApiKey(key);
+      localStorage.setItem('aether_gemini_api_key', key);
     }
-    onComplete();
+    const email = signedInAccount || 'alex.learner@gmail.com';
+    localStorage.setItem('aether_auth_user', JSON.stringify({ email, name: 'Alex Learner' }));
+    onComplete({ email, apiKey: key });
   };
 
   return (

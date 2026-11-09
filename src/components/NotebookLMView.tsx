@@ -32,9 +32,13 @@ import {
 import { NotebookSource, ColorPalette, ChatAttachment } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { callGeminiChat, AVAILABLE_GEMINI_MODELS } from '../utils/geminiClient';
+import { useChatSmoothScroll } from '../hooks/useSmoothScroll';
 
 interface NotebookLMViewProps {
   sources: NotebookSource[];
+  workspaceId?: string;
+  chatMessages?: ChatMessage[];
+  onUpdateChatMessages?: (msgs: ChatMessage[]) => void;
   onToggleSource: (id: string) => void;
   onAddSource: (source: Omit<NotebookSource, 'id' | 'dateAdded'>) => void;
   onDeleteSource: (id: string) => void;
@@ -45,9 +49,10 @@ interface NotebookLMViewProps {
   enableThinking: boolean;
   activePalette: ColorPalette;
   darkMode: boolean;
+  smoothScroll?: boolean;
 }
 
-interface ChatMessage {
+export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
@@ -58,6 +63,9 @@ interface ChatMessage {
 
 export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
   sources,
+  workspaceId,
+  chatMessages,
+  onUpdateChatMessages,
   onToggleSource,
   onAddSource,
   onDeleteSource,
@@ -68,9 +76,11 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
   enableThinking,
   activePalette,
   darkMode,
+  smoothScroll = true,
 }) => {
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -83,19 +93,48 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
   }, []);
 
   const activeModelObj = AVAILABLE_GEMINI_MODELS.find((m) => m.id === selectedModel) || AVAILABLE_GEMINI_MODELS[0];
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'm-welcome',
-      role: 'assistant',
-      content:
-        'Welcome to your grounded NotebookLM workspace. I am grounded in your active checked sources on Attention Mechanisms, Quantum Tomography, and Neural Plasticity. Ask me to synthesize, generate study guides, or click the **OneNote Canvas** arrow on the right sidebar to open your full OneNote workspace.',
-      timestamp: 'Just now',
-      model: selectedModel,
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    return chatMessages && chatMessages.length > 0
+      ? chatMessages
+      : [
+          {
+            id: 'm-welcome',
+            role: 'assistant',
+            content:
+              'Welcome to your grounded NotebookLM workspace. Add sources on the left to ground neural synthesis, ask research questions, or click the **OneNote Canvas** arrow on the right sidebar to open your companion workspace.',
+            timestamp: 'Just now',
+            model: selectedModel,
+          },
+        ];
+  });
+
+  useEffect(() => {
+    if (chatMessages && chatMessages.length > 0) {
+      setMessages(chatMessages);
+    } else {
+      setMessages([
+        {
+          id: 'm-welcome',
+          role: 'assistant',
+          content:
+            'Welcome to your grounded NotebookLM workspace. Add sources on the left to ground neural synthesis, ask research questions, or click the **OneNote Canvas** arrow on the right sidebar to open your companion workspace.',
+          timestamp: 'Just now',
+          model: selectedModel,
+        },
+      ]);
+    }
+  }, [workspaceId]);
+
   const [inputQuery, setInputQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+
+  // Smooth Momentum Scrolling for NotebookLM Chat Messages via Lenis
+  const { wrapperRef: chatScrollRef, contentRef: chatContentRef, scrollToBottom } = useChatSmoothScroll<HTMLDivElement, HTMLDivElement>({
+    enabled: smoothScroll,
+    deps: [messages.length, isLoading],
+  });
+
   const [studioOutput, setStudioOutput] = useState<{ title: string; content: string } | null>(null);
 
   // Deck minimization states to prevent clipping and give full widescreen focus
@@ -199,6 +238,26 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
 
   const selectedSources = sources.filter((s) => s.selected);
 
+  const handleStopResponse = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    const stoppedMsg: ChatMessage = {
+      id: `stop-${Date.now()}`,
+      role: 'assistant',
+      content: '⏹️ *Response generation stopped by user.*',
+      model: selectedModel,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setMessages((prev) => {
+      const updated = [...prev, stoppedMsg];
+      onUpdateChatMessages?.(updated);
+      return updated;
+    });
+  };
+
   const handleSendMessage = async (customPrompt?: string) => {
     const textToSend = (customPrompt || inputQuery).trim();
     if ((!textToSend && attachments.length === 0) || isLoading) return;
@@ -223,8 +282,15 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
       attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => {
+      const updated = [...prev, userMessage];
+      onUpdateChatMessages?.(updated);
+      return updated;
+    });
     setIsLoading(true);
+
+    const ac = new AbortController();
+    abortControllerRef.current = ac;
 
     let queryWithContext = textToSend || displayContent;
     if (currentAttachments.length > 0) {
@@ -248,6 +314,8 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
         attachments: currentAttachments,
       });
 
+      if (ac.signal.aborted) return;
+
       const assistantMessage: ChatMessage = {
         id: `a-${Date.now()}`,
         role: 'assistant',
@@ -256,8 +324,13 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      setMessages((prev) => {
+        const updated = [...prev, assistantMessage];
+        onUpdateChatMessages?.(updated);
+        return updated;
+      });
     } catch (err: unknown) {
+      if (ac.signal.aborted) return;
       const errMsg = err instanceof Error ? err.message : 'Unknown AI connection error';
       const assistantMessage: ChatMessage = {
         id: `a-${Date.now()}`,
@@ -266,8 +339,13 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
         model: selectedModel,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
-      setMessages((prev) => [...prev, assistantMessage]);
+      setMessages((prev) => {
+        const updated = [...prev, assistantMessage];
+        onUpdateChatMessages?.(updated);
+        return updated;
+      });
     } finally {
+      abortControllerRef.current = null;
       setIsLoading(false);
     }
   };
@@ -569,7 +647,11 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           <div
             onClick={() => setIsSourcesMinimized(false)}
             className={`w-full lg:w-14 shrink-0 liquid-glass rounded-2xl p-3 border shadow-xl flex flex-col items-center justify-between h-full overflow-hidden cursor-pointer transition-all duration-300 group ${
-              darkMode ? 'border-white/10 hover:border-amber-500/50' : 'border-slate-200/90 hover:border-amber-500/60 shadow-sm'
+              darkMode
+                ? activePalette.id === 'black-night'
+                  ? 'border-white/10 hover:border-zinc-800'
+                  : 'border-white/10 hover:border-white/30'
+                : 'border-slate-200/90 hover:border-slate-400 shadow-sm'
             }`}
             title="Click to expand Sources Deck"
           >
@@ -731,114 +813,119 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           </div>
 
           {/* Messages Stream */}
-          <div className="flex-1 overflow-y-auto py-3 space-y-3 pr-1 no-scrollbar">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}
-              >
+          <div
+            ref={chatScrollRef}
+            className="flex-1 overflow-y-auto py-3 pr-1 no-scrollbar overscroll-contain"
+          >
+            <div ref={chatContentRef} className="space-y-3">
+              {messages.map((m) => (
                 <div
-                  className={`max-w-[90%] p-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${
-                    m.role === 'user'
-                      ? 'text-white font-medium rounded-tr-none shadow-md'
-                      : darkMode
-                      ? 'bg-slate-900/40 border border-white/10 text-slate-100 rounded-tl-none'
-                      : 'bg-white/95 border border-slate-200/90 text-slate-900 rounded-tl-none shadow'
-                  }`}
-                  style={
-                    m.role === 'user'
-                      ? {
-                          background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
-                          color: '#ffffff',
-                        }
-                      : {}
-                  }
+                  key={m.id}
+                  className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}
                 >
-                  {/* Attachments preview if present in message */}
-                  {m.attachments && m.attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-2.5">
-                      {m.attachments.map((att) => (
-                        <div
-                          key={att.id}
-                          className="flex items-center gap-2 p-1.5 pr-2.5 rounded-xl border backdrop-blur-md bg-white/20 border-white/30 text-white"
-                        >
-                          {att.isImage && att.dataUrl ? (
-                            <img
-                              src={att.dataUrl}
-                              alt={att.name}
-                              className="w-10 h-10 rounded-lg object-cover border border-white/30"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/15 shrink-0">
-                              {att.name.endsWith('.pdf') ? (
-                                <FileText className="w-4 h-4 text-rose-200" />
-                              ) : /\.(py|js|ts|tsx|jsx|html|css|c|cpp|rs|go|java)$/i.test(att.name) ? (
-                                <FileCode className="w-4 h-4 text-cyan-200" />
-                              ) : /\.(csv|xlsx|json)$/i.test(att.name) ? (
-                                <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
-                              ) : (
-                                <File className="w-4 h-4 text-amber-200" />
-                              )}
-                            </div>
-                          )}
-                          <div className="text-left overflow-hidden max-w-[170px]">
-                            <p className="text-[11px] font-semibold truncate leading-tight text-white">
-                              {att.name}
-                            </p>
-                            <p className="text-[9px] text-white/80 font-mono">
-                              {att.sizeFormatted}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <MarkdownRenderer
-                    content={m.content}
-                    darkMode={darkMode}
-                    isUser={m.role === 'user'}
-                  />
-
                   <div
-                    className={`flex items-center justify-between text-[10px] mt-2 pt-1.5 border-t font-mono ${
+                    className={`max-w-[90%] p-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${
                       m.role === 'user'
-                        ? 'border-white/25 text-white/85'
+                        ? 'text-white font-medium rounded-tr-none shadow-md'
                         : darkMode
-                        ? 'border-white/10 text-slate-400'
-                        : 'border-slate-200 text-slate-500'
+                        ? 'bg-slate-900/40 border border-white/10 text-slate-100 rounded-tl-none'
+                        : 'bg-white/95 border border-slate-200/90 text-slate-900 rounded-tl-none shadow'
                     }`}
+                    style={
+                      m.role === 'user'
+                        ? {
+                            background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                            color: '#ffffff',
+                          }
+                        : {}
+                    }
                   >
-                    <span>{m.timestamp}</span>
-                    {m.model && (
-                      <span
-                        className="font-semibold"
-                        style={{ color: m.role === 'user' ? '#ffffff' : activePalette.primary }}
-                      >
-                        {m.model}
-                      </span>
+                    {/* Attachments preview if present in message */}
+                    {m.attachments && m.attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2.5">
+                        {m.attachments.map((att) => (
+                          <div
+                            key={att.id}
+                            className="flex items-center gap-2 p-1.5 pr-2.5 rounded-xl border backdrop-blur-md bg-white/20 border-white/30 text-white"
+                          >
+                            {att.isImage && att.dataUrl ? (
+                              <img
+                                src={att.dataUrl}
+                                alt={att.name}
+                                className="w-10 h-10 rounded-lg object-cover border border-white/30"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/15 shrink-0">
+                                {att.name.endsWith('.pdf') ? (
+                                  <FileText className="w-4 h-4 text-rose-200" />
+                                ) : /\.(py|js|ts|tsx|jsx|html|css|c|cpp|rs|go|java)$/i.test(att.name) ? (
+                                  <FileCode className="w-4 h-4 text-cyan-200" />
+                                ) : /\.(csv|xlsx|json)$/i.test(att.name) ? (
+                                  <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                                ) : (
+                                  <File className="w-4 h-4 text-amber-200" />
+                                )}
+                              </div>
+                            )}
+                            <div className="text-left overflow-hidden max-w-[170px]">
+                              <p className="text-[11px] font-semibold truncate leading-tight text-white">
+                                {att.name}
+                              </p>
+                              <p className="text-[9px] text-white/80 font-mono">
+                                {att.sizeFormatted}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
+
+                    <MarkdownRenderer
+                      content={m.content}
+                      darkMode={darkMode}
+                      isUser={m.role === 'user'}
+                    />
+
+                    <div
+                      className={`flex items-center justify-between text-[10px] mt-2 pt-1.5 border-t font-mono ${
+                        m.role === 'user'
+                          ? 'border-white/25 text-white/85'
+                          : darkMode
+                          ? 'border-white/10 text-slate-400'
+                          : 'border-slate-200 text-slate-500'
+                      }`}
+                    >
+                      <span>{m.timestamp}</span>
+                      {m.model && (
+                        <span
+                          className="font-semibold"
+                          style={{ color: m.role === 'user' ? '#ffffff' : activePalette.primary }}
+                        >
+                          {m.model}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
 
-            {isLoading && (
-              <div
-                className={`flex items-center gap-2 text-xs font-mono p-3 rounded-xl border ${
-                  darkMode
-                    ? 'bg-slate-900/30 border-white/10 text-amber-300'
-                    : 'bg-amber-50/80 border-amber-200 text-amber-900'
-                }`}
-              >
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>
-                  {enableThinking
-                    ? 'Gemini 4 Argon running High Thinking deliberation across sources...'
-                    : 'Synthesizing response from checked sources...'}
-                </span>
-              </div>
-            )}
+              {isLoading && (
+                <div
+                  className={`flex items-center gap-2 text-xs font-mono p-3 rounded-xl border ${
+                    darkMode
+                      ? 'bg-slate-900/30 border-white/10 text-amber-300'
+                      : 'bg-amber-50/80 border-amber-200 text-amber-900'
+                  }`}
+                >
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>
+                    {enableThinking
+                      ? 'Gemini 4 Argon running High Thinking deliberation across sources...'
+                      : 'Synthesizing response from checked sources...'}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Quick Prompt Starters */}
@@ -983,16 +1070,30 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
                   }`}
                   style={{ borderColor: `${activePalette.primary}35` }}
                 />
-                <button
-                  type="submit"
-                  disabled={isLoading || (!inputQuery.trim() && attachments.length === 0)}
-                  style={{
-                    background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
-                  }}
-                  className="absolute right-2 p-2 rounded-lg text-slate-950 disabled:opacity-40 transition shadow hover:opacity-95 cursor-pointer"
-                >
-                  <Send className="w-4 h-4 stroke-[2.5]" />
-                </button>
+                {isLoading ? (
+                  <button
+                    type="button"
+                    onClick={handleStopResponse}
+                    className="absolute right-2 p-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white transition shadow cursor-pointer flex items-center justify-center animate-pulse"
+                    title="Stop response"
+                    aria-label="Stop response"
+                  >
+                    <Square className="w-4 h-4 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!inputQuery.trim() && attachments.length === 0}
+                    style={{
+                      background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                    }}
+                    className="absolute right-2 p-2 rounded-lg text-slate-950 disabled:opacity-40 transition shadow hover:opacity-95 cursor-pointer"
+                    title="Send message"
+                    aria-label="Send message"
+                  >
+                    <Send className="w-4 h-4 stroke-[2.5]" />
+                  </button>
+                )}
               </div>
             </form>
           </div>
@@ -1144,7 +1245,11 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           <div
             onClick={() => setIsStudioMinimized(false)}
             className={`w-full lg:w-14 shrink-0 liquid-glass rounded-2xl p-3 border shadow-xl flex flex-col items-center justify-between h-full overflow-hidden cursor-pointer transition-all duration-300 group ${
-              darkMode ? 'border-white/10 hover:border-amber-500/50' : 'border-slate-200/90 hover:border-amber-500/60 shadow-sm'
+              darkMode
+                ? activePalette.id === 'black-night'
+                  ? 'border-white/10 hover:border-zinc-800'
+                  : 'border-white/10 hover:border-white/30'
+                : 'border-slate-200/90 hover:border-slate-400 shadow-sm'
             }`}
             title="Click to expand Studio Generators Deck"
           >
@@ -1536,11 +1641,17 @@ ${attachments.map((a, i) => `- **[U${i + 1}] ${a.name}** (${a.type.toUpperCase()
 ${selectedSources.map((s, idx) => `- **[${idx + 1}] ${s.title}** (${s.type.toUpperCase()})`).join('\n')}`;
   }
 
+  if (selectedSources.length === 0) {
+    return `${thinkingPrefix}### Grounded Workspace Synthesis
+
+No sources are currently selected in this workspace. Add or check documents in the **Sources Deck** on the left to ground neural queries and study syntheses.`;
+  }
+
   if (lower.includes('attention') || lower.includes('softmax') || lower.includes('transformer')) {
     const s1 = selectedSources.find((s) => s.title.toLowerCase().includes('attention')) || selectedSources[0];
-    return `${thinkingPrefix}### Grounded Synthesis: Scaled Dot-Product Attention [1]
+    return `${thinkingPrefix}### Grounded Synthesis: ${s1.title}
 
-According to **${s1.title}** [1], self-attention calculates relationships between tokens without recurrence:
+According to **${s1.title}**, self-attention calculates relationships between tokens without recurrence:
 
 Mathematical Formulation: Attention(Q, K, V) = Softmax((Q * K^T) / sqrt(d_k)) * V
 
@@ -1551,14 +1662,14 @@ $$\\operatorname{Attention}(Q, K, V) = \\operatorname{Softmax}\\left(\\frac{Q K^
 
 ---
 **Sources Consulted**:
-- **[1] ${s1.title}** (${s1.type.toUpperCase()})`;
+- **${s1.title}** (${s1.type.toUpperCase()})`;
   }
 
   if (lower.includes('quantum') || lower.includes('tomography') || lower.includes('density')) {
     const s2 = selectedSources.find((s) => s.title.toLowerCase().includes('quantum')) || selectedSources[0];
-    return `${thinkingPrefix}### Grounded Synthesis: Quantum State Tomography [2]
+    return `${thinkingPrefix}### Grounded Synthesis: ${s2.title}
 
-According to **${s2.title}** [2], quantum states and density matrices $\\rho$ satisfy fundamental invariants:
+According to **${s2.title}**, quantum states and density matrices $\\rho$ satisfy fundamental invariants:
 
 $$\\rho = \\sum_{i} p_i |\\psi_i\\rangle \\langle\\psi_i|, \\quad \\operatorname{Tr}(\\rho) = 1, \\quad \\rho \\ge 0$$
 
@@ -1566,7 +1677,7 @@ Pauli measurements along $X, Y, Z$ fully reconstruct the Bloch vector $\\vec{r}$
 
 ---
 **Sources Consulted**:
-- **[2] ${s2.title}** (${s2.type.toUpperCase()})`;
+- **${s2.title}** (${s2.type.toUpperCase()})`;
   }
 
   return `${thinkingPrefix}### Grounded Synthesis Across ${selectedSources.length} Sources

@@ -97,6 +97,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Attached files state (images, pdfs, txt, md, csv, code)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
@@ -387,6 +388,34 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     setEditingTitleId(null);
   };
 
+  // Stop response generation
+  const handleStopResponse = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    if (!currentConversation) return;
+
+    const stopMessage: GeminiChatMessage = {
+      id: `b-${Date.now()}`,
+      role: 'assistant',
+      content: '⏹️ *Response generation stopped by user.*',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      model: selectedModel,
+    };
+
+    const finalConversation: GeminiConversation = {
+      ...currentConversation,
+      updatedAt: 'Just now',
+      messages: [...currentConversation.messages, stopMessage],
+    };
+
+    onUpdateConversations(
+      conversations.map((c) => (c.id === currentConversation.id ? finalConversation : c))
+    );
+  };
+
   // Send message (supports text query, attachments, or both)
   const handleSendMessage = async (textToSend?: string) => {
     const query = (textToSend ?? inputMessage).trim();
@@ -439,6 +468,9 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
 
     setIsLoading(true);
 
+    const ac = new AbortController();
+    abortControllerRef.current = ac;
+
     let promptWithContext = query || displayContent;
     if (currentAttachments.length > 0) {
       const attSummaries = currentAttachments
@@ -464,6 +496,8 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
         })),
       });
 
+      if (ac.signal.aborted) return;
+
       const botMessage: GeminiChatMessage = {
         id: `b-${Date.now()}`,
         role: 'assistant',
@@ -482,6 +516,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
         conversations.map((c) => (c.id === currentConversation.id ? finalConversation : c))
       );
     } catch (err: unknown) {
+      if (ac.signal.aborted) return;
       const errMsg = err instanceof Error ? err.message : 'Unknown network error';
       const botMessage: GeminiChatMessage = {
         id: `b-${Date.now()}`,
@@ -501,6 +536,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
         conversations.map((c) => (c.id === currentConversation.id ? finalConversation : c))
       );
     } finally {
+      abortControllerRef.current = null;
       setIsLoading(false);
     }
   };
@@ -1466,27 +1502,39 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleSendMessage()}
-                    disabled={(!inputMessage.trim() && attachments.length === 0) || isLoading}
-                    className={`w-8 h-8 rounded-full border flex items-center justify-center transition shadow-md shrink-0 ${
-                      (inputMessage.trim() || attachments.length > 0) && !isLoading
-                        ? 'opacity-100 cursor-pointer scale-100 hover:scale-105 active:scale-95'
-                        : 'opacity-40 cursor-not-allowed'
-                    }`}
-                    style={{
-                      background: (inputMessage.trim() || attachments.length > 0)
-                        ? `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`
-                        : undefined,
-                      borderColor: `${activePalette.primary}80`,
-                      color: (inputMessage.trim() || attachments.length > 0) ? '#ffffff' : undefined,
-                      boxShadow: (inputMessage.trim() || attachments.length > 0) ? `0 0 16px ${activePalette.primary}40` : undefined,
-                    }}
-                    title="Send to Gemini"
-                  >
-                    <ArrowUp className="w-4 h-4 stroke-[2.5] text-slate-200" />
-                  </button>
+                  {isLoading ? (
+                    <button
+                      type="button"
+                      onClick={handleStopResponse}
+                      className="w-8 h-8 rounded-full bg-rose-500 hover:bg-rose-600 border border-rose-400 text-white flex items-center justify-center transition shadow-md shrink-0 cursor-pointer animate-pulse"
+                      title="Stop response"
+                      aria-label="Stop response"
+                    >
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSendMessage()}
+                      disabled={!inputMessage.trim() && attachments.length === 0}
+                      className={`w-8 h-8 rounded-full border flex items-center justify-center transition shadow-md shrink-0 ${
+                        inputMessage.trim() || attachments.length > 0
+                          ? 'opacity-100 cursor-pointer scale-100 hover:scale-105 active:scale-95'
+                          : 'opacity-40 cursor-not-allowed'
+                      }`}
+                      style={{
+                        background: (inputMessage.trim() || attachments.length > 0)
+                          ? `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`
+                          : undefined,
+                        borderColor: `${activePalette.primary}80`,
+                        color: (inputMessage.trim() || attachments.length > 0) ? '#ffffff' : undefined,
+                        boxShadow: (inputMessage.trim() || attachments.length > 0) ? `0 0 16px ${activePalette.primary}40` : undefined,
+                      }}
+                      title="Send to Gemini"
+                    >
+                      <ArrowUp className="w-4 h-4 stroke-[2.5] text-slate-200" />
+                    </button>
+                  )}
                 </div>
               </div>
 

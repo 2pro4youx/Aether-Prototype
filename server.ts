@@ -254,6 +254,8 @@ app.post('/api/gemini/synthesize', async (req, res) => {
         synthesisPrompt = `Summarize and organize key insights from these sources:`;
     }
 
+    const apiKey = resolveApiKey(req);
+    const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash',
       contents: `${synthesisPrompt}\n\n${combinedSources}`,

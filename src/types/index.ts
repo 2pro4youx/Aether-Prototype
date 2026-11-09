@@ -126,12 +126,27 @@ export interface OneNoteNotebook {
 export interface LibraryItem {
   id: string;
   title: string;
-  type: 'project' | 'notebook' | 'document' | 'planner' | 'onenote';
+  type: 'project' | 'notebook' | 'document' | 'planner' | 'onenote' | 'workspace';
   folder: string;
   updatedAt: string;
   tags: string[];
   description: string;
   star?: boolean;
+  workspaceId?: string;
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  description: string;
+  folder: string; // e.g. 'Untitled Workspaces', 'NotebookLM Research', etc.
+  createdAt: string;
+  updatedAt: string;
+  color?: string;
+  sources: NotebookSource[];
+  notebooks: OneNoteNotebook[];
+  conversations: GeminiConversation[];
+  chatMessages?: GeminiChatMessage[];
 }
 
 export interface SubjectAnalytics {

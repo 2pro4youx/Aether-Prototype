@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, LayoutDashboard, Library, BarChart3, Settings, Sparkles, BookOpen } from 'lucide-react';
+import { Plus, LayoutDashboard, Library, BarChart3, Settings, Sparkles, Layers } from 'lucide-react';
 import { motion } from 'motion/react';
 import { ActiveTab, ColorPalette } from '../types';
 
@@ -10,6 +10,8 @@ interface HeaderProps {
   onOpenNotebookLM: () => void;
   darkMode: boolean;
   activePalette: ColorPalette;
+  isWorkspaceSelectorOpen?: boolean;
+  isAuthenticated?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -19,6 +21,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotebookLM,
   darkMode,
   activePalette,
+  isWorkspaceSelectorOpen = false,
+  isAuthenticated = true,
 }) => {
   const isInitialMount = useRef(true);
   const [spinCount, setSpinCount] = useState(0);
@@ -44,8 +48,26 @@ export const Header: React.FC<HeaderProps> = ({
     return {};
   };
 
+  if (!isAuthenticated) return null;
+
   return (
-    <header className="fixed top-4 inset-x-0 z-50 flex justify-center items-center pointer-events-none px-4">
+    <motion.header
+      initial={{ y: -90, opacity: 0, scale: 0.95 }}
+      animate={{
+        y: isWorkspaceSelectorOpen ? -80 : 0,
+        opacity: isWorkspaceSelectorOpen ? 0 : 1,
+        scale: 1,
+      }}
+      transition={{
+        type: 'spring',
+        stiffness: 260,
+        damping: 20,
+        mass: 0.8,
+      }}
+      className={`fixed top-4 inset-x-0 z-50 flex justify-center items-center pointer-events-none px-4 ${
+        isWorkspaceSelectorOpen ? 'pointer-events-none' : ''
+      }`}
+    >
       {/* Floating Pill Container with Liquid Glass - seamless smooth edges with zero gap */}
       <nav
         aria-label="Main Navigation"
@@ -173,7 +195,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* NotebookLM quick link */}
+        {/* Workspace Tab */}
         <button
           onClick={onOpenNotebookLM}
           style={getTabStyle('notebooklm')}
@@ -184,10 +206,10 @@ export const Header: React.FC<HeaderProps> = ({
               ? 'text-slate-300 hover:text-white hover:bg-white/5'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
-          title="Google NotebookLM Research Studio"
+          title="Switch Workspaces & Open Knowledge Studio"
         >
-          <BookOpen className="w-3.5 h-3.5" style={{ color: activePalette.primary }} />
-          <span className="hidden sm:inline">NotebookLM</span>
+          <Layers className="w-3.5 h-3.5" style={{ color: activePalette.primary }} />
+          <span>Workspace</span>
         </button>
 
         {/* Analytics Link */}
@@ -222,6 +244,6 @@ export const Header: React.FC<HeaderProps> = ({
           <span>Settings</span>
         </button>
       </nav>
-    </header>
+    </motion.header>
   );
 };

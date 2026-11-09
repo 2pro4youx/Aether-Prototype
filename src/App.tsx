@@ -13,9 +13,11 @@ import {
   OneNoteNotebook,
   GeminiConversation,
   LibraryItem,
+  Workspace,
   SubjectAnalytics,
   AuditLog,
   ColorPaletteId,
+  ColorPalette,
   CursorStyleId,
 } from './types';
 import { getCursorCss, getCursorGradient } from './utils/cursorUtils';
@@ -26,6 +28,7 @@ import {
   INITIAL_ONENOTE_NOTEBOOKS,
   INITIAL_GEMINI_CONVERSATIONS,
   INITIAL_LIBRARY,
+  INITIAL_WORKSPACES,
   INITIAL_SUBJECT_ANALYTICS,
   INITIAL_AUDIT_LOGS,
   generateYearStudyData,
@@ -34,6 +37,7 @@ import {
 
 import { PolygonCanvas } from './components/PolygonCanvas';
 import { Header } from './components/Header';
+import { WorkspaceSelectorBar } from './components/WorkspaceSelectorBar';
 import { Dashboard } from './components/Dashboard';
 import { NotebookLMView } from './components/NotebookLMView';
 import { OneNoteWorkspace } from './components/OneNoteWorkspace';
@@ -48,13 +52,33 @@ import { SmoothCursor } from './components/SmoothCursor';
 import { useSmoothScroll, getLenis, resizeLenis } from './hooks/useSmoothScroll';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('lander');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    const savedUser = localStorage.getItem('aether_auth_user');
+    const savedKey = localStorage.getItem('aether_gemini_api_key');
+    return Boolean(savedUser && savedKey);
+  });
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    const savedUser = localStorage.getItem('aether_auth_user');
+    const savedKey = localStorage.getItem('aether_gemini_api_key');
+    return savedUser && savedKey ? 'dashboard' : 'lander';
+  });
   const activeTabRef = useRef(activeTab);
 
   const [isOneNoteOpen, setIsOneNoteOpen] = useState(false);
   const [isGeminiWorkspaceOpen, setIsGeminiWorkspaceOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  const handleSignOut = useCallback(() => {
+    localStorage.removeItem('aether_auth_user');
+    localStorage.removeItem('aether_gemini_api_key');
+    setIsAuthenticated(false);
+    setActiveTab('lander');
+    setIsWorkspaceSelectorOpen(false);
+    setIsOneNoteOpen(false);
+    setIsGeminiWorkspaceOpen(false);
+    setWindowChangeCount((c) => c + 1);
+  }, []);
 
   // Dominant frost sweep counter when entering OneNote workspace (especially from Google Notebook)
   const [oneNoteOpenCount, setOneNoteOpenCount] = useState(0);
@@ -97,29 +121,74 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_TASKS;
   });
   const [planners] = useState<PlannerEntry[]>(INITIAL_PLANNERS);
-  const [sources, setSources] = useState<NotebookSource[]>(() => {
-    const saved = localStorage.getItem('aether_sources');
-    return saved ? JSON.parse(saved) : INITIAL_SOURCES;
+
+  // Synchronized Multi-Workspace Studio Store
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(() => {
+    const saved = localStorage.getItem('aether_workspaces_v2');
+    return saved ? JSON.parse(saved) : INITIAL_WORKSPACES;
   });
-  const [oneNoteNotebooks, setOneNoteNotebooks] = useState<OneNoteNotebook[]>(() => {
-    const saved = localStorage.getItem('aether_onenote');
-    return saved ? JSON.parse(saved) : INITIAL_ONENOTE_NOTEBOOKS;
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(() => {
+    return localStorage.getItem('aether_active_workspace_v2') || '';
   });
-  const [geminiConversations, setGeminiConversations] = useState<GeminiConversation[]>(() => {
-    const saved = localStorage.getItem('aether_gemini_conversations');
-    return saved ? JSON.parse(saved) : INITIAL_GEMINI_CONVERSATIONS;
-  });
+  const [isWorkspaceSelectorOpen, setIsWorkspaceSelectorOpen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('aether_workspaces_v2', JSON.stringify(workspaces));
+  }, [workspaces]);
+
+  useEffect(() => {
+    localStorage.setItem('aether_active_workspace_v2', activeWorkspaceId);
+  }, [activeWorkspaceId]);
+
+  const activeWorkspace = useMemo(() => {
+    return (
+      workspaces.find((w) => w.id === activeWorkspaceId) ||
+      workspaces[0] ||
+      null
+    );
+  }, [workspaces, activeWorkspaceId]);
+
+  const sources = activeWorkspace?.sources || [];
+  const oneNoteNotebooks = activeWorkspace?.notebooks || [];
+  const geminiConversations = activeWorkspace?.conversations || [];
+
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(() => {
-    const saved = localStorage.getItem('aether_library');
+    const saved = localStorage.getItem('aether_library_v2');
     return saved ? JSON.parse(saved) : INITIAL_LIBRARY;
   });
-  const [folders, setFolders] = useState<string[]>([
-    'NotebookLM Research',
-    'OneNote Notebooks',
-    'Active Projects',
-    'Semester Planners',
-    'Personal Archives',
-  ]);
+  const [folders, setFolders] = useState<string[]>(() => {
+    const saved = localStorage.getItem('aether_folders_v3');
+    return saved ? JSON.parse(saved) : ['Untitled Workspaces'];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('aether_folders_v3', JSON.stringify(folders));
+  }, [folders]);
+
+  // One-time clean slate migration: purge all dummy workspaces, folders, sources, and cached library items
+  useEffect(() => {
+    const isCleaned = localStorage.getItem('aether_clean_slate_v5');
+    if (!isCleaned) {
+      localStorage.removeItem('aether_workspaces');
+      localStorage.removeItem('aether_workspaces_v2');
+      localStorage.removeItem('aether_library');
+      localStorage.removeItem('aether_library_v2');
+      localStorage.removeItem('aether_sources');
+      localStorage.removeItem('aether_onenote');
+      localStorage.removeItem('aether_gemini_conversations');
+      localStorage.removeItem('aether_active_workspace');
+      localStorage.removeItem('aether_active_workspace_v2');
+      localStorage.removeItem('aether_folders');
+      localStorage.removeItem('aether_folders_v2');
+      localStorage.removeItem('aether_folders_v3');
+      localStorage.setItem('aether_clean_slate_v5', 'true');
+      setWorkspaces([]);
+      setActiveWorkspaceId('');
+      setLibraryItems([]);
+      setFolders(['Untitled Workspaces']);
+    }
+  }, []);
+
   const [subjectAnalytics] = useState<SubjectAnalytics[]>(INITIAL_SUBJECT_ANALYTICS);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
 
@@ -477,20 +546,26 @@ export default function App() {
     const g = parseInt(hex.substring(2, 4), 16) || 158;
     const b = parseInt(hex.substring(4, 6), 16) || 11;
     const shadowColor = activePalette.id === 'black-night'
-      ? 'rgba(0, 0, 0, 0.95)'
+      ? 'rgba(0, 0, 0, 0.98)'
       : `rgba(${r}, ${g}, ${b}, ${darkMode ? 0.35 : 0.2})`;
     document.documentElement.style.setProperty('--palette-shadow', shadowColor);
 
     // Aaron Iker adaptive design tokens
-    document.documentElement.style.setProperty('--button-shine-left', activePalette.primary);
-    document.documentElement.style.setProperty('--button-shine-right', activePalette.accent);
+    document.documentElement.style.setProperty(
+      '--button-shine-left',
+      activePalette.id === 'black-night' ? '#18181b' : activePalette.primary
+    );
+    document.documentElement.style.setProperty(
+      '--button-shine-right',
+      activePalette.id === 'black-night' ? '#09090b' : activePalette.accent
+    );
     document.documentElement.style.setProperty(
       '--button-glow-start',
-      activePalette.id === 'black-night' ? '#27272a' : activePalette.primary
+      activePalette.id === 'black-night' ? '#000000' : activePalette.primary
     );
     document.documentElement.style.setProperty(
       '--button-glow-end',
-      activePalette.id === 'black-night' ? '#09090b' : activePalette.accent
+      activePalette.id === 'black-night' ? '#000000' : activePalette.accent
     );
     document.documentElement.style.setProperty('--button-shadow', shadowColor);
 
@@ -1022,7 +1097,7 @@ export default function App() {
   }, [geminiConversations]);
 
   useEffect(() => {
-    localStorage.setItem('aether_library', JSON.stringify(libraryItems));
+    localStorage.setItem('aether_library_v2', JSON.stringify(libraryItems));
   }, [libraryItems]);
 
   // Log an audit action
@@ -1068,30 +1143,202 @@ export default function App() {
     logAudit('Chore Added', `Created new task in category ${category}`, 'task');
   };
 
-  // Source actions
-  const handleToggleSource = (id: string) => {
-    setSources((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, selected: !s.selected } : s))
+  // Source actions (synchronized to active workspace)
+  const handleToggleSource = useCallback(
+    (id: string) => {
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === activeWorkspaceId
+            ? {
+                ...w,
+                updatedAt: 'Just now',
+                sources: w.sources.map((s) => (s.id === id ? { ...s, selected: !s.selected } : s)),
+              }
+            : w
+        )
+      );
+    },
+    [activeWorkspaceId]
+  );
+
+  const handleAddSource = useCallback(
+    (sourceData: Omit<NotebookSource, 'id' | 'dateAdded'>) => {
+      const newSource: NotebookSource = {
+        ...sourceData,
+        id: `src-${Date.now()}`,
+        dateAdded: 'Just now',
+      };
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === activeWorkspaceId
+            ? {
+                ...w,
+                updatedAt: 'Just now',
+                sources: [newSource, ...w.sources],
+              }
+            : w
+        )
+      );
+      logAudit('Source Indexed', `Added "${newSource.title}" (${newSource.words} words)`, 'source');
+    },
+    [activeWorkspaceId]
+  );
+
+  const handleDeleteSource = useCallback(
+    (id: string) => {
+      const s = sources.find((item) => item.id === id);
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === activeWorkspaceId
+            ? {
+                ...w,
+                updatedAt: 'Just now',
+                sources: w.sources.filter((item) => item.id !== id),
+              }
+            : w
+        )
+      );
+      if (s) {
+        logAudit('Source Removed', `Deleted source "${s.title}"`, 'source');
+      }
+    },
+    [activeWorkspaceId, sources]
+  );
+
+  // Synchronized OneNote & Gemini handlers for active workspace
+  const handleUpdateActiveNotebooks = useCallback(
+    (updated: OneNoteNotebook[]) => {
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === activeWorkspaceId
+            ? {
+                ...w,
+                updatedAt: 'Just now',
+                notebooks: updated,
+              }
+            : w
+        )
+      );
+    },
+    [activeWorkspaceId]
+  );
+
+  const handleUpdateActiveConversations = useCallback(
+    (updated: GeminiConversation[]) => {
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === activeWorkspaceId
+            ? {
+                ...w,
+                updatedAt: 'Just now',
+                conversations: updated,
+              }
+            : w
+        )
+      );
+    },
+    [activeWorkspaceId]
+  );
+
+  const handleUpdateActiveChatMessages = useCallback(
+    (updated: any[]) => {
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === activeWorkspaceId
+            ? {
+                ...w,
+                updatedAt: 'Just now',
+                chatMessages: updated,
+              }
+            : w
+        )
+      );
+    },
+    [activeWorkspaceId]
+  );
+
+  const handleUpdateWorkspace = useCallback((workspaceId: string, updates: Partial<Workspace>) => {
+    setWorkspaces((prev) =>
+      prev.map((w) => (w.id === workspaceId ? { ...w, ...updates, updatedAt: 'Just now' } : w))
     );
-  };
+    logAudit('Workspace Updated', `Modified settings for workspace`, 'system');
+  }, []);
 
-  const handleAddSource = (sourceData: Omit<NotebookSource, 'id' | 'dateAdded'>) => {
-    const newSource: NotebookSource = {
-      ...sourceData,
-      id: `src-${Date.now()}`,
-      dateAdded: 'Just now',
-    };
-    setSources((prev) => [newSource, ...prev]);
-    logAudit('Source Indexed', `Added "${newSource.title}" (${newSource.words} words)`, 'source');
-  };
+  const handleDeleteWorkspace = useCallback((workspaceId: string) => {
+    setWorkspaces((prev) => {
+      const next = prev.filter((w) => w.id !== workspaceId);
+      if (activeWorkspaceId === workspaceId) {
+        setActiveWorkspaceId(next[0]?.id || '');
+      }
+      return next;
+    });
+    logAudit('Workspace Closed', `Closed workspace`, 'system');
+  }, [activeWorkspaceId]);
 
-  const handleDeleteSource = (id: string) => {
-    const s = sources.find((item) => item.id === id);
-    setSources((prev) => prev.filter((item) => item.id !== id));
-    if (s) {
-      logAudit('Source Removed', `Deleted source "${s.title}"`, 'source');
-    }
-  };
+  // Workspace management & switching
+  const handleSelectWorkspace = useCallback((workspaceId: string) => {
+    setActiveWorkspaceId(workspaceId);
+    setActiveTab('notebooklm');
+    setIsWorkspaceSelectorOpen(false);
+    setWindowChangeCount((c) => c + 1);
+  }, []);
+
+  const handleCreateNewWorkspace = useCallback(
+    (targetFolder = 'Untitled Workspaces') => {
+      const newId = `ws-${Date.now()}`;
+      const count = workspaces.length + 1;
+      const newWs: Workspace = {
+        id: newId,
+        name: `Untitled Workspace ${count}`,
+        description: 'Synchronized workspace with exclusive NotebookLM sources, OneNote canvas, and Gemini AI.',
+        folder: targetFolder,
+        createdAt: 'Just now',
+        updatedAt: 'Just now',
+        color: activePalette.primary,
+        sources: [],
+        notebooks: [
+          {
+            id: `nb-${Date.now()}`,
+            title: `Notebook 1`,
+            description: 'Dedicated notebook for this workspace',
+            sections: [
+              {
+                id: `sec-${Date.now()}`,
+                title: '01. Notes',
+                color: activePalette.primary,
+                pages: [
+                  {
+                    id: `p-${Date.now()}`,
+                    title: 'Untitled Page',
+                    updatedAt: 'Just now',
+                    blocks: [
+                      { id: `b-${Date.now()}`, type: 'paragraph', content: '' },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        conversations: [],
+      };
+
+      setWorkspaces((prev) => [newWs, ...prev]);
+      setActiveWorkspaceId(newId);
+      setActiveTab('notebooklm');
+      setIsWorkspaceSelectorOpen(false);
+      setWindowChangeCount((c) => c + 1);
+      logAudit('Workspace Created', `Created ${newWs.name} in folder "${targetFolder}"`, 'system');
+    },
+    [workspaces.length, activePalette.primary]
+  );
+
+  const handleAssignWorkspaceToFolder = useCallback((workspaceId: string, folder: string) => {
+    setWorkspaces((prev) =>
+      prev.map((w) => (w.id === workspaceId ? { ...w, folder, updatedAt: 'Just now' } : w))
+    );
+    logAudit('Workspace Moved', `Moved workspace to "${folder}"`, 'system');
+  }, []);
 
   // Folder actions
   const handleAddFolder = (name: string) => {
@@ -1108,7 +1355,9 @@ export default function App() {
   };
 
   const handleOpenLibraryItem = (item: LibraryItem) => {
-    if (item.type === 'notebook') {
+    if (item.type === 'workspace' && item.workspaceId) {
+      handleSelectWorkspace(item.workspaceId);
+    } else if (item.type === 'notebook') {
       setActiveTab('notebooklm');
     } else if (item.type === 'onenote') {
       setIsOneNoteOpen(true);
@@ -1125,7 +1374,7 @@ export default function App() {
     if (type === 'onenote') {
       setIsOneNoteOpen(true);
     } else if (type === 'notebook') {
-      setActiveTab('notebooklm');
+      handleCreateNewWorkspace('Untitled Workspaces');
     } else {
       const newItem: LibraryItem = {
         id: `lib-${Date.now()}`,
@@ -1147,15 +1396,16 @@ export default function App() {
   const handleResetData = () => {
     localStorage.clear();
     setTasks(INITIAL_TASKS);
-    setSources(INITIAL_SOURCES);
-    setOneNoteNotebooks(INITIAL_ONENOTE_NOTEBOOKS);
-    setLibraryItems(INITIAL_LIBRARY);
+    setWorkspaces([]);
+    setActiveWorkspaceId('');
+    setLibraryItems([]);
+    setFolders(['Untitled Workspaces']);
     setActivePaletteId('gold-obsidian');
     setDarkMode(true);
     setCursorStyle('chevron');
     setCursorColorAdapter(70);
     setActiveTab('lander');
-    logAudit('Workspace Reset', 'Reset all state stores to default seed', 'system');
+    logAudit('Workspace Reset', 'Reset all state stores to clean new experience', 'system');
   };
 
   return (
@@ -1232,11 +1482,27 @@ export default function App() {
         </div>
       )}
 
+      {/* Dedicated Sliding Workspace Selector Bar */}
+      <WorkspaceSelectorBar
+        isOpen={isWorkspaceSelectorOpen}
+        onClose={() => setIsWorkspaceSelectorOpen(false)}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onSelectWorkspace={handleSelectWorkspace}
+        onCreateWorkspace={() => handleCreateNewWorkspace('Untitled Workspaces')}
+        onUpdateWorkspace={handleUpdateWorkspace}
+        onDeleteWorkspace={handleDeleteWorkspace}
+        activePalette={activePalette}
+        darkMode={darkMode}
+      />
+
       {/* Primary Workspace Stage (Slides out full-width during OneNote / Gemini workspace transition) */}
       <div
         className={`${
           activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-screen overflow-hidden' : 'min-h-screen'
-        } flex flex-col w-full hyprland-slide relative z-10 ${
+        } flex flex-col w-full hyprland-slide relative z-10 transition-all duration-300 ease-out origin-top ${
+          isWorkspaceSelectorOpen ? 'scale-[0.96] opacity-80 blur-[0.5px]' : 'scale-100 opacity-100 blur-0'
+        } ${
           isOneNoteOpen
             ? '-translate-x-[100%] opacity-0 pointer-events-none select-none invisible'
             : isGeminiWorkspaceOpen
@@ -1246,16 +1512,21 @@ export default function App() {
       >
         {/* Top Floating Centered Header (Dominating '+' icon, active palette colors, liquid glass accent) */}
         <Header
+          isAuthenticated={isAuthenticated}
           activeTab={activeTab}
           onSelectTab={(tab) => {
             setActiveTab(tab);
             if (tab !== 'onenote') setIsOneNoteOpen(false);
             if (tab !== 'gemini') setIsGeminiWorkspaceOpen(false);
+            setIsWorkspaceSelectorOpen(false);
           }}
           onOpenCreate={() => setIsCreateModalOpen(true)}
-          onOpenNotebookLM={() => setActiveTab('notebooklm')}
+          onOpenNotebookLM={() => {
+            setIsWorkspaceSelectorOpen((prev) => !prev);
+          }}
           darkMode={darkMode}
           activePalette={activePalette}
+          isWorkspaceSelectorOpen={isWorkspaceSelectorOpen}
         />
 
         {/* Main Tab View Switcher — content fades in after frost peak for a seamless reveal */}
@@ -1287,6 +1558,10 @@ export default function App() {
 
               {activeTab === 'notebooklm' && (
                 <NotebookLMView
+                  key={activeWorkspace?.id || 'ws-default'}
+                  workspaceId={activeWorkspace?.id}
+                  chatMessages={activeWorkspace?.chatMessages}
+                  onUpdateChatMessages={handleUpdateActiveChatMessages}
                   sources={sources}
                   onToggleSource={handleToggleSource}
                   onAddSource={handleAddSource}
@@ -1308,9 +1583,13 @@ export default function App() {
                 <LibraryView
                   items={libraryItems}
                   folders={folders}
+                  workspaces={workspaces}
                   onOpenItem={handleOpenLibraryItem}
                   onAddFolder={handleAddFolder}
                   onToggleStar={handleToggleStar}
+                  onSelectWorkspace={handleSelectWorkspace}
+                  onAssignWorkspaceToFolder={handleAssignWorkspaceToFolder}
+                  onCreateWorkspaceInFolder={(folder) => handleCreateNewWorkspace(folder)}
                   activePalette={activePalette}
                   darkMode={darkMode}
                 />
@@ -1355,6 +1634,8 @@ export default function App() {
                     setSmoothScroll(val);
                     logAudit('Smooth Scrolling', `Smooth momentum scrolling set to ${val ? 'ON' : 'OFF'}`, 'system');
                   }}
+                  onSignOut={handleSignOut}
+                  authenticatedEmail={localStorage.getItem('aether_auth_user') || undefined}
                 />
               )}
         </main>
@@ -1385,7 +1666,7 @@ export default function App() {
         notebooks={oneNoteNotebooks}
         isOpen={isOneNoteOpen}
         onCloseBack={() => setIsOneNoteOpen(false)}
-        onUpdateNotebooks={(updated) => setOneNoteNotebooks(updated)}
+        onUpdateNotebooks={handleUpdateActiveNotebooks}
         activePalette={activePalette}
         darkMode={darkMode}
         smoothScroll={smoothScroll}
@@ -1398,7 +1679,7 @@ export default function App() {
         activePalette={activePalette}
         darkMode={darkMode}
         conversations={geminiConversations}
-        onUpdateConversations={(updated) => setGeminiConversations(updated)}
+        onUpdateConversations={handleUpdateActiveConversations}
         selectedModel={selectedModel}
         onChangeModel={(m) => {
           setSelectedModel(m);
@@ -1407,17 +1688,19 @@ export default function App() {
       />
 
       {/* Floating Gemini Chatbox on the Right with Liquid Glass Accent (Floats over OneNote window) */}
-      <FloatingGeminiChat
-        selectedModel={selectedModel}
-        onChangeModel={(m) => {
-          setSelectedModel(m);
-          logAudit('Model Changed', `Switched AI model to ${m}`, 'ai');
-        }}
-        enableThinking={enableThinking}
-        activePalette={activePalette}
-        darkMode={darkMode}
-        hidden={isGeminiWorkspaceOpen || activeTab === 'lander'}
-      />
+      {isAuthenticated && (
+        <FloatingGeminiChat
+          selectedModel={selectedModel}
+          onChangeModel={(m) => {
+            setSelectedModel(m);
+            logAudit('Model Changed', `Switched AI model to ${m}`, 'ai');
+          }}
+          enableThinking={enableThinking}
+          activePalette={activePalette}
+          darkMode={darkMode}
+          hidden={isGeminiWorkspaceOpen || activeTab === 'lander'}
+        />
+      )}
 
       {/* Creation Modal Triggered by Dominant '+' Header Button */}
       <CreateModal
@@ -1433,6 +1716,7 @@ export default function App() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         onComplete={() => {
+          setIsAuthenticated(true);
           setIsAuthModalOpen(false);
           setActiveTab('dashboard');
         }}

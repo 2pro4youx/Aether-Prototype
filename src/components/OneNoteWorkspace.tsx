@@ -3455,12 +3455,29 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
     }
   }, [selectedSectionId, selectedPageId]);
 
-  const currentNotebook = notebooks.find((nb) => nb.id === selectedNotebookId) || notebooks[0];
+  const currentNotebook = notebooks.find((nb) => nb.id === selectedNotebookId) || notebooks[0] || null;
   const currentSection =
-    currentNotebook?.sections.find((s) => s.id === selectedSectionId) ||
-    currentNotebook?.sections[0];
+    currentNotebook?.sections?.find((s) => s.id === selectedSectionId) ||
+    currentNotebook?.sections?.[0] || null;
   const currentPage =
-    currentSection?.pages.find((p) => p.id === selectedPageId) || currentSection?.pages[0];
+    currentSection?.pages?.find((p) => p.id === selectedPageId) || currentSection?.pages?.[0] || null;
+
+  // Sync selected IDs if current selections don't exist in notebooks
+  useEffect(() => {
+    if (notebooks.length > 0) {
+      const nbExists = notebooks.some((nb) => nb.id === selectedNotebookId);
+      if (!nbExists) {
+        const firstNb = notebooks[0];
+        setSelectedNotebookId(firstNb.id);
+        if (firstNb.sections?.[0]) {
+          setSelectedSectionId(firstNb.sections[0].id);
+          if (firstNb.sections[0].pages?.[0]) {
+            setSelectedPageId(firstNb.sections[0].pages[0].id);
+          }
+        }
+      }
+    }
+  }, [notebooks, selectedNotebookId]);
 
   // High-performance structural sharing updater for the currently active page (avoids deep JSON cloning)
   const updateCurrentPage = React.useCallback(
@@ -3468,15 +3485,15 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
       if (!currentNotebook?.id || !currentSection?.id || !currentPage?.id) return;
       onUpdateNotebooks(
         notebooks.map((nb) => {
-          if (nb.id !== currentNotebook.id) return nb;
+          if (nb.id !== currentNotebook?.id) return nb;
           return {
             ...nb,
             sections: nb.sections.map((sec) => {
-              if (sec.id !== currentSection.id) return sec;
+              if (sec.id !== currentSection?.id) return sec;
               return {
                 ...sec,
                 pages: sec.pages.map((p) => {
-                  if (p.id !== currentPage.id) return p;
+                  if (p.id !== currentPage?.id) return p;
                   return updater(p);
                 }),
               };
@@ -3645,12 +3662,54 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
     setSelectedPageId(pageId);
   }, []);
 
+  // Add new Notebook with rich defaults
+  const handleAddNotebook = React.useCallback(() => {
+    const newNbId = `nb-${Date.now()}`;
+    const newSecId = `sec-${Date.now()}`;
+    const newPageId = `p-${Date.now()}`;
+    const count = notebooks.length + 1;
+    const newNotebook: OneNoteNotebook = {
+      id: newNbId,
+      title: `Notebook ${count}`,
+      description: 'Custom research and workspace notes',
+      sections: [
+        {
+          id: newSecId,
+          title: '01. Overview',
+          color: activePalette.primary || '#f59e0b',
+          pages: [
+            {
+              id: newPageId,
+              title: 'Getting Started',
+              updatedAt: 'Just now',
+              blocks: [
+                { id: `b-${Date.now()}`, type: 'h1', content: `Notebook ${count}` },
+                { id: `b-${Date.now() + 1}`, type: 'paragraph', content: 'Draft your ideas, equations, code, and source notes here.' },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    onUpdateNotebooks([...notebooks, newNotebook]);
+    setSelectedNotebookId(newNbId);
+    setSelectedSectionId(newSecId);
+    setSelectedPageId(newPageId);
+    setIsNotebookDropdownOpen(false);
+  }, [notebooks, activePalette.primary, onUpdateNotebooks]);
+
   // Add new Section with fast immutable update
   const handleAddSection = React.useCallback(() => {
-    const title = prompt('Enter section name:', 'New Section');
-    if (!title) return;
+    if (!currentNotebook) {
+      handleAddNotebook();
+      return;
+    }
     const colors = ['#f59e0b', '#dc2626', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    const secCount = (currentNotebook.sections?.length || 0) + 1;
+    const padNum = secCount < 10 ? `0${secCount}` : `${secCount}`;
+    const title = `${padNum}. New Section`;
 
     const newSecId = `sec-${Date.now()}`;
     const newPageId = `p-${Date.now()}`;
@@ -3680,12 +3739,13 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
     );
     setSelectedSectionId(newSecId);
     setSelectedPageId(newPageId);
-  }, [notebooks, currentNotebook.id, onUpdateNotebooks]);
+  }, [notebooks, currentNotebook, handleAddNotebook, onUpdateNotebooks]);
 
-  // Add new Page with fast immutable update
+  // Add new Page with fast immutable update (no window.prompt to avoid iFrame freezing)
   const handleAddPage = React.useCallback(() => {
-    const title = prompt('Enter page title:', 'New Page');
-    if (!title) return;
+    if (!currentNotebook?.id || !currentSection?.id) return;
+    const count = (currentSection.pages?.length || 0) + 1;
+    const title = `Untitled Page ${count}`;
 
     const newPageId = `page-${Date.now()}`;
     const newP: OneNotePage = {
@@ -3714,7 +3774,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
       })
     );
     setSelectedPageId(newPageId);
-  }, [notebooks, currentNotebook.id, currentSection.id, onUpdateNotebooks]);
+  }, [notebooks, currentNotebook?.id, currentSection?.id, onUpdateNotebooks]);
 
   const handleCopyPageText = () => {
     if (!currentPage) return;
@@ -4002,6 +4062,21 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
                         </button>
                       );
                     })}
+                  </div>
+
+                  {/* Create New Notebook Action */}
+                  <div className={`p-2 border-t ${darkMode ? 'border-white/10' : 'border-slate-200'}`}>
+                    <button
+                      onClick={handleAddNotebook}
+                      className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition shadow-sm ${
+                        darkMode
+                          ? 'bg-white/10 hover:bg-white/15 text-slate-100 hover:text-white'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
+                      }`}
+                    >
+                      <Plus className="w-3.5 h-3.5" style={{ color: activePalette.primary }} />
+                      <span>Create Notebook</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -4420,7 +4495,37 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
                       : ''
                   }`}
                 >
-                  {currentPage ? (
+                  {!currentNotebook ? (
+                    <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                      <div
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 border"
+                        style={{
+                          backgroundColor: `${activePalette.primary}15`,
+                          borderColor: `${activePalette.primary}35`,
+                        }}
+                      >
+                        <Book className="w-7 h-7" style={{ color: activePalette.primary }} />
+                      </div>
+                      <h3 className={`text-lg font-bold mb-1.5 ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>
+                        No Notebook in this Workspace
+                      </h3>
+                      <p className="text-xs text-slate-400 max-w-sm mb-5">
+                        Each workspace maintains exclusive notebooks. Create your first notebook to begin drafting.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleAddNotebook}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-lg hover:scale-105 active:scale-95"
+                        style={{
+                          backgroundColor: activePalette.primary,
+                          color: '#ffffff',
+                        }}
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Create First Notebook</span>
+                      </button>
+                    </div>
+                  ) : currentPage ? (
                     <>
                       {/* Page Title */}
                       <input

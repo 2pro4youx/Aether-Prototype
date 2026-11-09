@@ -63,6 +63,7 @@ export interface GeminiRequestOptions {
   sources?: Array<{ title: string; content: string } | NotebookSource>;
   attachments?: ChatAttachment[];
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  apiKey?: string;
 }
 
 export interface GeminiResponse {

@@ -43,6 +43,8 @@ interface SettingsViewProps {
   onChangeCursorColorAdapter: (adapter: number) => void;
   smoothScroll: boolean;
   onToggleSmoothScroll: (enabled: boolean) => void;
+  onSignOut?: () => void;
+  authenticatedEmail?: string;
 }
 
 interface PrecisionCursorSectionProps {
@@ -577,6 +579,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onChangeCursorColorAdapter,
   smoothScroll,
   onToggleSmoothScroll,
+  onSignOut,
+  authenticatedEmail,
 }) => {
   const [apiKeyInput, setApiKeyInput] = useState(() => getActiveGeminiApiKey());
   const [isTestingKey, setIsTestingKey] = useState(false);
@@ -1290,6 +1294,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
+      {/* Authenticated Account & Session Management */}
+      <div className="p-5 rounded-2xl liquid-glass flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className={`text-xs space-y-1 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+          <div className="flex items-center gap-2">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: activePalette.primary }}
+            />
+            <p className={`text-sm font-bold ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>
+              Authenticated Studio Session
+            </p>
+          </div>
+          <p>
+            Connected as <span className="font-mono text-white font-semibold">{authenticatedEmail || 'alex.learner@gmail.com'}</span>
+          </p>
+        </div>
+        {onSignOut && (
+          <button
+            type="button"
+            onClick={onSignOut}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 shadow-sm cursor-pointer ${
+              darkMode
+                ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/30'
+                : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+            }`}
+          >
+            <span>Sign Out & Disconnect</span>
+          </button>
+        )}
+      </div>
+
       {/* Reset & Storage info */}
       <div className="p-4 rounded-2xl liquid-glass flex items-center justify-between">
         <div className={`text-xs space-y-0.5 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
@@ -1299,12 +1334,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <p>Your notes, study activities, themes, and sources are stored reactively in browser storage.</p>
         </div>
         <button
-          onClick={() => {
-            if (confirm('Reset workspace to initial seed data?')) {
-              onResetData();
-            }
-          }}
-          className={`px-3 py-1.5 rounded-xl text-xs border transition flex items-center gap-1.5 ${
+          onClick={onResetData}
+          className={`px-3 py-1.5 rounded-xl text-xs border transition flex items-center gap-1.5 cursor-pointer ${
             darkMode
               ? 'bg-slate-900 hover:bg-red-950/60 hover:text-red-300 text-slate-400 border-white/10'
               : 'bg-white hover:bg-red-50 hover:text-red-600 text-slate-600 border-slate-200'

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Sparkles,
   Send,
+  Square,
   X,
   Loader2,
   Bot,
@@ -14,6 +15,7 @@ import { ColorPalette } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { LiquidGlassSvgFilter } from './LiquidGlassFilter';
 import { callGeminiChat, AVAILABLE_GEMINI_MODELS } from '../utils/geminiClient';
+import { useChatSmoothScroll } from '../hooks/useSmoothScroll';
 
 interface FloatingGeminiChatProps {
   selectedModel: string;
@@ -22,6 +24,7 @@ interface FloatingGeminiChatProps {
   activePalette: ColorPalette;
   darkMode: boolean;
   hidden?: boolean;
+  smoothScroll?: boolean;
 }
 
 interface Message {
@@ -38,6 +41,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
   activePalette,
   darkMode,
   hidden = false,
+  smoothScroll = true,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
@@ -64,6 +68,24 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const tileRafRef = useRef<number | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `stop-${Date.now()}`,
+        role: 'assistant',
+        text: '⏹️ *Response stopped by user.*',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+  };
 
   // High-performance 120 FPS cursor tracking for the floating liquid glass tile
   const handleTilePointerMove = (e: React.PointerEvent<HTMLElement>) => {
@@ -124,12 +146,17 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
     setInput('');
     setIsLoading(true);
 
+    const ac = new AbortController();
+    abortControllerRef.current = ac;
+
     try {
       const result = await callGeminiChat({
         message: userText,
         model: selectedModel,
         enableThinking,
       });
+
+      if (ac.signal.aborted) return;
 
       const botMsg: Message = {
         id: `b-${Date.now()}`,
@@ -140,6 +167,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
 
       setMessages((prev) => [...prev, botMsg]);
     } catch (err: unknown) {
+      if (ac.signal.aborted) return;
       const errMsg = err instanceof Error ? err.message : 'Chat error';
       setMessages((prev) => [
         ...prev,
@@ -151,6 +179,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
         },
       ]);
     } finally {
+      abortControllerRef.current = null;
       setIsLoading(false);
     }
   };
@@ -444,19 +473,33 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
                           : 'bg-white/90 border-slate-300 text-slate-900 placeholder-slate-500 focus:border-amber-500 focus:ring-amber-500/20 shadow-inner'
                       }`}
                     />
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      type="submit"
-                      disabled={isLoading || !input.trim()}
-                      className="p-2 rounded-xl text-slate-950 disabled:opacity-40 transition font-bold shadow-md cursor-pointer disabled:cursor-not-allowed"
-                      style={{
-                        background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
-                      }}
-                      title="Send Prompt"
-                    >
-                      <Send className="w-3.5 h-3.5 fill-slate-950" />
-                    </motion.button>
+                    {isLoading ? (
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        type="button"
+                        onClick={handleStop}
+                        className="p-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white transition font-bold shadow-md cursor-pointer flex items-center justify-center animate-pulse"
+                        title="Stop response"
+                        aria-label="Stop response"
+                      >
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                      </motion.button>
+                    ) : (
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        type="submit"
+                        disabled={!input.trim()}
+                        className="p-2 rounded-xl text-slate-950 disabled:opacity-40 transition font-bold shadow-md cursor-pointer disabled:cursor-not-allowed"
+                        style={{
+                          background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                        }}
+                        title="Send Prompt"
+                      >
+                        <Send className="w-3.5 h-3.5 fill-slate-950" />
+                      </motion.button>
+                    )}
                   </form>
               </div>
             </motion.div>
