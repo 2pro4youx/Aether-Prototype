@@ -1,0 +1,1905 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --palette-primary: #f59e0b;
+  --palette-accent: #dc2626;
+  --palette-gradient: linear-gradient(135deg, #f59e0b, #dc2626);
+  --palette-shadow: rgba(245, 158, 11, 0.32);
+  --palette-bg: #f8fafc;
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --card-bg: rgba(255, 255, 255, 0.35);
+  --card-border: rgba(255, 255, 255, 0.6);
+  --input-bg: rgba(255, 255, 255, 0.45);
+  --input-border: rgba(203, 213, 225, 0.6);
+
+  /* Aaron Iker Glow & Shine Design Tokens (Theme-Reactive) */
+  --button-shine-left: var(--palette-primary);
+  --button-shine-right: var(--palette-accent);
+  --button-glow-start: var(--palette-primary);
+  --button-glow-end: var(--palette-accent);
+  --button-shadow: var(--palette-shadow);
+  --pointer-x: -999px;
+  --pointer-y: -999px;
+  --pointer-ratio: 0.5;
+  --button-glow-opacity: 0;
+  --button-glow-duration: 0.35s;
+
+  /* Base glow opacities with 15% reduction applied */
+  --base-glow-spotlight: 0.22;
+  --base-glow-border: 0.53;
+  --glow-opacity-multiplier: 0.95;
+
+  --tile-glow-opacity: calc(var(--base-glow-spotlight) * var(--glow-opacity-multiplier, 0.95));
+  --tile-border-glow-opacity: calc(var(--base-glow-border) * var(--glow-opacity-multiplier, 0.95));
+
+  /* Apple VisionOS & Liquid Glass Frosted Chromatic Tokens */
+  --glass-frost: 0.08;
+  --glass-saturation: 1.25;
+  --filter-id: url(#glass-filter-_r_b_);
+}
+
+.dark {
+  --palette-bg: #090d16;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --card-bg: rgba(15, 23, 42, 0.15);
+  --card-border: rgba(255, 255, 255, 0.12);
+  --input-bg: rgba(6, 11, 20, 0.2);
+  --input-border: rgba(255, 255, 255, 0.1);
+
+  --button-shine-left: var(--palette-primary);
+  --button-shine-right: var(--palette-accent);
+  --button-glow-start: var(--palette-primary);
+  --button-glow-end: var(--palette-accent);
+  --button-shadow: var(--palette-shadow);
+
+  --base-glow-spotlight: 0.29;
+  --base-glow-border: 0.66;
+
+  --tile-glow-opacity: calc(var(--base-glow-spotlight) * var(--glow-opacity-multiplier, 0.95));
+  --tile-border-glow-opacity: calc(var(--base-glow-border) * var(--glow-opacity-multiplier, 0.95));
+
+  --glass-frost: 0.12;
+  --glass-saturation: 1.35;
+  --filter-id: url(#glass-filter-_r_b_);
+}
+
+html {
+  overflow-x: clip;
+}
+
+body {
+  overflow-x: clip;
+  background-color: var(--palette-bg);
+  color: var(--text-main);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* =========================================================================
+   Apple Liquid Frost Glass & ColorOS 17 Fluid Glow Interactive Architecture
+   Integrated with Aaron Iker Adaptive Pointer Glow & Refined Edge Shimmer
+   ========================================================================= */
+
+@property --shine-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes rotateShine {
+  to {
+    --shine-angle: 360deg;
+  }
+}
+
+/* Primary Apple Liquid Frost Glass Container (Tiles, Panels, Cards) */
+.liquid-glass {
+  position: relative;
+  isolation: isolate;
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --tilt-z: 0px;
+  --tilt-scale: 1;
+  --tilt-y-offset: 0px;
+  transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(var(--tilt-z, 0px)) translateY(var(--tilt-y-offset, 0px)) scale(var(--tilt-scale, 1));
+  transform-style: preserve-3d;
+  will-change: transform;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.45) 50%, rgba(255, 255, 255, 0.60) 100%);
+  -webkit-backdrop-filter: blur(20px) saturate(var(--glass-saturation, 1.25));
+  backdrop-filter: blur(20px) saturate(var(--glass-saturation, 1.25));
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.45),
+    inset 0 1px 10px rgba(255, 255, 255, 0.18),
+    0 8px 24px -4px rgba(0, 0, 0, 0.05);
+  transition: 
+    transform 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.35s ease;
+}
+
+.dark .liquid-glass {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(13, 20, 36, 0.68) 45%, rgba(10, 16, 28, 0.82) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.24),
+    inset 0 1px 12px rgba(0, 0, 0, 0.35),
+    0 10px 30px -8px rgba(0, 0, 0, 0.45);
+}
+
+/* Sub-tiles & Interactive Chips (Task items, planners, cards, quick actions) */
+.liquid-glass-tile {
+  position: relative;
+  isolation: isolate;
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --tilt-z: 0px;
+  --tilt-scale: 1;
+  --tilt-y-offset: 0px;
+  transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(var(--tilt-z, 0px)) translateY(var(--tilt-y-offset, 0px)) scale(var(--tilt-scale, 1));
+  transform-style: preserve-3d;
+  will-change: transform;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.30) 100%);
+  -webkit-backdrop-filter: blur(14px) saturate(var(--glass-saturation, 1.2));
+  backdrop-filter: blur(14px) saturate(var(--glass-saturation, 1.2));
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.4),
+    0 4px 12px -2px rgba(0, 0, 0, 0.03);
+  transition: 
+    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.3s ease;
+}
+
+/* Elements that must not tilt in 3D */
+.liquid-glass.no-lift,
+.liquid-glass-tile.no-lift,
+.liquid-glass.no-tilt,
+.liquid-glass-tile.no-tilt,
+nav.liquid-glass,
+.onenote-editor-canvas,
+.onenote-editor-canvas .liquid-glass {
+  transform: none !important;
+  transform-style: flat !important;
+}
+
+.dark .liquid-glass-tile {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(10, 16, 28, 0.55) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.18),
+    0 4px 12px -2px rgba(0, 0, 0, 0.25);
+}
+
+/* Standalone Liquid Glass Frost Component (Fully Responsive, from Reference) */
+.liquidglass {
+  position: relative;
+  background: hsl(0 0% 0% / var(--glass-frost, 0.08));
+  -webkit-backdrop-filter: blur(20px) saturate(var(--glass-saturation, 1.2));
+  backdrop-filter: blur(20px) saturate(var(--glass-saturation, 1.2));
+  -webkit-backdrop-filter: var(--filter-id, url(#glass-filter-_r_b_)) saturate(var(--glass-saturation, 1.2)) blur(18px);
+  backdrop-filter: var(--filter-id, url(#glass-filter-_r_b_)) saturate(var(--glass-saturation, 1.2)) blur(18px);
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.35),
+    inset 0 0 10px 4px rgba(255, 255, 255, 0.15),
+    inset 0 4px 16px rgba(17, 17, 26, 0.05),
+    inset 0 8px 24px rgba(17, 17, 26, 0.05),
+    inset 0 6px 56px rgba(17, 17, 26, 0.05),
+    0 12px 32px -4px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 1.5rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark .liquidglass {
+  background: rgba(15, 23, 42, calc(var(--glass-frost, 0.08) * 2));
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.22),
+    inset 0 0 10px 4px rgba(255, 255, 255, 0.08),
+    inset 0 4px 16px rgba(0, 0, 0, 0.35),
+    inset 0 8px 24px rgba(0, 0, 0, 0.35),
+    inset 0 6px 56px rgba(0, 0, 0, 0.25),
+    0 14px 34px -8px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.glass-surface__filter {
+  pointer-events: none;
+  opacity: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+
+/* Aaron Iker Interactive Pointer Spotlight Glow (Follows cursor smoothly) */
+.liquid-glass::before,
+.liquid-glass-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  transform: translateZ(0);
+  will-change: opacity;
+  background: radial-gradient(
+    320px circle at var(--pointer-x, -999px) var(--pointer-y, -999px),
+    color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) calc((1 - var(--pointer-ratio, 0.5)) * 100%), var(--button-glow-end, var(--palette-accent))) 0%,
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.liquid-glass:hover::before,
+.liquid-glass-tile:hover::before {
+  opacity: var(--tile-glow-opacity, 0.35);
+}
+
+.dark .liquid-glass:hover::before,
+.dark .liquid-glass-tile:hover::before {
+  opacity: var(--tile-glow-opacity, 0.45);
+}
+
+/* Aaron Iker Dynamic Border Ring Highlight (Light beam follows cursor along the tile border) */
+.liquid-glass::after,
+.liquid-glass-tile::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.5px;
+  transform: translateZ(0);
+  will-change: opacity;
+  background: radial-gradient(
+    280px circle at var(--pointer-x, -999px) var(--pointer-y, -999px),
+    color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) calc((1 - var(--pointer-ratio, 0.5)) * 100%), var(--button-glow-end, var(--palette-accent))) 0%,
+    transparent 70%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.liquid-glass:hover::after,
+.liquid-glass-tile:hover::after {
+  opacity: var(--tile-border-glow-opacity, 0.85);
+}
+
+.dark .liquid-glass:hover::after,
+.dark .liquid-glass-tile:hover::after {
+  opacity: var(--tile-border-glow-opacity, 0.95);
+}
+
+.liquid-glass-tile:hover {
+  z-index: 2;
+}
+
+/* Rounded-full & Nav Capsule Edge Smoothing (Silky continuous curvature, eliminates all edge gaps & mask notches) */
+.liquid-glass.rounded-full,
+nav.liquid-glass {
+  border-radius: 9999px !important;
+  overflow: hidden;
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.15),
+    inset 0 0 14px 2px rgba(255, 255, 255, 0.1),
+    0 10px 32px -6px rgba(0, 0, 0, 0.2),
+    0 2px 8px -1px rgba(0, 0, 0, 0.08);
+}
+
+.dark .liquid-glass.rounded-full,
+.dark nav.liquid-glass {
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.45),
+    inset 0 0 14px 2px rgba(255, 255, 255, 0.04),
+    0 14px 38px -8px rgba(0, 0, 0, 0.65),
+    0 2px 8px -2px rgba(0, 0, 0, 0.35);
+}
+
+.liquid-glass.rounded-full::before,
+nav.liquid-glass::before {
+  border-radius: 9999px !important;
+}
+
+/* Disable the XOR masked border-beam on pill containers to eliminate any subpixel tangent notch/gap artifacts */
+.liquid-glass.rounded-full::after,
+nav.liquid-glass::after {
+  display: none !important;
+}
+
+/* Real-time Dynamic Tuning Mode (No global card glow force) */
+body.glow-tuning-active {
+  user-select: none !important;
+}
+
+body.glow-tuning-active.glow-rightclick-tuning,
+body.glow-tuning-active.glow-rightclick-tuning * {
+  cursor: ns-resize !important;
+}
+
+body.glow-tuning-active .liquid-glass::before,
+body.glow-tuning-active .liquid-glass-tile::before,
+body.glow-tuning-active .liquid-glass::after,
+body.glow-tuning-active .liquid-glass-tile::after {
+  transition: none !important;
+}
+
+/* Headless Glow Opacity Slider (Removes orange thumb head completely) */
+.glow-opacity-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  outline: none;
+  border: none;
+  cursor: pointer;
+}
+
+.glow-opacity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0;
+  height: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.glow-opacity-slider::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  border: none;
+  opacity: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+/* Dynamic Glow HUD Entry & Exit Blur/Fade Physics */
+.glow-hud-wrapper {
+  position: fixed;
+  bottom: 2.5rem;
+  left: 50%;
+  z-index: 50;
+  user-select: none;
+  transition: 
+    opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, filter, transform;
+}
+
+.glow-hud-wrapper.hud-visible {
+  opacity: 1;
+  filter: blur(0px);
+  transform: translate(-50%, 0) scale(1);
+  pointer-events: auto;
+}
+
+.glow-hud-wrapper.hud-hidden {
+  opacity: 0;
+  filter: blur(14px);
+  transform: translate(-50%, 14px) scale(0.95);
+  pointer-events: none;
+}
+
+/* Hero Overlay Text Blur In/Out during Theme Flip Animation */
+.hero-text-blur-wrapper {
+  transition: 
+    filter 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: filter, opacity, transform;
+}
+
+.hero-text-blur-wrapper.hero-text-focused {
+  filter: blur(0px);
+  opacity: 1;
+  transform: scale(1);
+}
+
+.hero-text-blur-wrapper.hero-text-blurred {
+  filter: blur(14px);
+  opacity: 0.82;
+  transform: scale(0.98);
+}
+
+/* Simple Right-Click Glow Ripple Wave Across All Surfaces, Cards & Tiles (GPU Composited) */
+.card-glow-ripple {
+  position: absolute !important;
+  margin: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  margin-block-start: 0 !important;
+  margin-block-end: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  display: block !important;
+  line-height: 0 !important;
+  font-size: 0 !important;
+  border-radius: 50% !important;
+  pointer-events: none !important;
+  z-index: 20 !important;
+  contain: strict !important;
+  transform: translate3d(-50%, -50%, 0) scale(0.06);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) 70%, white) 0%,
+    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 55%, transparent) 32%,
+    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 22%, transparent) 54%,
+    rgba(255, 255, 255, 0.10) 64%,
+    transparent 74%
+  );
+  opacity: 0;
+  animation: glowCardRipple 0.95s cubic-bezier(0.16, 0.85, 0.45, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* Guard against space-y margin inheritance on ripple elements and siblings */
+:where([class*="space-y-"] > .card-glow-ripple) {
+  margin: 0 !important;
+  margin-block-start: 0 !important;
+  margin-block-end: 0 !important;
+}
+:where([class*="space-y-"] > :not(.card-glow-ripple):has(+ .card-glow-ripple)) {
+  margin-block-end: 0 !important;
+}
+
+.dark .card-glow-ripple {
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) 80%, white) 0%,
+    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 60%, transparent) 32%,
+    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 25%, transparent) 54%,
+    rgba(255, 255, 255, 0.08) 64%,
+    transparent 74%
+  );
+}
+
+@keyframes glowCardRipple {
+  0% {
+    transform: translate3d(-50%, -50%, 0) scale(0.06);
+    opacity: 0;
+  }
+  15% {
+    opacity: min(0.65, calc(0.58 * var(--glow-opacity-multiplier, 0.95)));
+  }
+  40% {
+    opacity: min(0.45, calc(0.40 * var(--glow-opacity-multiplier, 0.95)));
+  }
+  70% {
+    opacity: min(0.20, calc(0.18 * var(--glow-opacity-multiplier, 0.95)));
+  }
+  100% {
+    transform: translate3d(-50%, -50%, 0) scale(1.35);
+    opacity: 0;
+  }
+}
+
+/* Hover elevation: flat on hover without left click (3D displacement only on left click) */
+.liquid-glass:hover:not(.no-lift):not(.card-pressed):not(:active) {
+  --tilt-y-offset: 0px;
+  --tilt-z: 0px;
+  transition: transform 0.1s cubic-bezier(0.1, 0.9, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.liquid-glass-tile:hover:not(.no-lift):not(.card-pressed):not(:active) {
+  --tilt-y-offset: 0px;
+  --tilt-z: 0px;
+  transition: transform 0.1s cubic-bezier(0.1, 0.9, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.liquid-glass:hover,
+.liquid-glass-tile:hover {
+  border-color: color-mix(in srgb, var(--palette-primary) 35%, rgba(255, 255, 255, 0.45));
+  box-shadow: 
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.8),
+    0 12px 28px -4px rgba(0, 0, 0, 0.05),
+    0 2px 8px -1px rgba(0, 0, 0, 0.02);
+}
+
+.dark .liquid-glass:hover,
+.dark .liquid-glass-tile:hover {
+  border-color: color-mix(in srgb, var(--palette-primary) 30%, rgba(255, 255, 255, 0.15));
+  box-shadow: 
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.35),
+    0 14px 34px -8px rgba(0, 0, 0, 0.45),
+    0 4px 12px -2px rgba(0, 0, 0, 0.25);
+}
+
+/* =========================================================================
+   Windows Start Menu / Fluent Design 3D Tile Hit Displacement Animation
+   Active ONLY when holding left click (held compression with 3D cursor lift).
+   Tuned: Tilt hit depression 2px, Z-axis lift 1px, 3D tile tilt 0.5deg.
+   Applied strictly to tiles (.liquid-glass-tile) - disabled on basic liquid glass.
+   ========================================================================= */
+.liquid-glass-tile.card-pressed:not(.no-lift) {
+  --tilt-scale: 0.9989;
+  --tilt-y-offset: 2px;
+  --tilt-z: 1px;
+  transition: transform 0.08s cubic-bezier(0.1, 0.9, 0.2, 1), box-shadow 0.08s ease, border-color 0.08s ease !important;
+  box-shadow: 
+    inset 0 1px 2px rgba(0, 0, 0, 0.08),
+    0 2px 8px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+.dark .liquid-glass-tile.card-pressed:not(.no-lift) {
+  box-shadow: 
+    inset 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 2px 10px -1px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Subtle spotlight luminescence heighten ONLY during left-click hold on tiles */
+.liquid-glass-tile.card-pressed::before {
+  opacity: calc(var(--tile-glow-opacity, var(--glow-opacity, 0.35)) * 1.15) !important;
+}
+
+.liquid-glass-tile.card-pressed::after {
+  opacity: calc(var(--tile-border-glow-opacity, var(--border-glow-opacity, 0.55)) * 1.12) !important;
+}
+
+/* =========================================================================
+   Smooth Spring Rebound Animation (Ends Left-Click Hold with Physical Bounce-Back)
+   Restores tile to normal resting state smoothly with gentle micro-rebound spring
+   ========================================================================= */
+.liquid-glass-tile.card-rebound {
+  animation: tileSpringRebound 0.42s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards !important;
+}
+
+.dark .liquid-glass-tile.card-rebound {
+  animation: tileSpringReboundDark 0.42s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards !important;
+}
+
+@keyframes tileSpringRebound {
+  0% {
+    transform: perspective(900px) rotateX(var(--release-tilt-x, 0deg)) rotateY(var(--release-tilt-y, 0deg)) translateZ(1px) translateY(2px) scale(0.9989);
+    box-shadow: 
+      inset 0 1px 2px rgba(0, 0, 0, 0.08),
+      0 2px 8px -1px rgba(0, 0, 0, 0.1);
+  }
+  42% {
+    /* Smooth gentle spring overshoot upward */
+    transform: perspective(900px) rotateX(0deg) rotateY(0deg) translateZ(0px) translateY(-0.8px) scale(1.0008);
+    box-shadow: 
+      0 10px 24px -4px rgba(0, 0, 0, 0.08),
+      0 2px 8px -1px rgba(0, 0, 0, 0.04);
+  }
+  75% {
+    /* Micro dampening */
+    transform: perspective(900px) rotateX(0deg) rotateY(0deg) translateZ(0px) translateY(0.15px) scale(0.9998);
+  }
+  100% {
+    /* Perfectly settled at resting state */
+    transform: perspective(900px) rotateX(0deg) rotateY(0deg) translateZ(0px) translateY(0px) scale(1);
+    box-shadow: 
+      inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.8),
+      0 12px 28px -4px rgba(0, 0, 0, 0.05),
+      0 2px 8px -1px rgba(0, 0, 0, 0.02);
+  }
+}
+
+@keyframes tileSpringReboundDark {
+  0% {
+    transform: perspective(900px) rotateX(var(--release-tilt-x, 0deg)) rotateY(var(--release-tilt-y, 0deg)) translateZ(1px) translateY(2px) scale(0.9989);
+    box-shadow: 
+      inset 0 1px 2px rgba(0, 0, 0, 0.3),
+      0 2px 10px -1px rgba(0, 0, 0, 0.3);
+  }
+  42% {
+    /* Smooth gentle spring overshoot upward */
+    transform: perspective(900px) rotateX(0deg) rotateY(0deg) translateZ(0px) translateY(-0.8px) scale(1.0008);
+    box-shadow: 
+      0 12px 30px -6px rgba(0, 0, 0, 0.5),
+      0 4px 12px -2px rgba(0, 0, 0, 0.25);
+  }
+  75% {
+    /* Micro dampening */
+    transform: perspective(900px) rotateX(0deg) rotateY(0deg) translateZ(0px) translateY(0.15px) scale(0.9998);
+  }
+  100% {
+    /* Perfectly settled at resting state */
+    transform: perspective(900px) rotateX(0deg) rotateY(0deg) translateZ(0px) translateY(0px) scale(1);
+    box-shadow: 
+      inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.35),
+      0 14px 34px -8px rgba(0, 0, 0, 0.45),
+      0 4px 12px -2px rgba(0, 0, 0, 0.25);
+  }
+}
+
+/* =========================================================================
+   Simple Left Click 1-Second Glow Opacity Surge Animation
+   Distinct, luminous, theme-adaptive glow pulse that enters smoothly,
+   peaks at ~280ms, and gracefully fades out across the full 1.0 second duration.
+   Applied strictly to tiles (.liquid-glass-tile) - disabled on basic liquid glass.
+   ========================================================================= */
+.liquid-glass-tile.card-glow-surge {
+  animation: cardGlowSurgeContainer 1s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+
+.dark .liquid-glass-tile.card-glow-surge {
+  animation: cardGlowSurgeContainerDark 1s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+
+.liquid-glass-tile.card-glow-surge::before {
+  animation: cardGlowSurgeBefore 1s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+
+.dark .liquid-glass-tile.card-glow-surge::before {
+  animation: cardGlowSurgeBeforeDark 1s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+
+.liquid-glass-tile.card-glow-surge::after {
+  animation: cardGlowSurgeAfter 1s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+
+.dark .liquid-glass-tile.card-glow-surge::after {
+  animation: cardGlowSurgeAfterDark 1s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+
+@keyframes cardGlowSurgeContainer {
+  0% {
+    box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.05);
+  }
+  28% {
+    box-shadow: 
+      0 0 24px 3px color-mix(in srgb, var(--palette-primary) 55%, transparent),
+      0 0 50px 6px color-mix(in srgb, var(--palette-accent) 30%, transparent),
+      0 8px 24px -2px rgba(0, 0, 0, 0.12);
+    border-color: color-mix(in srgb, var(--palette-primary) 75%, white);
+  }
+  100% {
+    box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.05);
+  }
+}
+
+@keyframes cardGlowSurgeContainerDark {
+  0% {
+    box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.25);
+  }
+  28% {
+    box-shadow: 
+      0 0 28px 4px color-mix(in srgb, var(--palette-primary) 70%, transparent),
+      0 0 55px 8px color-mix(in srgb, var(--palette-accent) 40%, transparent),
+      0 8px 28px -2px rgba(0, 0, 0, 0.5);
+    border-color: color-mix(in srgb, var(--palette-primary) 85%, white);
+  }
+  100% {
+    box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.25);
+  }
+}
+
+@keyframes cardGlowSurgeBefore {
+  0% {
+    opacity: var(--tile-glow-opacity, 0.35);
+    filter: brightness(1);
+  }
+  28% {
+    opacity: 0.95;
+    filter: brightness(1.4);
+  }
+  100% {
+    opacity: var(--tile-glow-opacity, 0.35);
+    filter: brightness(1);
+  }
+}
+
+@keyframes cardGlowSurgeBeforeDark {
+  0% {
+    opacity: var(--tile-glow-opacity, 0.45);
+    filter: brightness(1);
+  }
+  28% {
+    opacity: 1;
+    filter: brightness(1.5);
+  }
+  100% {
+    opacity: var(--tile-glow-opacity, 0.45);
+    filter: brightness(1);
+  }
+}
+
+@keyframes cardGlowSurgeAfter {
+  0% {
+    opacity: var(--tile-border-glow-opacity, 0.85);
+    filter: drop-shadow(0 0 0px transparent);
+  }
+  28% {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px var(--palette-primary));
+  }
+  100% {
+    opacity: var(--tile-border-glow-opacity, 0.85);
+    filter: drop-shadow(0 0 0px transparent);
+  }
+}
+
+@keyframes cardGlowSurgeAfterDark {
+  0% {
+    opacity: var(--tile-border-glow-opacity, 0.95);
+    filter: drop-shadow(0 0 0px transparent);
+  }
+  28% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px var(--palette-primary));
+  }
+  100% {
+    opacity: var(--tile-border-glow-opacity, 0.95);
+    filter: drop-shadow(0 0 0px transparent);
+  }
+}
+
+/* Aaron Iker Glow Button (Theme Adaptive Reference Implementation) */
+.glow-button {
+  --button-background: rgba(15, 23, 42, 0.65);
+  --button-color: #fff;
+  --button-shadow: var(--palette-shadow);
+  --button-shine-left: var(--palette-primary);
+  --button-shine-right: var(--palette-accent);
+  --button-glow-start: var(--palette-primary);
+  --button-glow-end: var(--palette-accent);
+
+  appearance: none;
+  outline: none;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  position: relative;
+  line-height: 20px;
+  cursor: pointer;
+  color: var(--button-color);
+  padding: 0;
+  margin: 0;
+  background: none;
+  z-index: 1;
+  box-shadow: 0 4px 16px var(--button-shadow);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.glow-button .gradient {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  pointer-events: none;
+}
+
+.glow-button .gradient:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  transform: scale(1.05) translateY(-44px) rotate(0deg) translateZ(0);
+  padding-bottom: 100%;
+  border-radius: 50%;
+  background: linear-gradient(90deg, var(--button-shine-left), var(--button-shine-right));
+  animation: rotateShineButton linear 4s infinite;
+  opacity: 0.55;
+}
+
+.glow-button span {
+  z-index: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  box-sizing: border-box;
+  width: fit-content;
+  border-radius: inherit;
+  background-color: var(--button-background);
+  overflow: hidden;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  backdrop-filter: blur(12px);
+}
+
+.glow-button span:before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: -20px;
+  transform: translate(var(--pointer-x, -999px), var(--pointer-y, -999px)) translateZ(0);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: color-mix(in srgb, var(--button-glow-start) calc((1 - var(--pointer-ratio, 0.5)) * 100%), var(--button-glow-end));
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  filter: blur(16px);
+  pointer-events: none;
+}
+
+.glow-button:hover span:before {
+  opacity: 1;
+}
+
+.glow-button:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 20px var(--button-shadow);
+}
+
+@keyframes rotateShineButton {
+  to {
+    transform: scale(1.05) translateY(-44px) rotate(360deg) translateZ(0);
+  }
+}
+
+/* Dynamic theme-reactive Topographic Background Pattern - Scaled/Zoomed to fit each screen */
+.bg-topo {
+  background-image: 
+    radial-gradient(circle at 50% 0%, var(--palette-shadow) 0%, transparent 60%),
+    url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' viewBox='0 0 500 500' preserveAspectRatio='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 100 C 150 150 350 50 500 100 M0 200 C 100 280 400 120 500 200 M0 300 C 200 380 300 220 500 300 M0 400 C 150 450 350 350 500 400 M0 50 C 250 80 250 20 500 50 M0 150 C 180 180 320 120 500 150 M0 250 C 220 310 280 190 500 250 M0 350 C 120 420 380 280 500 350 M0 450 C 200 490 300 410 500 450' stroke='rgba(15,23,42,0.22)' fill='none' stroke-width='1.2' stroke-dasharray='5 2' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+  background-size: 100% 100%, 100% 100%;
+  background-position: center top, center center;
+  background-repeat: no-repeat, no-repeat;
+  transform: translateZ(0);
+}
+
+.dark .bg-topo {
+  background-image: 
+    radial-gradient(circle at 50% 0%, var(--palette-shadow) 0%, transparent 65%),
+    url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' viewBox='0 0 500 500' preserveAspectRatio='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 100 C 150 150 350 50 500 100 M0 200 C 100 280 400 120 500 200 M0 300 C 200 380 300 220 500 300 M0 400 C 150 450 350 350 500 400 M0 50 C 250 80 250 20 500 50 M0 150 C 180 180 320 120 500 150 M0 250 C 220 310 280 190 500 250 M0 350 C 120 420 380 280 500 350 M0 450 C 200 490 300 410 500 450' stroke='rgba(255,255,255,0.06)' fill='none' stroke-width='1.2' stroke-dasharray='5 2' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+  background-size: 100% 100%, 100% 100%;
+  background-position: center top, center center;
+  background-repeat: no-repeat, no-repeat;
+  transform: translateZ(0);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--palette-primary);
+}
+
+/* Completely hidden scrollbar utility (preserves full wheel/trackpad/touch scrolling) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Markdown chat typography */
+.markdown-body {
+  word-break: break-word;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body strong {
+  font-weight: 700;
+}
+.markdown-body h1 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin-top: 0.8rem;
+  margin-bottom: 0.4rem;
+  line-height: 1.3;
+}
+.markdown-body h2 {
+  font-size: 1.05rem;
+  font-weight: 750;
+  margin-top: 0.7rem;
+  margin-bottom: 0.35rem;
+  line-height: 1.35;
+}
+.markdown-body h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-top: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+.markdown-body ul {
+  list-style-type: disc;
+  margin-left: 1.25rem;
+  margin-top: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.markdown-body ol {
+  list-style-type: decimal;
+  margin-left: 1.25rem;
+  margin-top: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.markdown-body li {
+  margin-bottom: 0.25rem;
+}
+.markdown-body blockquote {
+  border-left: 3px solid var(--palette-primary);
+  padding-left: 0.75rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-style: italic;
+  opacity: 0.9;
+}
+.markdown-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.86em;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.375rem;
+}
+.markdown-body pre {
+  margin: 0.65rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.markdown-body pre code {
+  background: transparent !important;
+  padding: 0 !important;
+  border: none !important;
+  color: inherit !important;
+}
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.8rem;
+}
+.markdown-body th,
+.markdown-body td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid;
+  text-align: left;
+}
+.markdown-body th {
+  font-weight: 700;
+}
+.markdown-body a {
+  color: var(--palette-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Markdown dark theme adjustments */
+.markdown-dark {
+  color: #f1f5f9;
+}
+.markdown-dark strong {
+  color: #ffffff;
+}
+.markdown-dark h1,
+.markdown-dark h2,
+.markdown-dark h3 {
+  color: #f8fafc;
+}
+.markdown-dark code {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fde68a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.markdown-dark pre {
+  background: #060b13;
+  color: #fde68a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.markdown-dark th,
+.markdown-dark td {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.markdown-dark th {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f8fafc;
+}
+
+/* Markdown light theme adjustments */
+.markdown-light {
+  color: #0f172a;
+}
+.markdown-light strong {
+  color: #020617;
+}
+.markdown-light h1,
+.markdown-light h2,
+.markdown-light h3 {
+  color: #0f172a;
+}
+.markdown-light code {
+  background: rgba(0, 0, 0, 0.06);
+  color: #92400e;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+.markdown-light pre {
+  background: #0f172a;
+  color: #fde68a;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+.markdown-light th,
+.markdown-light td {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+.markdown-light th {
+  background: rgba(0, 0, 0, 0.04);
+  color: #0f172a;
+}
+
+/* User message bubble - Crystal-clear pure white readability across all palettes */
+.user-bubble,
+.user-bubble *,
+.user-bubble p,
+.user-bubble span,
+.user-bubble div,
+.user-bubble li,
+.user-bubble strong,
+.user-bubble em,
+.dark .user-bubble,
+.dark .user-bubble *,
+.dark .user-bubble p,
+.dark .user-bubble span,
+.dark .user-bubble div {
+  color: #ffffff !important;
+}
+.user-bubble code {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
+}
+.dark .user-bubble code {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+}
+.user-bubble pre {
+  background: rgba(0, 0, 0, 0.4) !important;
+  color: #ffffff !important;
+}
+.dark .user-bubble pre {
+  background: rgba(0, 0, 0, 0.5) !important;
+  color: #ffffff !important;
+}
+
+/* Fullscreen Frost Sweep — window change transition overlay */
+/* Only opacity is animated (compositor-only). backdrop-filter is static so GPU never re-rasterizes mid-flight. */
+@keyframes fullscreenFrostSweep {
+  0%   { opacity: 0; }
+  25%  { opacity: 1; }
+  65%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Tab content reveal — fades in after the frost peak so content emerges as the blur lifts */
+@keyframes tabContentReveal {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.tab-content-reveal {
+  animation: tabContentReveal 420ms 180ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.fullscreen-frost-sweep {
+  backdrop-filter: blur(28px) saturate(1.8) brightness(1.08);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.08);
+  background: rgba(125, 125, 125, 0.05);
+  animation: fullscreenFrostSweep 640ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: opacity;
+  transform: translateZ(0);
+  pointer-events: none;
+}
+
+
+
+/* =========================================================================
+   Palette Morph Top-to-Bottom Glowing Blur Sweep Animation
+   Triggered on Color Theme Palette Change in Settings
+   ========================================================================= */
+
+@keyframes paletteMorphDown {
+  0% {
+    transform: translate3d(0, -120px, 0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(0, 102vh, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes paletteCurtainReveal {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.palette-morph-container {
+  will-change: transform;
+}
+
+.palette-morph-curtain {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(24px) saturate(1.7) brightness(1.06);
+  -webkit-backdrop-filter: blur(24px) saturate(1.7) brightness(1.06);
+  background: rgba(125, 125, 125, 0.06);
+  animation: paletteCurtainReveal 860ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+.palette-morph-wave {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 220px;
+  animation: paletteMorphDown 820ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+/* Center Liquid Glass Frosted Blur Core */
+.palette-morph-blur-core {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(28px) saturate(2.2) brightness(1.15);
+  -webkit-backdrop-filter: blur(28px) saturate(2.2) brightness(1.15);
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--morph-primary, #f59e0b) 20%, transparent) 38%,
+    color-mix(in srgb, var(--morph-accent, #dc2626) 28%, transparent) 50%,
+    color-mix(in srgb, var(--morph-primary, #f59e0b) 20%, transparent) 62%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%);
+}
+
+/* Intense Laser Beam Crest with Chromatic Glow */
+.palette-morph-crest {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 3px;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--morph-primary, #f59e0b) 70%, transparent) 15%,
+    #ffffff 45%,
+    #ffffff 55%,
+    color-mix(in srgb, var(--morph-accent, #dc2626) 70%, transparent) 85%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 16px 3px var(--morph-primary, #f59e0b),
+    0 0 35px 8px var(--morph-accent, #dc2626),
+    0 0 70px 18px color-mix(in srgb, var(--morph-primary, #f59e0b) 80%, transparent),
+    0 0 120px 32px color-mix(in srgb, var(--morph-accent, #dc2626) 45%, transparent);
+}
+
+/* Upper Ambient Diffusion Halo */
+.palette-morph-halo-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--morph-primary, #f59e0b) 25%, transparent),
+    transparent 100%
+  );
+  filter: blur(12px);
+}
+
+/* Lower Forward Flare */
+.palette-morph-halo-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--morph-accent, #dc2626) 25%, transparent),
+    transparent 100%
+  );
+  filter: blur(12px);
+}
+
+/* Slick Hyprland Sliding Physics & Workspace Transitions with Hardware-Accelerated Transforms */
+.hyprland-slide {
+  transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Frosted glass edge diffuser */
+.frost-edge {
+  box-shadow: -35px 0 90px 10px rgba(0, 0, 0, 0.4), -2px 0 2px 0 rgba(255, 255, 255, 0.45);
+}
+.dark .frost-edge {
+  box-shadow: -50px 0 110px 15px rgba(0, 0, 0, 0.85), -2px 0 2px 0 rgba(255, 255, 255, 0.25);
+}
+.invisible.frost-edge,
+[aria-hidden="true"].frost-edge,
+.opacity-0.frost-edge {
+  box-shadow: none !important;
+}
+
+/* Dominant OneNote Entrance Frost Sweep — Intense frosted glass diffusion when sliding into OneNote from Google Notebook */
+@keyframes onenoteEnterFrostSweep {
+  0% {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.99);
+  }
+}
+
+.onenote-enter-frost-sweep {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+  backdrop-filter: blur(48px) saturate(2) brightness(1.06);
+  -webkit-backdrop-filter: blur(48px) saturate(2) brightness(1.06);
+  background: radial-gradient(
+    circle at 85% 50%,
+    rgba(245, 158, 11, 0.14) 0%,
+    rgba(15, 23, 42, 0.38) 45%,
+    rgba(2, 6, 23, 0.6) 100%
+  );
+  animation: onenoteEnterFrostSweep 660ms cubic-bezier(0.2, 0.85, 0.25, 1) forwards;
+  will-change: opacity, transform;
+  transform: translateZ(0);
+}
+
+.dark .onenote-enter-frost-sweep {
+  background: radial-gradient(
+    circle at 85% 50%,
+    color-mix(in srgb, var(--palette-primary, #f59e0b) 18%, transparent) 0%,
+    rgba(10, 16, 28, 0.5) 45%,
+    rgba(2, 6, 23, 0.75) 100%
+  );
+}
+
+.dark .gemini-enter-frost-sweep {
+  background: radial-gradient(
+    circle at 15% 50%,
+    color-mix(in srgb, var(--palette-primary, #38bdf8) 20%, transparent) 0%,
+    rgba(99, 102, 241, 0.15) 30%,
+    rgba(10, 16, 28, 0.5) 55%,
+    rgba(2, 6, 23, 0.75) 100%
+  );
+}
+
+/* Windows 11 Fluent & Apple macOS Studio High-Readability Translucent Acrylic Blur */
+.acrylic-glass-panel {
+  position: relative;
+  isolation: isolate;
+  background-color: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(28px) saturate(var(--glass-saturation, 1.25)) contrast(102%);
+  backdrop-filter: blur(28px) saturate(var(--glass-saturation, 1.25)) contrast(102%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.45),
+    inset 0 0 10px 4px rgba(255, 255, 255, 0.20),
+    inset 0 4px 16px rgba(17, 17, 26, 0.05),
+    inset 0 8px 24px rgba(17, 17, 26, 0.05),
+    0 24px 60px -12px rgba(0, 0, 0, 0.20),
+    0 8px 20px -4px rgba(0, 0, 0, 0.08);
+}
+
+.dark .acrylic-glass-panel {
+  position: relative;
+  isolation: isolate;
+  background-color: rgba(10, 16, 28, 0.68);
+  background-image: 
+    radial-gradient(ellipse at 20% 0%, rgba(255, 255, 255, 0.12) 0%, transparent 65%),
+    radial-gradient(ellipse at 85% 100%, color-mix(in srgb, var(--palette-primary, #38bdf8) 12%, transparent) 0%, transparent 65%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(15, 23, 42, 0.52) 35%, rgba(8, 14, 26, 0.72) 100%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='frostNoise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23frostNoise)' opacity='0.035'/%3E%3C/svg%3E");
+  -webkit-backdrop-filter: blur(28px) saturate(var(--glass-saturation, 1.35)) contrast(108%);
+  backdrop-filter: blur(28px) saturate(var(--glass-saturation, 1.35)) contrast(108%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.35),
+    inset 0 0 10px 4px rgba(255, 255, 255, 0.15),
+    inset 0 4px 16px rgba(17, 17, 26, 0.25),
+    inset 0 8px 24px rgba(17, 17, 26, 0.25),
+    inset 0 6px 56px rgba(17, 17, 26, 0.25),
+    0 28px 68px -12px rgba(0, 0, 0, 0.72),
+    0 8px 24px -4px rgba(0, 0, 0, 0.50);
+}
+
+.acrylic-glass-panel-minimized {
+  position: relative;
+  isolation: isolate;
+  background-color: rgba(255, 255, 255, 0.75);
+  -webkit-backdrop-filter: blur(24px) saturate(var(--glass-saturation, 1.25));
+  backdrop-filter: blur(24px) saturate(var(--glass-saturation, 1.25));
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.45),
+    inset 0 0 10px 4px rgba(255, 255, 255, 0.20),
+    inset 0 4px 16px rgba(17, 17, 26, 0.05),
+    0 16px 36px -8px rgba(0, 0, 0, 0.16),
+    0 2px 8px -1px rgba(0, 0, 0, 0.06);
+}
+
+.dark .acrylic-glass-panel-minimized {
+  position: relative;
+  isolation: isolate;
+  background-color: rgba(10, 16, 28, 0.72);
+  background-image: 
+    radial-gradient(ellipse at 20% 0%, rgba(255, 255, 255, 0.14) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 100%, color-mix(in srgb, var(--palette-primary, #38bdf8) 14%, transparent) 0%, transparent 60%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(15, 23, 42, 0.58) 40%, rgba(8, 14, 26, 0.76) 100%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='frostNoiseMin'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23frostNoiseMin)' opacity='0.04'/%3E%3C/svg%3E");
+  -webkit-backdrop-filter: blur(26px) saturate(var(--glass-saturation, 1.35)) contrast(108%);
+  backdrop-filter: blur(26px) saturate(var(--glass-saturation, 1.35)) contrast(108%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.38),
+    inset 0 0 10px 4px rgba(255, 255, 255, 0.16),
+    inset 0 4px 16px rgba(17, 17, 26, 0.25),
+    inset 0 8px 24px rgba(17, 17, 26, 0.25),
+    0 20px 48px -8px rgba(0, 0, 0, 0.65),
+    0 4px 16px -2px rgba(0, 0, 0, 0.45);
+}
+
+/* "What will you build today?" Creation Studio Frost Filter (65% Opacity, Acrylic Frost Glass) */
+.creation-frost-panel {
+  position: relative;
+  isolation: isolate;
+  transform: translateZ(0);
+  will-change: transform, opacity;
+  background-color: rgba(255, 255, 255, 0.65) !important;
+  background-image: 
+    radial-gradient(ellipse at 15% 0%, rgba(255, 255, 255, 0.45) 0%, transparent 60%),
+    radial-gradient(ellipse at 85% 100%, color-mix(in srgb, var(--palette-primary, #38bdf8) 12%, transparent) 0%, transparent 60%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='createNoise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23createNoise)' opacity='0.025'/%3E%3C/svg%3E");
+  -webkit-backdrop-filter: blur(30px) saturate(var(--glass-saturation, 1.25)) contrast(104%);
+  backdrop-filter: blur(30px) saturate(var(--glass-saturation, 1.25)) contrast(104%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.65),
+    inset 0 0 20px 2px rgba(255, 255, 255, 0.20),
+    0 24px 64px -12px rgba(0, 0, 0, 0.22),
+    0 8px 24px -4px rgba(0, 0, 0, 0.10);
+}
+
+.dark .creation-frost-panel {
+  background-color: rgba(10, 16, 28, 0.65) !important;
+  background-image: 
+    radial-gradient(ellipse at 15% 0%, rgba(255, 255, 255, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 85% 100%, color-mix(in srgb, var(--palette-primary, #38bdf8) 14%, transparent) 0%, transparent 60%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(15, 23, 42, 0.50) 40%, rgba(8, 14, 26, 0.65) 100%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='createNoiseDark'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23createNoiseDark)' opacity='0.03'/%3E%3C/svg%3E");
+  -webkit-backdrop-filter: blur(30px) saturate(var(--glass-saturation, 1.35)) contrast(108%);
+  backdrop-filter: blur(30px) saturate(var(--glass-saturation, 1.35)) contrast(108%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 0 24px 2px rgba(255, 255, 255, 0.06),
+    0 28px 72px -12px rgba(0, 0, 0, 0.70),
+    0 10px 30px -6px rgba(0, 0, 0, 0.45);
+}
+
+/* User Liquid Glass Chromatic Aberration & Refraction Component */
+.liquidglass {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: hsl(0 0% 0% / var(--glass-frost, 0.06));
+  -webkit-backdrop-filter: var(--filter-id, url(#glass-filter-_r_b_)) saturate(var(--glass-saturation, 1.25));
+  backdrop-filter: var(--filter-id, url(#glass-filter-_r_b_)) saturate(var(--glass-saturation, 1.25));
+  box-shadow: 
+    inset 0 0 2px 1px #ffffff59, 
+    inset 0 0 10px 4px #ffffff26, 
+    inset 0 4px 16px #11111a0d, 
+    inset 0 8px 24px #11111a0d, 
+    inset 0 6px 56px #11111a0d;
+  pointer-events: none;
+  z-index: 0;
+  transition: border-radius 300ms ease;
+}
+
+.dark .liquidglass {
+  background: hsl(220 30% 6% / var(--glass-frost, 0.15));
+  box-shadow: 
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.32), 
+    inset 0 0 10px 4px rgba(255, 255, 255, 0.12), 
+    inset 0 4px 16px rgba(0, 0, 0, 0.35), 
+    inset 0 8px 24px rgba(0, 0, 0, 0.35), 
+    inset 0 6px 56px rgba(0, 0, 0, 0.35);
+}
+
+.glass-surface__filter {
+  pointer-events: none;
+  opacity: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+
+/* Smooth Dynamic Color Adapter Slider — Hardware-accelerated, zero-stutter thumb */
+.smooth-adapter-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
+  touch-action: none;
+  user-select: none;
+  height: 28px;
+  background: transparent;
+  cursor: grab;
+  transition: none !important;
+}
+
+.smooth-adapter-slider:active {
+  cursor: grabbing;
+}
+
+.smooth-adapter-slider::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 9999px;
+  background: var(--slider-track-bg, linear-gradient(to right, #ffffff 0%, var(--palette-primary) 50%, var(--palette-accent) 100%));
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: none !important;
+}
+
+.smooth-adapter-slider::-moz-range-track {
+  height: 10px;
+  border-radius: 9999px;
+  background: var(--slider-track-bg, linear-gradient(to right, #ffffff 0%, var(--palette-primary) 50%, var(--palette-accent) 100%));
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: none !important;
+}
+
+.smooth-adapter-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2.5px solid rgba(15, 23, 42, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  margin-top: -6px;
+  transition: transform 0.08s ease-out, box-shadow 0.08s ease-out !important;
+  transform: translateZ(0);
+}
+
+.smooth-adapter-slider::-webkit-slider-thumb:active,
+.smooth-adapter-slider:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.18) translateZ(0);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.45), 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+.smooth-adapter-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2.5px solid rgba(15, 23, 42, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  transition: transform 0.08s ease-out, box-shadow 0.08s ease-out !important;
+  transform: translateZ(0);
+}
+
+.smooth-adapter-slider::-moz-range-thumb:active,
+.smooth-adapter-slider:active::-moz-range-thumb {
+  cursor: grabbing;
+  transform: scale(1.18) translateZ(0);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.45), 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+/* Suppress all card transition delays during slider interactions */
+body.cursor-tuning-active,
+body.cursor-tuning-active * {
+  user-select: none !important;
+}
+
+body.cursor-tuning-active .liquid-glass::before,
+body.cursor-tuning-active .liquid-glass-tile::before,
+body.cursor-tuning-active .liquid-glass::after,
+body.cursor-tuning-active .liquid-glass-tile::after {
+  transition: none !important;
+}
+
+/* Studio Freight Lenis Smooth Scrolling (Frictionless Momentum Inertia) */
+html.lenis {
+  scroll-behavior: auto !important;
+}
+
+html.lenis,
+html.lenis body {
+  height: auto;
+  min-height: 100%;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: clip;
+}
+
+html:not(.lenis) {
+  scroll-behavior: auto;
+}
+
+/* Off-screen card rendering optimization for 120 FPS momentum scrolling */
+.smooth-scroll-contain {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 400px;
+}
+
+/* Full-window Glow Frost Sweep for OneNote Section Transitions */
+@keyframes onenoteGlowFrostSweep {
+  0%   { opacity: 0; }
+  32%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.onenote-glow-frost-sweep {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  background: radial-gradient(
+    ellipse 85% 55% at 50% 0%,
+    color-mix(in srgb, var(--section-glow-color, var(--palette-primary)) 30%, transparent) 0%,
+    color-mix(in srgb, var(--section-glow-color, var(--palette-primary)) 12%, transparent) 45%,
+    transparent 80%
+  );
+  animation: onenoteGlowFrostSweep 540ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  will-change: opacity;
+  transform: translateZ(0);
+  pointer-events: none;
+}
+
+/* Full-window Frost Blur Sweep for OneNote Page Transitions */
+@keyframes onenotePageBlurSweep {
+  0%   { opacity: 0; }
+  35%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.onenote-page-blur-sweep {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  background: rgba(255, 255, 255, 0.03);
+  animation: onenotePageBlurSweep 420ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  will-change: opacity;
+  transform: translateZ(0);
+  pointer-events: none;
+}
+
+/* OneNote Section Content Reveal — content emerges as the section glow frost blur lifts, matching window change physics */
+@keyframes onenoteSectionContentReveal {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.onenote-section-content-reveal {
+  animation: onenoteSectionContentReveal 380ms 160ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  will-change: opacity;
+  transform: translateZ(0);
+}
+
+/* OneNote Page Content Reveal — content emerges as the page blur lifts, matching window change physics */
+@keyframes onenotePageContentReveal {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.onenote-page-content-reveal {
+  animation: onenotePageContentReveal 300ms 130ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  will-change: opacity;
+  transform: translateZ(0);
+}
+
+/* =========================================================================
+   OneNote Workspace Canvas Glow Overrides
+   Disables glowing animations specifically in the main bottom right workspace editor canvas,
+   while preserving full interactable liquid glass animations on the page tiles,
+   section tiles, and insert block tiles.
+   ========================================================================= */
+.onenote-editor-canvas,
+.onenote-editor-canvas .liquid-glass,
+.onenote-editor-canvas .liquid-glass-tile,
+.gemini-chat-canvas,
+.gemini-chat-canvas .liquid-glass,
+.gemini-chat-canvas .liquid-glass-tile {
+  --tile-glow-opacity: 0 !important;
+  --tile-border-glow-opacity: 0 !important;
+}
+
+.onenote-editor-canvas::before,
+.onenote-editor-canvas::after,
+.onenote-editor-canvas:hover::before,
+.onenote-editor-canvas:hover::after,
+.onenote-editor-canvas .liquid-glass::before,
+.onenote-editor-canvas .liquid-glass::after,
+.onenote-editor-canvas .liquid-glass:hover::before,
+.onenote-editor-canvas .liquid-glass:hover::after,
+.onenote-editor-canvas .liquid-glass-tile::before,
+.onenote-editor-canvas .liquid-glass-tile::after,
+.onenote-editor-canvas .liquid-glass-tile:hover::before,
+.onenote-editor-canvas .liquid-glass-tile:hover::after,
+.gemini-chat-canvas::before,
+.gemini-chat-canvas::after,
+.gemini-chat-canvas:hover::before,
+.gemini-chat-canvas:hover::after,
+.gemini-chat-canvas .liquid-glass::before,
+.gemini-chat-canvas .liquid-glass::after,
+.gemini-chat-canvas .liquid-glass:hover::before,
+.gemini-chat-canvas .liquid-glass:hover::after,
+.gemini-chat-canvas .liquid-glass-tile::before,
+.gemini-chat-canvas .liquid-glass-tile::after,
+.gemini-chat-canvas .liquid-glass-tile:hover::before,
+.gemini-chat-canvas .liquid-glass-tile:hover::after {
+  display: none !important;
+  opacity: 0 !important;
+  background: none !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Interactable Liquid Glass Tiles in OneNote & Gemini Workspace */
+.onenote-page-tile,
+.onenote-section-tile,
+.gemini-chat-tile,
+.gemini-button-tile {
+  --tile-glow-opacity: 0.45 !important;
+  --tile-border-glow-opacity: 0.9 !important;
+  cursor: pointer;
+  transform-style: preserve-3d !important;
+}
+
+.dark .onenote-page-tile,
+.dark .onenote-section-tile,
+.dark .gemini-chat-tile,
+.dark .gemini-button-tile {
+  --tile-glow-opacity: 0.55 !important;
+  --tile-border-glow-opacity: 0.95 !important;
+}
+
+/* Floating Gemini Assistant Tile - Liquid Glass Spotlight & Edge Glow */
+.floating-gemini-tile {
+  --tile-glow-opacity: 0.50 !important;
+  --tile-border-glow-opacity: 0.92 !important;
+  position: relative;
+  isolation: isolate;
+  will-change: transform, box-shadow;
+}
+
+.floating-gemini-tile::after {
+  inset: 0 !important;
+}
+
+.dark .floating-gemini-tile {
+  --tile-glow-opacity: 0.60 !important;
+  --tile-border-glow-opacity: 0.98 !important;
+}
+
+.floating-gemini-tile:hover {
+  box-shadow: 
+    0 12px 36px -6px rgba(0, 0, 0, 0.35),
+    0 0 24px -2px color-mix(in srgb, var(--palette-primary, #f59e0b) 30%, transparent) !important;
+}
+
+/* Gemini Workspace Floating Window Bubble - Liquid Glass & Frost Effects */
+.gemini-workspace-bubble {
+  position: relative;
+  isolation: isolate;
+  --tile-glow-opacity: 0.50 !important;
+  --tile-border-glow-opacity: 0.92 !important;
+  transform: translateZ(0);
+}
+
+.gemini-workspace-bubble::before {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  pointer-events: none;
+}
+
+.gemini-workspace-bubble::after {
+  inset: 0 !important;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  pointer-events: none;
+}
+
+.dark .gemini-workspace-bubble {
+  --tile-glow-opacity: 0.60 !important;
+  --tile-border-glow-opacity: 0.98 !important;
+}
+
+.gemini-workspace-bubble:hover {
+  box-shadow: 
+    0 24px 64px -16px rgba(0, 0, 0, 0.65),
+    0 0 36px -4px color-mix(in srgb, var(--palette-primary, #f59e0b) 25%, transparent) !important;
+}
+
+/* Isolate and accelerate the liquidglass layer inside workspace bubble to prevent CPU SVG filter re-renders */
+.gemini-workspace-bubble .liquidglass {
+  -webkit-backdrop-filter: blur(24px) saturate(1.25) !important;
+  backdrop-filter: blur(24px) saturate(1.25) !important;
+  contain: strict;
+  transform: translateZ(0);
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* Gemini Workspace Chat Stage Glow — Strictly bounded to <main>, ends precisely at sidebar border margin */
+.gemini-stage-glow {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.gemini-stage-glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  transform: translateZ(0);
+  will-change: opacity;
+  background: radial-gradient(
+    650px circle at var(--pointer-x, -999px) var(--pointer-y, -999px),
+    color-mix(in srgb, var(--palette-primary, #f59e0b) 16%, transparent) 0%,
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.gemini-stage-glow:hover::before {
+  opacity: 1;
+}
+
+.dark .gemini-stage-glow::before {
+  background: radial-gradient(
+    650px circle at var(--pointer-x, -999px) var(--pointer-y, -999px),
+    color-mix(in srgb, var(--palette-primary, #f59e0b) 22%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+/* Conversation list liquid glass tiles in both minimized and maximized views */
+.gemini-conv-tile {
+  --tile-glow-opacity: 0.55 !important;
+  --tile-border-glow-opacity: 0.95 !important;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, border-color 0.15s ease !important;
+  will-change: transform, box-shadow;
+}
+
+.gemini-conv-tile:hover {
+  transform: translateY(-1px) scale(1.008);
+  box-shadow: 
+    0 8px 24px -4px rgba(0, 0, 0, 0.35),
+    0 0 16px -2px color-mix(in srgb, var(--palette-primary, #f59e0b) 28%, transparent) !important;
+}
+
+.gemini-conv-tile:active {
+  transform: translateY(0px) scale(0.99);
+}
+
+.gemini-conv-tile-minimized {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 2.5rem !important; /* 40px */
+  height: 2.5rem !important;
+  padding: 0 !important;
+  border-radius: 0.75rem !important; /* 12px */
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.gemini-conv-tile-minimized:hover {
+  transform: scale(1.08) !important;
+}
+
+.dark .gemini-conv-tile {
+  --tile-glow-opacity: 0.65 !important;
+  --tile-border-glow-opacity: 0.98 !important;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.dark .gemini-conv-tile:hover {
+  background: rgba(30, 41, 59, 0.65);
+}
+
+/* Reference-inspired illuminated prompt dock for Gemini Workspace - dynamically synced to active palette */
+.gemini-prompt-dock {
+  border: 1.5px solid color-mix(in srgb, var(--palette-primary, #f59e0b) 65%, transparent) !important;
+  box-shadow: 
+    0 0 16px -2px color-mix(in srgb, var(--palette-primary, #f59e0b) 25%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--palette-primary, #f59e0b) 8%, transparent) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.gemini-prompt-dock:focus-within {
+  border-color: color-mix(in srgb, var(--palette-primary, #f59e0b) 95%, white 10%) !important;
+  box-shadow: 
+    0 0 24px 1px color-mix(in srgb, var(--palette-primary, #f59e0b) 40%, transparent),
+    inset 0 0 16px color-mix(in srgb, var(--palette-primary, #f59e0b) 12%, transparent) !important;
+}
+
+
+
+
+
+
+

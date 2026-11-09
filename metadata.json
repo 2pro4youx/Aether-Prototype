@@ -1,0 +1,6 @@
+{
+  "name": "AetherLearn - Red & Gold Neural Studio",
+  "description": "An advanced learning and research suite featuring interactive wavy polygon physics, Google NotebookLM multi-source grounding, OneNote rich block notes, topographic dashboard, and Gemini high thinking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
