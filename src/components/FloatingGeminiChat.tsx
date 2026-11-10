@@ -8,6 +8,8 @@ import {
   Bot,
   ChevronDown,
   Check,
+  Copy,
+  Trash2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -425,17 +427,38 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
                             darkMode={darkMode}
                             isUser={m.role === 'user'}
                           />
-                          <span
-                            className={`text-[9px] block text-right mt-1.5 font-mono ${
-                              m.role === 'user'
-                                ? 'text-slate-950/75'
-                                : darkMode
-                                ? 'text-slate-400'
-                                : 'text-slate-500'
-                            }`}
-                          >
-                            {m.timestamp}
-                          </span>
+                          <div className="flex items-center justify-between gap-2 mt-1.5 pt-1 border-t border-white/10 text-[9px] font-mono">
+                            <span
+                              className={
+                                m.role === 'user'
+                                  ? 'text-slate-950/75'
+                                  : darkMode
+                                  ? 'text-slate-400'
+                                  : 'text-slate-500'
+                              }
+                            >
+                              {m.timestamp}
+                            </span>
+
+                            <div className="flex items-center gap-1.5 opacity-80 hover:opacity-100">
+                              <button
+                                type="button"
+                                onClick={() => navigator.clipboard.writeText(m.text)}
+                                className="p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white"
+                                title="Copy text"
+                              >
+                                <Copy className="w-2.5 h-2.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setMessages((prev) => prev.filter((item) => item.id !== m.id))}
+                                className="p-0.5 rounded hover:bg-rose-500/10 text-slate-400 hover:text-rose-400"
+                                title="Delete message"
+                              >
+                                <Trash2 className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ))}

@@ -6,13 +6,11 @@ import {
   X,
   BookOpen,
   FileText,
-  Sparkles,
   Bot,
-  Calendar,
   Folder,
   ArrowRight,
   Pencil,
-  Trash2,
+  Sparkles,
 } from 'lucide-react';
 import { Workspace, ColorPalette } from '../types';
 
@@ -22,8 +20,9 @@ interface WorkspaceSelectorBarProps {
   workspaces: Workspace[];
   activeWorkspaceId: string;
   onSelectWorkspace: (workspaceId: string) => void;
-  onCreateWorkspace: () => void;
+  onCreateWorkspace: (name?: string, description?: string) => void;
   onUpdateWorkspace?: (workspaceId: string, updates: Partial<Workspace>) => void;
+  onCloseWorkspace?: (workspaceId: string) => void;
   onDeleteWorkspace?: (workspaceId: string) => void;
   activePalette: ColorPalette;
   darkMode: boolean;
@@ -37,6 +36,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
   onSelectWorkspace,
   onCreateWorkspace,
   onUpdateWorkspace,
+  onCloseWorkspace,
   onDeleteWorkspace,
   activePalette,
   darkMode,
@@ -46,7 +46,16 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
 
-  const hoveredWorkspace = workspaces.find((w) => w.id === hoveredWorkspaceId);
+  // Modal to prompt name & description before creating new workspace
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newWsName, setNewWsName] = useState('');
+  const [newWsDesc, setNewWsDesc] = useState('');
+
+  const openWorkspaces = React.useMemo(() => {
+    return workspaces.filter((w) => !w.isClosed);
+  }, [workspaces]);
+
+  const hoveredWorkspace = openWorkspaces.find((w) => w.id === hoveredWorkspaceId) || workspaces.find((w) => w.id === hoveredWorkspaceId);
 
   const handleStartEdit = (ws: Workspace) => {
     setEditingWs(ws);
@@ -65,6 +74,30 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
     setEditingWs(null);
   };
 
+  const handleOpenCreateModal = () => {
+    const nextCount = workspaces.length + 1;
+    setNewWsName(`Assorted Workspace ${nextCount}`);
+    setNewWsDesc('Synchronized research workspace with exclusive NotebookLM sources, OneNote canvas, and Gemini AI.');
+    setShowCreateModal(true);
+  };
+
+  const handleConfirmCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWsName.trim()) return;
+    onCreateWorkspace(newWsName.trim(), newWsDesc.trim());
+    setShowCreateModal(false);
+    onClose();
+  };
+
+  const handleCloseCard = (e: React.MouseEvent, wsId: string) => {
+    e.stopPropagation();
+    if (onCloseWorkspace) {
+      onCloseWorkspace(wsId);
+    } else if (onDeleteWorkspace) {
+      onDeleteWorkspace(wsId);
+    }
+  };
+
   return (
     <div
       className={`fixed inset-0 z-50 pointer-events-none transition-all duration-300 ${
@@ -74,22 +107,27 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
       {/* Background Dim Backdrop */}
       <div
         onClick={onClose}
-        className={`fixed inset-0 bg-slate-950/60 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 bg-slate-950/65 backdrop-blur-sm transition-opacity duration-300 ${
           isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
       />
 
-      {/* Sliding Workspace Selector Top Bar (Slides Down & Up smoothly, no pop up) */}
+      {/* Sliding Workspace Selector Top Bar — Frosted Glass Acrylic matching Neural Assistant */}
       <div
-        className={`relative z-10 w-full transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] transform border-b shadow-2xl ${
+        className={`relative z-10 w-full transition-all duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] transform border-b shadow-2xl ${
           isOpen
             ? 'translate-y-0 opacity-100 pointer-events-auto'
             : '-translate-y-full opacity-0 pointer-events-none'
         } ${
           darkMode
-            ? 'bg-slate-950/95 border-white/10 text-slate-100 backdrop-blur-2xl'
-            : 'bg-white/95 border-slate-200 text-slate-900 backdrop-blur-2xl'
+            ? 'acrylic-glass-panel bg-slate-950/80 border-white/15 text-slate-100 backdrop-blur-2xl'
+            : 'acrylic-glass-panel bg-white/85 border-slate-300 text-slate-900 backdrop-blur-2xl shadow-slate-300/60'
         }`}
+        style={{
+          boxShadow: darkMode
+            ? `0 20px 50px -10px rgba(0,0,0,0.8), 0 0 24px -4px ${activePalette.primary}20`
+            : '0 20px 50px -10px rgba(0,0,0,0.15)',
+        }}
       >
         <div className="max-w-[1720px] mx-auto px-4 sm:px-8 py-4 space-y-4">
           {/* Bar Header */}
@@ -126,7 +164,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
 
             <div className="flex items-center gap-2">
               <button
-                onClick={onCreateWorkspace}
+                onClick={handleOpenCreateModal}
                 style={{
                   backgroundColor: `${activePalette.primary}20`,
                   borderColor: `${activePalette.primary}50`,
@@ -154,7 +192,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
 
           {/* Workspace Cards Carousel / Grid */}
           <div className="flex items-stretch gap-4 overflow-x-auto pb-2 no-scrollbar">
-            {workspaces.map((ws) => {
+            {openWorkspaces.map((ws) => {
               const isActive = ws.id === activeWorkspaceId;
               const isHovered = ws.id === hoveredWorkspaceId;
 
@@ -171,10 +209,10 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                     isActive
                       ? {
                           borderColor: activePalette.primary,
-                          boxShadow: `0 0 20px -3px ${activePalette.primary}30`,
+                          boxShadow: `0 0 20px -3px ${activePalette.primary}35, inset 0 1px 1px rgba(255, 255, 255, 0.15)`,
                         }
                       : isHovered
-                      ? { borderColor: `${activePalette.primary}60` }
+                      ? { borderColor: `${activePalette.primary}70` }
                       : undefined
                   }
                   className={`w-72 sm:w-80 shrink-0 rounded-2xl p-4 border transition-all duration-200 cursor-pointer flex flex-col justify-between group relative overflow-hidden ${
@@ -183,8 +221,8 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                         ? 'bg-slate-900/90 shadow-xl'
                         : 'bg-white shadow-lg'
                       : darkMode
-                      ? 'bg-slate-900/40 hover:bg-slate-900/70 border-white/10'
-                      : 'bg-slate-50/80 hover:bg-white border-slate-200'
+                      ? 'bg-slate-900/50 hover:bg-slate-900/80 border-white/10'
+                      : 'bg-slate-50/80 hover:bg-white border-slate-200 shadow-xs'
                   }`}
                 >
                   {/* Subtle top indicator bar */}
@@ -201,10 +239,10 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
                         <Folder className="w-3 h-3" />
-                        <span className="truncate max-w-[110px]">{ws.folder || 'Untitled Workspaces'}</span>
+                        <span className="truncate max-w-[110px]">{ws.folder || 'Assorted Workspaces'}</span>
                       </div>
 
-                      {/* Actions: Edit pencil, Close/Delete, and Active Badge */}
+                      {/* Actions: Edit pencil, Close tab, and Active Badge */}
                       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
@@ -217,9 +255,9 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
 
                         <button
                           type="button"
-                          onClick={() => onDeleteWorkspace?.(ws.id)}
+                          onClick={(e) => handleCloseCard(e, ws.id)}
                           className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 transition"
-                          title="Close/delete workspace"
+                          title="Close workspace tab (saved in My Library)"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -292,12 +330,9 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
               );
             })}
 
-            {workspaces.length === 0 && (
+            {openWorkspaces.length === 0 && (
               <div
-                onClick={() => {
-                  onCreateWorkspace();
-                  onClose();
-                }}
+                onClick={handleOpenCreateModal}
                 className={`w-full py-8 px-6 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center text-center cursor-pointer transition gap-2.5 ${
                   darkMode
                     ? 'border-white/15 hover:border-white/30 bg-white/5'
@@ -311,9 +346,11 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                   <Plus className="w-5 h-5 stroke-[2.5]" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold">No workspaces created yet</p>
+                  <p className="text-xs font-bold">{workspaces.length === 0 ? 'No workspaces created yet' : 'All workspaces closed'}</p>
                   <p className={`text-[11px] mt-0.5 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Click here to create your first clean synchronized workspace
+                    {workspaces.length === 0
+                      ? 'Click here to create your first clean synchronized workspace'
+                      : 'All workspaces are safely saved in My Library. Click to create a new workspace or open one from Library.'}
                   </p>
                 </div>
               </div>
@@ -369,18 +406,122 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
         </div>
       </div>
 
+      {/* Liquid Glass Modal Prompt before Creating New Workspace (Task 13) */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-auto">
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-md"
+            onClick={() => setShowCreateModal(false)}
+          />
+          <div
+            className={`relative w-full max-w-md rounded-3xl p-6 border shadow-2xl z-10 space-y-5 acrylic-glass-panel ${
+              darkMode ? 'bg-slate-900/90 border-white/20 text-slate-100' : 'bg-white/95 border-slate-300 text-slate-900'
+            }`}
+            style={{
+              borderColor: `${activePalette.primary}75`,
+              boxShadow: `0 24px 64px -12px rgba(0,0,0,0.7), 0 0 32px ${activePalette.primary}25`,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-9 h-9 rounded-2xl flex items-center justify-center shadow-md"
+                  style={{
+                    backgroundColor: `${activePalette.primary}25`,
+                    color: activePalette.primary,
+                  }}
+                >
+                  <Sparkles className="w-4 h-4 stroke-[2.2]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold">Create New Workspace</h3>
+                  <p className="text-xs text-slate-400">Configure workspace tab title and research focus</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmCreate} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">
+                  Workspace Name
+                </label>
+                <input
+                  type="text"
+                  value={newWsName}
+                  onChange={(e) => setNewWsName(e.target.value)}
+                  placeholder="e.g. Distributed Consensus Systems"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:outline-none focus:ring-2 ${
+                    darkMode ? 'bg-slate-950/60 border-white/15 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
+                  style={{ borderColor: `${activePalette.primary}60` }}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">
+                  Description & Context
+                </label>
+                <textarea
+                  rows={3}
+                  value={newWsDesc}
+                  onChange={(e) => setNewWsDesc(e.target.value)}
+                  placeholder="Outline key topics, research goals, or modules..."
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:outline-none focus:ring-2 resize-none ${
+                    darkMode ? 'bg-slate-950/60 border-white/15 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
+                  style={{ borderColor: `${activePalette.primary}60` }}
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition ${
+                    darkMode ? 'border-white/10 text-slate-300 hover:bg-white/5' : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newWsName.trim()}
+                  style={{
+                    background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                  }}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-slate-950 shadow-lg hover:scale-105 active:scale-95 transition disabled:opacity-50 cursor-pointer"
+                >
+                  Create Workspace
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Edit Workspace Name & Description Modal */}
       {editingWs && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-auto">
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/65 backdrop-blur-md"
             onClick={() => setEditingWs(null)}
           />
           <div
-            className={`relative w-full max-w-md rounded-2xl p-6 border shadow-2xl z-10 space-y-4 ${
-              darkMode ? 'bg-slate-900 border-white/15 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+            className={`relative w-full max-w-md rounded-3xl p-6 border shadow-2xl z-10 space-y-4 acrylic-glass-panel ${
+              darkMode ? 'bg-slate-900/90 border-white/15 text-slate-100' : 'bg-white/95 border-slate-300 text-slate-900'
             }`}
-            style={{ borderColor: `${activePalette.primary}60` }}
+            style={{
+              borderColor: `${activePalette.primary}60`,
+              boxShadow: `0 24px 64px -12px rgba(0,0,0,0.7), 0 0 32px ${activePalette.primary}20`,
+            }}
           >
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold flex items-center gap-2">
@@ -406,8 +547,8 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   placeholder="e.g. Distributed Systems Capstone"
-                  className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none focus:ring-2 ${
-                    darkMode ? 'bg-slate-950 border-white/10 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:outline-none focus:ring-2 ${
+                    darkMode ? 'bg-slate-950/60 border-white/10 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
                   }`}
                   style={{ borderColor: `${activePalette.primary}50` }}
                   autoFocus
@@ -423,18 +564,18 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                   value={editDesc}
                   onChange={(e) => setEditDesc(e.target.value)}
                   placeholder="Summarize research focus, tags, or context..."
-                  className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none focus:ring-2 ${
-                    darkMode ? 'bg-slate-950 border-white/10 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:outline-none focus:ring-2 resize-none ${
+                    darkMode ? 'bg-slate-950/60 border-white/10 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
                   }`}
                   style={{ borderColor: `${activePalette.primary}50` }}
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={() => setEditingWs(null)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition ${
                     darkMode ? 'border-white/10 text-slate-300 hover:bg-white/5' : 'border-slate-300 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
@@ -446,7 +587,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                   style={{
                     background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
                   }}
-                  className="px-4 py-1.5 rounded-xl text-xs font-bold text-slate-950 shadow-md hover:scale-105 active:scale-95 transition disabled:opacity-50"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-slate-950 shadow-md hover:scale-105 active:scale-95 transition disabled:opacity-50"
                 >
                   Save Changes
                 </button>

@@ -26,6 +26,7 @@ import {
   FileCode,
   File,
   X,
+  Copy,
   Image as ImageIcon,
 } from 'lucide-react';
 
@@ -278,6 +279,14 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
     });
   };
 
+  const handleDeleteChatMessage = (msgId: string) => {
+    setMessages((prev) => {
+      const updated = prev.filter((m) => m.id !== msgId);
+      onUpdateChatMessages?.(updated);
+      return updated;
+    });
+  };
+
   const handleSendMessage = async (customPrompt?: string) => {
     const textToSend = (customPrompt || inputQuery).trim();
     if ((!textToSend && attachments.length === 0) || isLoading) return;
@@ -285,6 +294,29 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
     const currentAttachments = [...attachments];
     setAttachments([]);
     if (!customPrompt) setInputQuery('');
+
+    // Check if 0 sources exist & no files attached: provide clear grounded guidance
+    if (selectedSources.length === 0 && currentAttachments.length === 0) {
+      const userMessage: ChatMessage = {
+        id: `u-${Date.now()}`,
+        role: 'user',
+        content: textToSend,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      const guidanceNotice: ChatMessage = {
+        id: `notice-${Date.now()}`,
+        role: 'assistant',
+        content: `⚠️ **No Sources Grounded in NotebookLM**\n\nGoogle NotebookLM synthesizes answers directly from your active grounded documents.\n\nCurrently, you have 0 active sources checked in the Sources deck on the left.\n\n**To get started:**\n1. Add a source on the left (upload PDF, notes, markdown, text, code, or docs).\n2. Ensure the source checkbox is checked.\n3. Ask questions or click **List all topics covered** to generate grounded research outlines.`,
+        model: selectedModel,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages((prev) => {
+        const updated = [...prev, userMessage, guidanceNotice];
+        onUpdateChatMessages?.(updated);
+        return updated;
+      });
+      return;
+    }
 
     const displayContent =
       textToSend ||
@@ -913,15 +945,38 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
                           : 'border-slate-200 text-slate-500'
                       }`}
                     >
-                      <span>{m.timestamp}</span>
-                      {m.model && (
-                        <span
-                          className="font-semibold"
-                          style={{ color: m.role === 'user' ? '#ffffff' : activePalette.primary }}
+                      <div className="flex items-center gap-2">
+                        <span>{m.timestamp}</span>
+                        {m.model && (
+                          <span
+                            className="font-semibold"
+                            style={{ color: m.role === 'user' ? '#ffffff' : activePalette.primary }}
+                          >
+                            {m.model}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(m.content);
+                          }}
+                          className="opacity-70 hover:opacity-100 transition p-1 rounded hover:bg-white/10"
+                          title="Copy text"
                         >
-                          {m.model}
-                        </span>
-                      )}
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteChatMessage(m.id)}
+                          className="opacity-70 hover:opacity-100 transition p-1 rounded hover:text-rose-400 hover:bg-rose-500/10 text-slate-400"
+                          title="Delete message"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -959,14 +1014,14 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
               Summarize sources
             </button>
             <button
-              onClick={() => handleSendMessage('Compare the core mechanism in Attention vs Synaptic Plasticity.')}
+              onClick={() => handleSendMessage('Create a structured, bulleted list of all the key topics and subtopics covered across all active sources.')}
               className={`px-3 py-1.5 rounded-full border transition shrink-0 font-medium ${
                 darkMode
                   ? 'bg-slate-800/30 text-slate-200 border-white/10 hover:bg-slate-800/60'
                   : 'bg-white/95 text-slate-800 border-slate-200/90 hover:bg-white hover:text-slate-950 shadow-sm'
               }`}
             >
-              Compare mechanisms
+              List all topics covered
             </button>
             <button
               onClick={() => handleSendMessage('Generate a 3-question conceptual quiz on these documents.')}

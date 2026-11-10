@@ -320,7 +320,10 @@ app.post('/api/gemini/chat', async (req, res) => {
       }
     }
 
-    const finalContents = contentsParts.length === 1 ? contentsParts[0].text : (contentsParts as any);
+    const finalContents =
+      contentsParts.length === 1 && 'text' in contentsParts[0]
+        ? (contentsParts[0] as any).text
+        : (contentsParts as any);
 
     // Candidate fallback models in priority order (strictly valid active models)
     const candidateModels = [

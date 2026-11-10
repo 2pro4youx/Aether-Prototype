@@ -67,13 +67,14 @@ export interface NotebookSource {
   dateAdded: string;
 }
 
-export type BlockType = 'h1' | 'h2' | 'h3' | 'paragraph' | 'todo' | 'code' | 'callout' | 'quote' | 'image' | 'table' | 'math';
+export type BlockType = 'h1' | 'h2' | 'h3' | 'paragraph' | 'todo' | 'bullet' | 'numbered' | 'code' | 'callout' | 'quote' | 'image' | 'table' | 'math';
 
 export interface NoteBlock {
   id: string;
   type: BlockType;
   content: string;
   checked?: boolean;
+  indent?: number; // 0, 1, 2, 3 levels of indentation / sub-bullets
   language?: string;
   tag?: string;
   // Math equation block properties
@@ -138,8 +139,8 @@ export interface LibraryItem {
 export interface Workspace {
   id: string;
   name: string;
-  description: string;
-  folder: string; // e.g. 'Untitled Workspaces', 'NotebookLM Research', etc.
+  description?: string;
+  folder: string; // e.g. 'Assorted Workspaces', 'NotebookLM Research', etc.
   createdAt: string;
   updatedAt: string;
   color?: string;
@@ -147,6 +148,8 @@ export interface Workspace {
   notebooks: OneNoteNotebook[];
   conversations: GeminiConversation[];
   chatMessages?: GeminiChatMessage[];
+  isClosed?: boolean;
+  lastOpenedAt?: string;
 }
 
 export interface SubjectAnalytics {
@@ -176,6 +179,7 @@ export type ColorPaletteId =
   | 'tokyo-neon'
   | 'titanium-mono'
   | 'autumn'
+  | 'atom'
   | 'black-night';
 
 export interface ColorPalette {

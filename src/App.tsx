@@ -1276,19 +1276,69 @@ export default function App() {
     logAudit('Workspace Updated', `Modified settings for workspace`, 'system');
   }, []);
 
-  const handleDeleteWorkspace = useCallback((workspaceId: string) => {
+  // Close workspace tab (saved in Library, not deleted)
+  const handleCloseWorkspace = useCallback((workspaceId: string) => {
     setWorkspaces((prev) => {
-      const next = prev.filter((w) => w.id !== workspaceId);
+      const next = prev.map((w) => (w.id === workspaceId ? { ...w, isClosed: true } : w));
+      const stillOpen = next.filter((w) => !w.isClosed);
       if (activeWorkspaceId === workspaceId) {
-        setActiveWorkspaceId(next[0]?.id || '');
+        setActiveWorkspaceId(stillOpen[0]?.id || next[0]?.id || '');
       }
       return next;
     });
-    logAudit('Workspace Closed', `Closed workspace`, 'system');
+    logAudit('Workspace Closed', `Closed workspace tab (saved in Library)`, 'system');
   }, [activeWorkspaceId]);
+
+  // Permanently delete workspace from Library
+  const handleDeleteWorkspacePermanently = useCallback((workspaceId: string) => {
+    setWorkspaces((prev) => {
+      const next = prev.filter((w) => w.id !== workspaceId);
+      if (activeWorkspaceId === workspaceId) {
+        const stillOpen = next.filter((w) => !w.isClosed);
+        setActiveWorkspaceId(stillOpen[0]?.id || next[0]?.id || '');
+      }
+      return next;
+    });
+    setLibraryItems((prev) => prev.filter((it) => it.workspaceId !== workspaceId));
+    logAudit('Workspace Deleted', `Permanently deleted workspace from Library`, 'system');
+  }, [activeWorkspaceId]);
+
+  // Remove workspace from folder (moves back to Assorted Workspaces)
+  const handleRemoveWorkspaceFromFolder = useCallback((workspaceId: string) => {
+    setWorkspaces((prev) =>
+      prev.map((w) =>
+        w.id === workspaceId ? { ...w, folder: 'Assorted Workspaces', updatedAt: 'Just now' } : w
+      )
+    );
+    setLibraryItems((prev) =>
+      prev.map((it) =>
+        it.workspaceId === workspaceId ? { ...it, folder: 'Assorted Workspaces', updatedAt: 'Just now' } : it
+      )
+    );
+    logAudit('Workspace Moved', `Moved workspace back to Assorted Workspaces`, 'system');
+  }, []);
+
+  // Delete folder permanently from Library
+  const handleDeleteFolder = useCallback((folderName: string) => {
+    setFolders((prev) => prev.filter((f) => f !== folderName));
+    setWorkspaces((prev) =>
+      prev.map((w) => (w.folder === folderName ? { ...w, folder: 'Assorted Workspaces' } : w))
+    );
+    setLibraryItems((prev) =>
+      prev.map((it) => (it.folder === folderName ? { ...it, folder: 'Assorted Workspaces' } : it))
+    );
+    logAudit('Folder Deleted', `Deleted folder ${folderName}`, 'system');
+  }, []);
 
   // Workspace management & switching
   const handleSelectWorkspace = useCallback((workspaceId: string) => {
+    setWorkspaces((prev) =>
+      prev.map((w) =>
+        w.id === workspaceId
+          ? { ...w, isClosed: false, lastOpenedAt: 'Just now', updatedAt: 'Just now' }
+          : w
+      )
+    );
     setActiveWorkspaceId(workspaceId);
     setActiveTab('notebooklm');
     setIsWorkspaceSelectorOpen(false);
@@ -1296,16 +1346,18 @@ export default function App() {
   }, []);
 
   const handleCreateNewWorkspace = useCallback(
-    (targetFolder = 'Untitled Workspaces') => {
+    (targetFolder = 'Assorted Workspaces', customName?: string, customDesc?: string) => {
       const newId = `ws-${Date.now()}`;
       const count = workspaces.length + 1;
       const newWs: Workspace = {
         id: newId,
-        name: `Untitled Workspace ${count}`,
-        description: 'Synchronized workspace with exclusive NotebookLM sources, OneNote canvas, and Gemini AI.',
+        name: customName || `Assorted Workspace ${count}`,
+        description: customDesc || 'Synchronized workspace with exclusive NotebookLM sources, OneNote canvas, and Gemini AI.',
         folder: targetFolder,
         createdAt: 'Just now',
         updatedAt: 'Just now',
+        lastOpenedAt: 'Just now',
+        isClosed: false,
         color: activePalette.primary,
         sources: [],
         notebooks: [
@@ -1501,9 +1553,10 @@ export default function App() {
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}
         onSelectWorkspace={handleSelectWorkspace}
-        onCreateWorkspace={() => handleCreateNewWorkspace('Untitled Workspaces')}
+        onCreateWorkspace={(name, desc) => handleCreateNewWorkspace('Assorted Workspaces', name, desc)}
         onUpdateWorkspace={handleUpdateWorkspace}
-        onDeleteWorkspace={handleDeleteWorkspace}
+        onCloseWorkspace={handleCloseWorkspace}
+        onDeleteWorkspace={handleDeleteWorkspacePermanently}
         activePalette={activePalette}
         darkMode={darkMode}
       />
@@ -1512,9 +1565,7 @@ export default function App() {
       <div
         className={`${
           activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-screen overflow-hidden' : 'min-h-screen'
-        } flex flex-col w-full hyprland-slide relative z-10 transition-all duration-300 ease-out origin-top ${
-          isWorkspaceSelectorOpen ? 'scale-[0.96] opacity-80 blur-[0.5px]' : 'scale-100 opacity-100 blur-0'
-        } ${
+        } flex flex-col w-full hyprland-slide relative z-10 transition-all duration-300 ease-out origin-top scale-100 opacity-100 blur-0 ${
           isOneNoteOpen
             ? '-translate-x-[100%] opacity-0 pointer-events-none select-none invisible'
             : isGeminiWorkspaceOpen
@@ -1598,9 +1649,12 @@ export default function App() {
                   workspaces={workspaces}
                   onOpenItem={handleOpenLibraryItem}
                   onAddFolder={handleAddFolder}
+                  onDeleteFolder={handleDeleteFolder}
                   onToggleStar={handleToggleStar}
                   onSelectWorkspace={handleSelectWorkspace}
                   onAssignWorkspaceToFolder={handleAssignWorkspaceToFolder}
+                  onRemoveWorkspaceFromFolder={handleRemoveWorkspaceFromFolder}
+                  onDeleteWorkspacePermanently={handleDeleteWorkspacePermanently}
                   onCreateWorkspaceInFolder={(folder) => handleCreateNewWorkspace(folder)}
                   activePalette={activePalette}
                   darkMode={darkMode}
@@ -1668,6 +1722,7 @@ export default function App() {
           onClick={() => {
             setIsOneNoteOpen(false);
             setIsGeminiWorkspaceOpen(false);
+            setWindowChangeCount((c) => c + 1);
           }}
           className="fixed inset-0 z-40 bg-slate-950/40 pointer-events-auto transition-opacity duration-300 ease-out"
         />
@@ -1677,7 +1732,10 @@ export default function App() {
       <OneNoteWorkspace
         notebooks={oneNoteNotebooks}
         isOpen={isOneNoteOpen}
-        onCloseBack={() => setIsOneNoteOpen(false)}
+        onCloseBack={() => {
+          setIsOneNoteOpen(false);
+          setWindowChangeCount((c) => c + 1);
+        }}
         onUpdateNotebooks={handleUpdateActiveNotebooks}
         activePalette={activePalette}
         darkMode={darkMode}
@@ -1687,7 +1745,10 @@ export default function App() {
       {/* FULLSCREEN GEMINI WORKSPACE (SLIDES IN HORIZONTALLY FROM LEFT IN HYPRLAND STYLE) */}
       <GeminiWorkspace
         isOpen={isGeminiWorkspaceOpen}
-        onCloseBack={() => setIsGeminiWorkspaceOpen(false)}
+        onCloseBack={() => {
+          setIsGeminiWorkspaceOpen(false);
+          setWindowChangeCount((c) => c + 1);
+        }}
         activePalette={activePalette}
         darkMode={darkMode}
         conversations={geminiConversations}

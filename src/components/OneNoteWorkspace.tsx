@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Lenis from 'lenis';
 import { Reorder, useDragControls, motion } from 'motion/react';
@@ -44,11 +44,54 @@ import {
   ArrowRight,
   Eraser,
   Sigma,
+  AlertTriangle,
 } from 'lucide-react';
 import { OneNoteNotebook, OneNoteSection, OneNotePage, NoteBlock, BlockType, ColorPalette } from '../types';
 import { getLanguageTheme, SUPPORTED_LANGUAGES } from '../utils/languageThemes';
 import { CodeEditor } from '../utils/codeHighlighter';
 import { parseAndRenderMath, renderKatex, normalizeMathExpression, MATH_PRESETS } from '../utils/mathRenderer';
+
+// Auto-expanding textarea that dynamically resizes to content scrollHeight without tall blank containers
+const AutoExpandingTextarea: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  placeholder?: string;
+  className?: string;
+  style?: React.CSSProperties;
+  autoFocus?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
+}> = ({ value, onChange, onKeyDown, placeholder, className, style, autoFocus, onFocus, onBlur }) => {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.style.height = 'auto';
+      ref.current.style.height = `${Math.max(22, ref.current.scrollHeight)}px`;
+    }
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      autoFocus={autoFocus}
+      value={value}
+      placeholder={placeholder}
+      className={`w-full bg-transparent resize-none overflow-hidden focus:outline-none ${className || ''}`}
+      style={style}
+      rows={1}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      onChange={(e) => {
+        onChange(e.target.value);
+        e.target.style.height = 'auto';
+        e.target.style.height = `${Math.max(22, e.target.scrollHeight)}px`;
+      }}
+      onKeyDown={onKeyDown}
+    />
+  );
+};
 
 interface NoteBlockItemProps {
   block: NoteBlock;
@@ -61,6 +104,7 @@ interface NoteBlockItemProps {
   onToggleTodo: (id: string) => void;
   onDelete: (id: string) => void;
   onInsertBlockAfter?: (afterBlockId: string, type: BlockType) => void;
+  onContextMenu?: (e: React.MouseEvent, block: NoteBlock) => void;
 }
 
 const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
@@ -74,6 +118,7 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
   onToggleTodo,
   onDelete,
   onInsertBlockAfter,
+  onContextMenu,
 }) => {
   const dragControls = useDragControls();
   const effectiveThemeColor = userThemeColor || themeColor || '#f59e0b';
@@ -1996,9 +2041,50 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    // 1. Enter key: for todo or bullet list, inserts a new todo or bullet block immediately after
+    if (e.key === 'Enter' && !e.shiftKey) {
+      if (block.type === 'todo') {
+        e.preventDefault();
+        onInsertBlockAfter?.(block.id, 'todo');
+        return;
+      }
+      if (block.type === 'bullet') {
+        e.preventDefault();
+        onInsertBlockAfter?.(block.id, 'bullet');
+        return;
+      }
+      if (block.type === 'numbered') {
+        e.preventDefault();
+        onInsertBlockAfter?.(block.id, 'numbered');
+        return;
+      }
+    }
+
+    // 2. Tab key: Indent / sub-bullet hierarchy (replaces auto table insertion!)
+    if (e.key === 'Tab') {
       e.preventDefault();
-      onInsertBlockAfter?.(block.id, 'table');
+      if (e.shiftKey) {
+        const newIndent = Math.max(0, (block.indent || 0) - 1);
+        onUpdateBlock(block.id, { indent: newIndent });
+      } else {
+        const newIndent = Math.min(4, (block.indent || 0) + 1);
+        onUpdateBlock(block.id, { indent: newIndent });
+      }
+      return;
+    }
+
+    // 3. Backspace key when empty: un-indents or cancels bullet mode back to paragraph
+    if (e.key === 'Backspace' && (!block.content || block.content.trim() === '')) {
+      if (block.indent && block.indent > 0) {
+        e.preventDefault();
+        onUpdateBlock(block.id, { indent: block.indent - 1 });
+        return;
+      }
+      if (block.type === 'bullet' || block.type === 'numbered' || block.type === 'todo') {
+        e.preventDefault();
+        onUpdateBlock(block.id, { type: 'paragraph', indent: 0 });
+        return;
+      }
     }
   };
 
@@ -2009,6 +2095,7 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
       data-block-id={block.id}
       dragListener={false}
       dragControls={dragControls}
+      onContextMenu={(e) => onContextMenu?.(e, block)}
       initial={false}
       layout={isWorkspaceEntering ? undefined : 'position'}
       className={`group relative flex items-start gap-2 p-2 rounded-xl transition-colors ${
@@ -2378,7 +2465,7 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
         )}
 
         {block.type === 'paragraph' && (
-          <div className="relative group/para w-full">
+          <div className="relative group/para w-full" style={{ paddingLeft: `${(block.indent || 0) * 20}px` }}>
             {mathInfo.hasMath && !isEditingParagraphMath ? (
               <div
                 className={`cursor-text text-sm leading-relaxed select-text py-0.5 ${
@@ -2389,16 +2476,25 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
                 title="Click to edit formula or text"
               />
             ) : (
-              <textarea
-                rows={Math.max(2, Math.ceil((block.content || '').length / 80))}
+              <AutoExpandingTextarea
                 value={block.content}
                 autoFocus={isEditingParagraphMath}
                 onFocus={() => setIsEditingParagraphMath(true)}
                 onBlur={() => setIsEditingParagraphMath(false)}
-                onChange={(e) => onUpdateContent(block.id, e.target.value)}
+                onChange={(val) => {
+                  if (val === '- ' || val === '* ') {
+                    onUpdateBlock(block.id, { type: 'bullet', content: '' });
+                    return;
+                  }
+                  if (val === '[] ' || val === '[ ] ') {
+                    onUpdateBlock(block.id, { type: 'todo', content: '' });
+                    return;
+                  }
+                  onUpdateContent(block.id, val);
+                }}
                 onKeyDown={handleKeyDown}
-                placeholder="Type notes or mathematical formulas ($math$ or $$math$$) here..."
-                className={`w-full text-sm leading-relaxed bg-transparent focus:outline-none resize-none placeholder:opacity-40 ${
+                placeholder="Type notes, formulas, or '- ' for bullet list..."
+                className={`text-sm leading-relaxed placeholder:opacity-40 ${
                   darkMode ? 'text-slate-300 placeholder:text-slate-500' : 'text-slate-800 placeholder:text-slate-400'
                 }`}
               />
@@ -2424,12 +2520,42 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
           </div>
         )}
 
+        {block.type === 'bullet' && (
+          <div className="flex items-start gap-2.5 w-full" style={{ paddingLeft: `${(block.indent || 0) * 20}px` }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-2 shrink-0 shadow-xs" />
+            <AutoExpandingTextarea
+              value={block.content}
+              onChange={(val) => onUpdateContent(block.id, val)}
+              onKeyDown={handleKeyDown}
+              placeholder="List item..."
+              className={`flex-1 text-sm leading-relaxed ${
+                darkMode ? 'text-slate-200 placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
+              }`}
+            />
+          </div>
+        )}
+
+        {block.type === 'numbered' && (
+          <div className="flex items-start gap-2.5 w-full" style={{ paddingLeft: `${(block.indent || 0) * 20}px` }}>
+            <span className="text-xs font-mono font-bold text-amber-400 mt-0.5 shrink-0">1.</span>
+            <AutoExpandingTextarea
+              value={block.content}
+              onChange={(val) => onUpdateContent(block.id, val)}
+              onKeyDown={handleKeyDown}
+              placeholder="Numbered item..."
+              className={`flex-1 text-sm leading-relaxed ${
+                darkMode ? 'text-slate-200 placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
+              }`}
+            />
+          </div>
+        )}
+
         {block.type === 'todo' && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-start gap-2.5 w-full" style={{ paddingLeft: `${(block.indent || 0) * 20}px` }}>
             <button
               type="button"
               onClick={() => onToggleTodo(block.id)}
-              className="text-amber-500 shrink-0"
+              className="text-amber-500 shrink-0 mt-0.5"
             >
               {block.checked ? (
                 <CheckSquare className="w-4 h-4 fill-amber-500/20 text-amber-500" />
@@ -2437,13 +2563,12 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
                 <Square className="w-4 h-4 text-slate-400" />
               )}
             </button>
-            <input
-              type="text"
+            <AutoExpandingTextarea
               value={block.content}
-              onChange={(e) => onUpdateContent(block.id, e.target.value)}
+              onChange={(val) => onUpdateContent(block.id, val)}
               onKeyDown={handleKeyDown}
               placeholder="Action item..."
-              className={`flex-1 text-sm bg-transparent focus:outline-none placeholder:opacity-40 ${
+              className={`flex-1 text-sm leading-relaxed ${
                 block.checked
                   ? darkMode
                     ? 'line-through text-slate-500'
@@ -2511,16 +2636,15 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
                   title="Click to edit formula or text"
                 />
               ) : (
-                <textarea
-                  rows={Math.max(2, (block.content || '').split('\n').length)}
+                <AutoExpandingTextarea
                   value={block.content}
                   autoFocus={isEditingCalloutMath}
                   onFocus={() => setIsEditingCalloutMath(true)}
                   onBlur={() => setIsEditingCalloutMath(false)}
-                  onChange={(e) => onUpdateContent(block.id, e.target.value)}
+                  onChange={(val) => onUpdateContent(block.id, val)}
                   onKeyDown={handleKeyDown}
                   placeholder="Highlighted principle, mathematical formula, or conceptual note..."
-                  className={`w-full text-xs sm:text-sm bg-transparent focus:outline-none resize-none font-medium leading-relaxed placeholder:opacity-40 ${
+                  className={`text-xs sm:text-sm font-medium leading-relaxed placeholder:opacity-40 ${
                     darkMode ? 'text-amber-200 placeholder:text-amber-200/40' : 'text-amber-950 placeholder:text-amber-950/40'
                   }`}
                 />
@@ -2561,16 +2685,15 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
                 title="Click to edit formula or text"
               />
             ) : (
-              <textarea
-                rows={2}
+              <AutoExpandingTextarea
                 value={block.content}
                 autoFocus={isEditingQuoteMath}
                 onFocus={() => setIsEditingQuoteMath(true)}
                 onBlur={() => setIsEditingQuoteMath(false)}
-                onChange={(e) => onUpdateContent(block.id, e.target.value)}
+                onChange={(val) => onUpdateContent(block.id, val)}
                 onKeyDown={handleKeyDown}
                 placeholder="Write quote or insight..."
-                className={`w-full text-xs sm:text-sm bg-transparent focus:outline-none resize-none leading-relaxed placeholder:opacity-40 ${
+                className={`text-xs sm:text-sm leading-relaxed placeholder:opacity-40 ${
                   darkMode ? 'text-slate-300 placeholder:text-slate-500' : 'text-slate-800 placeholder:text-slate-400'
                 }`}
               />
@@ -3276,6 +3399,7 @@ interface PageListItemProps {
   darkMode: boolean;
   accentColor: string;
   onSelect: (pageId: string) => void;
+  onDelete?: (page: OneNotePage) => void;
 }
 
 const PageListItem = React.memo<PageListItemProps>(({
@@ -3284,11 +3408,12 @@ const PageListItem = React.memo<PageListItemProps>(({
   darkMode,
   accentColor,
   onSelect,
+  onDelete,
 }) => {
   return (
     <div
       onClick={() => onSelect(page.id)}
-      className={`p-3 rounded-xl cursor-pointer transition select-none liquid-glass-tile onenote-page-tile ${
+      className={`group/pageitem p-3 rounded-xl cursor-pointer transition select-none liquid-glass-tile onenote-page-tile relative ${
         isSelected
           ? darkMode
             ? 'bg-slate-900/80 border border-amber-500/50 text-amber-300 shadow-md font-semibold'
@@ -3308,12 +3433,27 @@ const PageListItem = React.memo<PageListItemProps>(({
     >
       <div className="flex items-center justify-between gap-1">
         <p className="text-xs font-semibold truncate flex-1">{page.title}</p>
-        {isSelected && (
-          <span
-            className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{ backgroundColor: accentColor }}
-          />
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(page);
+              }}
+              className="opacity-0 group-hover/pageitem:opacity-100 p-0.5 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition"
+              title={`Delete page "${page.title}"`}
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
+          {isSelected && (
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ backgroundColor: accentColor }}
+            />
+          )}
+        </div>
       </div>
       <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1.5 font-mono">
         <span>{page.updatedAt}</span>
@@ -3701,13 +3841,19 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
 
   // Add new Section with fast immutable update
   const handleAddSection = React.useCallback(() => {
-    if (!currentNotebook) {
-      handleAddNotebook();
-      return;
+    let targetNotebook = currentNotebook;
+    if (!targetNotebook) {
+      if (notebooks.length > 0) {
+        targetNotebook = notebooks[0];
+      } else {
+        handleAddNotebook();
+        return;
+      }
     }
-    const colors = ['#f59e0b', '#dc2626', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899'];
+    const targetNotebookId = targetNotebook.id;
+    const colors = ['#f59e0b', '#dc2626', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
-    const secCount = (currentNotebook.sections?.length || 0) + 1;
+    const secCount = (targetNotebook.sections?.length || 0) + 1;
     const padNum = secCount < 10 ? `0${secCount}` : `${secCount}`;
     const title = `${padNum}. New Section`;
 
@@ -3732,14 +3878,180 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
 
     onUpdateNotebooks(
       notebooks.map((nb) =>
-        nb.id === currentNotebook.id
-          ? { ...nb, sections: [...nb.sections, newSec] }
+        nb.id === targetNotebookId
+          ? { ...nb, sections: [...(nb.sections || []), newSec] }
           : nb
+      )
+    );
+    setSelectedNotebookId(targetNotebookId);
+    setSelectedSectionId(newSecId);
+    setSelectedPageId(newPageId);
+  }, [notebooks, currentNotebook, handleAddNotebook, onUpdateNotebooks]);
+
+  // Section & Page deletion state (full-viewport confirmation modals)
+  const [sectionToDelete, setSectionToDelete] = useState<OneNoteSection | null>(null);
+  const [pageToDelete, setPageToDelete] = useState<OneNotePage | null>(null);
+
+  // Right-click formatting context menu state
+  const [blockContextMenu, setBlockContextMenu] = useState<{
+    x: number;
+    y: number;
+    block: NoteBlock;
+  } | null>(null);
+
+  // Close context menu on outside click or escape key
+  useEffect(() => {
+    if (!blockContextMenu) return;
+    const handleClose = () => setBlockContextMenu(null);
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setBlockContextMenu(null);
+    };
+    window.addEventListener('click', handleClose);
+    window.addEventListener('contextmenu', handleClose);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('contextmenu', handleClose);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [blockContextMenu]);
+
+  const handleBlockContextMenu = useCallback((e: React.MouseEvent, block: NoteBlock) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 240);
+    const y = Math.min(e.clientY, window.innerHeight - 380);
+    setBlockContextMenu({ x, y, block });
+  }, []);
+
+  const handleFormatBold = (block: NoteBlock) => {
+    let content = block.content || '';
+    if (content.startsWith('**') && content.endsWith('**') && content.length >= 4) {
+      content = content.slice(2, -2);
+    } else {
+      content = `**${content}**`;
+    }
+    handleUpdateBlockContent(block.id, content);
+    setBlockContextMenu(null);
+  };
+
+  const handleFormatItalic = (block: NoteBlock) => {
+    let content = block.content || '';
+    if (content.startsWith('*') && content.endsWith('*') && content.length >= 2) {
+      content = content.slice(1, -1);
+    } else {
+      content = `*${content}*`;
+    }
+    handleUpdateBlockContent(block.id, content);
+    setBlockContextMenu(null);
+  };
+
+  const handleFormatCode = (block: NoteBlock) => {
+    let content = block.content || '';
+    if (content.startsWith('`') && content.endsWith('`') && content.length >= 2) {
+      content = content.slice(1, -1);
+    } else {
+      content = `\`${content}\``;
+    }
+    handleUpdateBlockContent(block.id, content);
+    setBlockContextMenu(null);
+  };
+
+  const handleConvertBlockType = (block: NoteBlock, newType: BlockType) => {
+    handleUpdateBlock(block.id, { type: newType });
+    setBlockContextMenu(null);
+  };
+
+  const handleChangeIndent = (block: NoteBlock, delta: number) => {
+    const newIndent = Math.max(0, Math.min(6, (block.indent || 0) + delta));
+    handleUpdateBlock(block.id, { indent: newIndent });
+    setBlockContextMenu(null);
+  };
+
+  const handleConfirmDeleteSection = () => {
+    if (!sectionToDelete || !currentNotebook) return;
+    const remaining = currentNotebook.sections.filter((s) => s.id !== sectionToDelete.id);
+    let finalSections = remaining;
+    let newSecId = selectedSectionId;
+    let newPageId = selectedPageId;
+
+    if (finalSections.length === 0) {
+      const fallbackSecId = `sec-${Date.now()}`;
+      const fallbackPageId = `p-${Date.now()}`;
+      finalSections = [
+        {
+          id: fallbackSecId,
+          title: '01. Notes',
+          color: activePalette.primary || '#f59e0b',
+          pages: [
+            {
+              id: fallbackPageId,
+              title: 'Untitled Page',
+              updatedAt: 'Just now',
+              blocks: [
+                { id: `b-${Date.now()}`, type: 'h1', content: 'Notes' },
+                { id: `b-${Date.now() + 1}`, type: 'paragraph', content: '' },
+              ],
+            },
+          ],
+        },
+      ];
+      newSecId = fallbackSecId;
+      newPageId = fallbackPageId;
+    } else if (selectedSectionId === sectionToDelete.id) {
+      newSecId = finalSections[0].id;
+      newPageId = finalSections[0].pages[0]?.id || '';
+    }
+
+    onUpdateNotebooks(
+      notebooks.map((nb) =>
+        nb.id === currentNotebook.id ? { ...nb, sections: finalSections } : nb
       )
     );
     setSelectedSectionId(newSecId);
     setSelectedPageId(newPageId);
-  }, [notebooks, currentNotebook, handleAddNotebook, onUpdateNotebooks]);
+    setSectionToDelete(null);
+  };
+
+  const handleConfirmDeletePage = () => {
+    if (!pageToDelete || !currentNotebook || !currentSection) return;
+    const remaining = currentSection.pages.filter((p) => p.id !== pageToDelete.id);
+    let finalPages = remaining;
+    let newPageId = selectedPageId;
+
+    if (finalPages.length === 0) {
+      const fallbackPageId = `p-${Date.now()}`;
+      finalPages = [
+        {
+          id: fallbackPageId,
+          title: 'Untitled Page',
+          updatedAt: 'Just now',
+          blocks: [
+            { id: `b-${Date.now()}`, type: 'h1', content: 'Untitled Page' },
+            { id: `b-${Date.now() + 1}`, type: 'paragraph', content: '' },
+          ],
+        },
+      ];
+      newPageId = fallbackPageId;
+    } else if (selectedPageId === pageToDelete.id) {
+      newPageId = finalPages[0].id;
+    }
+
+    onUpdateNotebooks(
+      notebooks.map((nb) => {
+        if (nb.id !== currentNotebook.id) return nb;
+        return {
+          ...nb,
+          sections: nb.sections.map((sec) => {
+            if (sec.id !== currentSection.id) return sec;
+            return { ...sec, pages: finalPages };
+          }),
+        };
+      })
+    );
+    setSelectedPageId(newPageId);
+    setPageToDelete(null);
+  };
 
   // Add new Page with fast immutable update (no window.prompt to avoid iFrame freezing)
   const handleAddPage = React.useCallback(() => {
@@ -4089,32 +4401,47 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
               {currentNotebook?.sections.map((section) => {
                 const isSelected = selectedSectionId === section.id;
                 return (
-                  <button
-                    key={section.id}
-                    onClick={() => {
-                      setSelectedSectionId(section.id);
-                      if (section.pages[0]) setSelectedPageId(section.pages[0].id);
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-2 whitespace-nowrap select-none liquid-glass-tile onenote-section-tile cursor-pointer ${
-                      isSelected
-                        ? darkMode
-                          ? 'bg-slate-900/90 text-slate-100 shadow-md border'
-                          : 'bg-white text-slate-900 shadow-sm border'
-                        : darkMode
-                        ? 'text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent'
-                        : 'text-slate-600 hover:text-slate-950 hover:bg-white/60 border border-transparent'
-                    }`}
-                    style={{
-                      borderColor: isSelected ? section.color : undefined,
-                      boxShadow: isSelected ? `0 0 14px ${section.color}35` : undefined,
-                    }}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0 shadow-xs"
-                      style={{ backgroundColor: section.color }}
-                    />
-                    <span>{section.title}</span>
-                  </button>
+                  <div key={section.id} className="relative group/sectab flex items-center shrink-0">
+                    <button
+                      onClick={() => {
+                        setSelectedSectionId(section.id);
+                        if (section.pages[0]) setSelectedPageId(section.pages[0].id);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-2 whitespace-nowrap select-none liquid-glass-tile onenote-section-tile cursor-pointer ${
+                        isSelected
+                          ? darkMode
+                            ? 'bg-slate-900/90 text-slate-100 shadow-md border'
+                            : 'bg-white text-slate-900 shadow-sm border'
+                          : darkMode
+                          ? 'text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent'
+                          : 'text-slate-600 hover:text-slate-950 hover:bg-white/60 border border-transparent'
+                      }`}
+                      style={{
+                        borderColor: isSelected ? section.color : undefined,
+                        boxShadow: isSelected ? `0 0 14px ${section.color}35` : undefined,
+                      }}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0 shadow-xs"
+                        style={{ backgroundColor: section.color }}
+                      />
+                      <span>{section.title}</span>
+                      {(currentNotebook?.sections?.length || 0) > 1 && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSectionToDelete(section);
+                          }}
+                          className="opacity-0 group-hover/sectab:opacity-100 p-0.5 ml-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition"
+                          title={`Delete section "${section.title}"`}
+                        >
+                          <X className="w-3 h-3" />
+                        </span>
+                      )}
+                    </button>
+                  </div>
                 );
               })}
 
@@ -4313,6 +4640,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
                           darkMode={darkMode}
                           accentColor={currentSection?.color || activePalette.primary}
                           onSelect={handleSelectPage}
+                          onDelete={(p) => setPageToDelete(p)}
                         />
                       ))}
                     </div>
@@ -4577,6 +4905,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
                         onToggleTodo={handleToggleTodo}
                         onDelete={handleDeleteBlock}
                         onInsertBlockAfter={(afterId, type) => handleAddBlock(type, afterId)}
+                        onContextMenu={handleBlockContextMenu}
                       />
                     ))}
                   </Reorder.Group>
@@ -4593,6 +4922,255 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Right-click Formatting Context Menu (Image 5) */}
+      {blockContextMenu && (
+        <div
+          className={`fixed z-[130] w-60 rounded-2xl border p-1.5 shadow-2xl backdrop-blur-2xl select-none text-xs animate-in fade-in zoom-in-95 duration-100 ${
+            darkMode
+              ? 'bg-slate-950/95 border-white/20 text-slate-200 shadow-black/80'
+              : 'bg-white/95 border-slate-200 text-slate-800 shadow-slate-400/40'
+          }`}
+          style={{
+            top: `${blockContextMenu.y}px`,
+            left: `${blockContextMenu.x}px`,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold border-b border-white/10 mb-1 flex items-center justify-between">
+            <span>Block Formatting</span>
+            <span className="font-semibold text-amber-400">Context</span>
+          </div>
+
+          {/* Inline Text Styles */}
+          <div className="space-y-0.5">
+            <button
+              type="button"
+              onClick={() => handleFormatBold(blockContextMenu.block)}
+              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition font-bold"
+            >
+              <span>Bold Text</span>
+              <span className="text-[10px] font-mono opacity-50">**bold**</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleFormatItalic(blockContextMenu.block)}
+              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition italic"
+            >
+              <span>Italic Text</span>
+              <span className="text-[10px] font-mono opacity-50">*italic*</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleFormatCode(blockContextMenu.block)}
+              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition font-mono"
+            >
+              <span>Inline Code</span>
+              <span className="text-[10px] font-mono opacity-50">`code`</span>
+            </button>
+          </div>
+
+          <div className="h-px bg-white/10 my-1" />
+
+          {/* Convert Block Type */}
+          <div className="px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+            Turn Into
+          </div>
+          <div className="space-y-0.5 max-h-48 overflow-y-auto no-scrollbar">
+            <button
+              type="button"
+              onClick={() => handleConvertBlockType(blockContextMenu.block, 'h1')}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition ${
+                blockContextMenu.block.type === 'h1' ? 'text-amber-400 font-bold' : ''
+              }`}
+            >
+              <span>Heading 1</span>
+              <span className="text-[10px] font-mono opacity-40">H1</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConvertBlockType(blockContextMenu.block, 'h2')}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition ${
+                blockContextMenu.block.type === 'h2' ? 'text-amber-400 font-bold' : ''
+              }`}
+            >
+              <span>Heading 2</span>
+              <span className="text-[10px] font-mono opacity-40">H2</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConvertBlockType(blockContextMenu.block, 'paragraph')}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition ${
+                blockContextMenu.block.type === 'paragraph' ? 'text-amber-400 font-bold' : ''
+              }`}
+            >
+              <span>Paragraph</span>
+              <span className="text-[10px] font-mono opacity-40">Text</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConvertBlockType(blockContextMenu.block, 'bullet')}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition ${
+                blockContextMenu.block.type === 'bullet' ? 'text-amber-400 font-bold' : ''
+              }`}
+            >
+              <span>Bullet List</span>
+              <span className="text-[10px] font-mono opacity-40">• item</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConvertBlockType(blockContextMenu.block, 'numbered')}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition ${
+                blockContextMenu.block.type === 'numbered' ? 'text-amber-400 font-bold' : ''
+              }`}
+            >
+              <span>Numbered List</span>
+              <span className="text-[10px] font-mono opacity-40">1. item</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConvertBlockType(blockContextMenu.block, 'todo')}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition ${
+                blockContextMenu.block.type === 'todo' ? 'text-amber-400 font-bold' : ''
+              }`}
+            >
+              <span>To-Do Item</span>
+              <span className="text-[10px] font-mono opacity-40">[ ] todo</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConvertBlockType(blockContextMenu.block, 'callout')}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition ${
+                blockContextMenu.block.type === 'callout' ? 'text-amber-400 font-bold' : ''
+              }`}
+            >
+              <span>Callout Note</span>
+              <span className="text-[10px] font-mono opacity-40">Notice</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConvertBlockType(blockContextMenu.block, 'quote')}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left transition ${
+                blockContextMenu.block.type === 'quote' ? 'text-amber-400 font-bold' : ''
+              }`}
+            >
+              <span>Blockquote</span>
+              <span className="text-[10px] font-mono opacity-40">&quot;quote&quot;</span>
+            </button>
+          </div>
+
+          <div className="h-px bg-white/10 my-1" />
+
+          {/* Indent Actions */}
+          <div className="grid grid-cols-2 gap-1 px-1">
+            <button
+              type="button"
+              onClick={() => handleChangeIndent(blockContextMenu.block, 1)}
+              className="px-2 py-1.5 rounded-lg hover:bg-white/10 text-center transition font-mono text-[11px]"
+            >
+              + Indent (Tab)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleChangeIndent(blockContextMenu.block, -1)}
+              className="px-2 py-1.5 rounded-lg hover:bg-white/10 text-center transition font-mono text-[11px]"
+            >
+              - Outdent
+            </button>
+          </div>
+
+          <div className="h-px bg-white/10 my-1" />
+
+          {/* Delete Block */}
+          <button
+            type="button"
+            onClick={() => {
+              handleDeleteBlock(blockContextMenu.block.id);
+              setBlockContextMenu(null);
+            }}
+            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 text-left transition font-semibold cursor-pointer"
+          >
+            <span>Delete Block</span>
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Full-Viewport Modal: Confirm Delete Section */}
+      {sectionToDelete && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border border-white/20 bg-slate-950/95 p-6 shadow-2xl backdrop-blur-2xl text-slate-100 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Delete Section?</h3>
+                <p className="text-xs text-slate-400 font-mono">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Are you sure you want to permanently delete section <span className="font-semibold text-rose-300">&quot;{sectionToDelete.title}&quot;</span>? All pages and notes within this section will be removed.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setSectionToDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteSection}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition shadow-lg shadow-rose-900/40 cursor-pointer"
+              >
+                Delete Section
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-Viewport Modal: Confirm Delete Page */}
+      {pageToDelete && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border border-white/20 bg-slate-950/95 p-6 shadow-2xl backdrop-blur-2xl text-slate-100 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Delete Page?</h3>
+                <p className="text-xs text-slate-400 font-mono">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Are you sure you want to delete <span className="font-semibold text-rose-300">&quot;{pageToDelete.title}&quot;</span> and all its block content?
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setPageToDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeletePage}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition shadow-lg shadow-rose-900/40 cursor-pointer"
+              >
+                Delete Page
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

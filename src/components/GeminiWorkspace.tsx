@@ -316,8 +316,24 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
 
   // Current selected conversation
   const currentConversation = useMemo(() => {
-    return conversations.find((c) => c.id === selectedConvId) || conversations[0];
+    return conversations.find((c) => c.id === selectedConvId) || conversations[0] || null;
   }, [conversations, selectedConvId]);
+
+  // Conversation transition sweep counter
+  const [convChangeCount, setConvChangeCount] = useState(0);
+  const prevConvIdRef = useRef(selectedConvId);
+  const isConvInitialMount = useRef(true);
+
+  useEffect(() => {
+    if (prevConvIdRef.current !== selectedConvId) {
+      prevConvIdRef.current = selectedConvId;
+      if (isConvInitialMount.current) {
+        isConvInitialMount.current = false;
+        return;
+      }
+      setConvChangeCount((c) => c + 1);
+    }
+  }, [selectedConvId]);
 
   // Auto scroll to bottom when messages change
   useEffect(() => {
@@ -436,10 +452,41 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     );
   };
 
-  // Send message (supports text query, attachments, or both)
+  // Delete individual message from current conversation
+  const handleDeleteMessage = (msgId: string) => {
+    if (!currentConversation) return;
+    const updatedMessages = currentConversation.messages.filter((m) => m.id !== msgId);
+    const updatedConv: GeminiConversation = {
+      ...currentConversation,
+      messages: updatedMessages,
+      updatedAt: 'Just now',
+    };
+    onUpdateConversations(
+      conversations.map((c) => (c.id === currentConversation.id ? updatedConv : c))
+    );
+  };
+
+  // Send message (supports text query, attachments, or both, auto-creating conversation if needed)
   const handleSendMessage = async (textToSend?: string) => {
     const query = (textToSend ?? inputMessage).trim();
-    if ((!query && attachments.length === 0) || isLoading || !currentConversation) return;
+    if ((!query && attachments.length === 0) || isLoading) return;
+
+    let targetConv = currentConversation;
+    let isBrandNewConv = false;
+
+    if (!targetConv) {
+      isBrandNewConv = true;
+      const brandNewId = `conv-${Date.now()}`;
+      targetConv = {
+        id: brandNewId,
+        title: query ? (query.length > 35 ? query.slice(0, 32) + '...' : query) : 'New Conversation',
+        createdAt: 'Just now',
+        updatedAt: 'Just now',
+        model: selectedModel,
+        messages: [],
+      };
+      setSelectedConvId(brandNewId);
+    }
 
     const currentAttachments = [...attachments];
     setAttachments([]);
@@ -467,24 +514,29 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
 
     // If it's a new conversation or generic title, auto-title from prompt
     const shouldAutoTitle =
-      currentConversation.title === 'New Conversation' ||
-      currentConversation.messages.length === 0;
+      isBrandNewConv ||
+      targetConv.title === 'New Conversation' ||
+      targetConv.messages.length === 0;
     const autoTitle = shouldAutoTitle
       ? query.length > 40
         ? query.slice(0, 37) + '...'
         : query || (currentAttachments[0]?.name ? `File: ${currentAttachments[0].name}` : 'New Conversation')
-      : currentConversation.title;
+      : targetConv.title;
 
     const updatedConversation: GeminiConversation = {
-      ...currentConversation,
+      ...targetConv,
       title: autoTitle,
       updatedAt: 'Just now',
-      messages: [...currentConversation.messages, userMessage],
+      messages: [...targetConv.messages, userMessage],
     };
 
-    onUpdateConversations(
-      conversations.map((c) => (c.id === currentConversation.id ? updatedConversation : c))
-    );
+    if (isBrandNewConv) {
+      onUpdateConversations([updatedConversation, ...conversations]);
+    } else {
+      onUpdateConversations(
+        conversations.map((c) => (c.id === targetConv!.id ? updatedConversation : c))
+      );
+    }
 
     setIsLoading(true);
 
@@ -508,7 +560,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
         model: selectedModel,
         enableThinking,
         attachments: currentAttachments,
-        history: currentConversation.messages.map((m) => ({
+        history: targetConv.messages.map((m) => ({
           role: m.role,
           content: m.content,
         })),
@@ -530,9 +582,13 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
         messages: [...updatedConversation.messages, botMessage],
       };
 
-      onUpdateConversations(
-        conversations.map((c) => (c.id === currentConversation.id ? finalConversation : c))
-      );
+      if (isBrandNewConv) {
+        onUpdateConversations([finalConversation, ...conversations]);
+      } else {
+        onUpdateConversations(
+          conversations.map((c) => (c.id === targetConv!.id ? finalConversation : c))
+        );
+      }
     } catch (err: unknown) {
       if (ac.signal.aborted) return;
       const errMsg = err instanceof Error ? err.message : 'Unknown network error';
@@ -550,9 +606,13 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
         messages: [...updatedConversation.messages, botMessage],
       };
 
-      onUpdateConversations(
-        conversations.map((c) => (c.id === currentConversation.id ? finalConversation : c))
-      );
+      if (isBrandNewConv) {
+        onUpdateConversations([finalConversation, ...conversations]);
+      } else {
+        onUpdateConversations(
+          conversations.map((c) => (c.id === targetConv!.id ? finalConversation : c))
+        );
+      }
     } finally {
       abortControllerRef.current = null;
       setIsLoading(false);
@@ -1111,8 +1171,21 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
             </header>
 
             {/* Chat Thread Messages Area — Protected with .gemini-chat-canvas for 120 FPS Zero-Lag Scrolling */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar gemini-chat-canvas relative z-10">
-              {currentConversation && currentConversation.messages.length === 0 ? (
+            <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col">
+              {/* OneNote-style blur sweep animation on conversation change */}
+              {convChangeCount > 0 && (
+                <div
+                  key={`conv-blur-${convChangeCount}`}
+                  className="absolute inset-0 z-30 pointer-events-none onenote-page-blur-sweep"
+                  aria-hidden="true"
+                />
+              )}
+
+              <div
+                key={currentConversation?.id || 'empty-stage'}
+                className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar gemini-chat-canvas relative z-10 onenote-page-content-reveal"
+              >
+                {!currentConversation || currentConversation.messages.length === 0 ? (
                 /* Empty Chat Welcome Hero */
                 <div className="max-w-2xl mx-auto py-12 text-center space-y-6">
                   <div
@@ -1173,34 +1246,9 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                     <div
                       key={msg.id}
                       className={`flex gap-3 max-w-3xl ${
-                        isUser ? 'ml-auto flex-row-reverse' : 'mr-auto'
+                        isUser ? 'ml-auto' : 'mr-auto'
                       }`}
                     >
-                      {/* Avatar matching active theme and palette */}
-                      <div
-                        className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0 border shadow-xs"
-                        style={
-                          isUser
-                            ? {
-                                background: `linear-gradient(135deg, ${activePalette.primary}35, ${activePalette.accent}30)`,
-                                borderColor: `${activePalette.primary}70`,
-                                boxShadow: `0 0 10px ${activePalette.primary}25`,
-                              }
-                            : {
-                                background: `linear-gradient(135deg, ${activePalette.primary}30, ${activePalette.accent}30)`,
-                                borderColor: `${activePalette.primary}50`,
-                              }
-                        }
-                      >
-                        {isUser ? (
-                          <span className="text-xs font-bold text-white">U</span>
-                        ) : (
-                          <Sparkles
-                            className="w-3.5 h-3.5"
-                            style={{ color: activePalette.primary }}
-                          />
-                        )}
-                      </div>
 
                       {/* Bubble dynamically styled to match selected color palette and theme */}
                       <div
@@ -1302,36 +1350,43 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                           isUser={isUser}
                         />
 
-                        {/* Bottom Metadata & Copy Action */}
-                        <div
-                          className={`flex items-center justify-between gap-3 mt-2.5 pt-1.5 border-t text-[10px] font-mono ${
-                            isUser
-                              ? 'border-white/20 text-white/80'
-                              : 'border-white/5 text-slate-400'
-                          }`}
-                        >
-                          <span>{msg.timestamp}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(msg.id, msg.content)}
-                            className={`opacity-0 group-hover/msg:opacity-100 transition flex items-center gap-1 ${
-                              isUser ? 'hover:text-white' : 'hover:text-white'
+                          <div
+                            className={`flex items-center justify-between gap-3 mt-2.5 pt-1.5 border-t text-[10px] font-mono ${
+                              isUser
+                                ? 'border-white/20 text-white/80'
+                                : 'border-white/5 text-slate-400'
                             }`}
-                            title="Copy message"
                           >
-                            {copiedMsgId === msg.id ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-400" />
-                                <span className="text-emerald-400">Copied</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3" />
-                                <span>Copy</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
+                            <span>{msg.timestamp}</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(msg.id, msg.content)}
+                                className="opacity-0 group-hover/msg:opacity-100 transition flex items-center gap-1 hover:text-white"
+                                title="Copy message"
+                              >
+                                {copiedMsgId === msg.id ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    <span className="text-emerald-400">Copied</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3" />
+                                    <span>Copy</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMessage(msg.id)}
+                                className="opacity-0 group-hover/msg:opacity-100 transition p-1 rounded hover:text-rose-400 hover:bg-rose-500/10 text-slate-400"
+                                title="Delete message"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
                       </div>
                     </div>
                   );
@@ -1367,6 +1422,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
 
               <div ref={messagesEndRef} />
             </div>
+          </div>
 
             {/* Bottom Streamlined Prompt Dock */}
             <div className="px-3 sm:px-6 pb-3 pt-1 shrink-0">

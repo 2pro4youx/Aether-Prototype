@@ -124,14 +124,14 @@ export const PALETTES: ColorPalette[] = [
     textAccent: 'text-orange-400',
   },
   {
-    id: 'black-night',
-    name: 'Black Night',
-    description: 'Deep cosmic obsidian void with off-white luminescence and dark carbon shadow glow',
-    primary: '#f1f5f9',
-    accent: '#cbd5e1',
-    gradient: 'from-slate-100 via-slate-300 to-zinc-700',
+    id: 'atom',
+    name: 'Atom',
+    description: 'Pure minimalist obsidian carbon void — strictly deep black with crisp white icons and text',
+    primary: '#27272a',
+    accent: '#09090b',
+    gradient: 'from-zinc-800 via-zinc-900 to-black',
     bgDark: '#000000',
-    textAccent: 'text-slate-100',
+    textAccent: 'text-white',
   },
 ];
 
