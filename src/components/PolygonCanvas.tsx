@@ -711,24 +711,34 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
                   onClick={() => handleQualityChange(tier)}
                   className={`px-3 py-1 rounded-full transition text-[11px] font-medium flex items-center gap-1 ${
                     active
-                      ? 'shadow-sm font-semibold'
+                      ? 'shadow-sm font-semibold text-white'
                       : 'text-slate-300 hover:text-white hover:bg-white/10'
                   }`}
                   style={
                     active
                       ? {
-                          backgroundColor: `${displayPalette?.primary || '#f59e0b'}35`,
-                          color: displayPalette?.id === 'black-night' ? '#f1f5f9' : (displayPalette?.primary || '#f59e0b'),
-                          border: `1px solid ${displayPalette?.primary || '#f59e0b'}60`,
+                          backgroundColor:
+                            displayPalette?.id === 'black-night'
+                              ? 'rgba(255, 255, 255, 0.18)'
+                              : `${displayPalette?.primary || '#f59e0b'}40`,
+                          color: '#ffffff',
+                          border:
+                            displayPalette?.id === 'black-night'
+                              ? '1px solid rgba(255, 255, 255, 0.35)'
+                              : `1px solid ${displayPalette?.primary || '#f59e0b'}80`,
+                          boxShadow:
+                            displayPalette?.id === 'black-night'
+                              ? '0 0 12px rgba(255, 255, 255, 0.15)'
+                              : `0 0 12px ${displayPalette?.primary || '#f59e0b'}30`,
                         }
                       : {}
                   }
                   title={`${preset.desc} (${preset.badge})`}
                 >
-                  {tier === 'performance' && <Zap className="w-3 h-3 text-slate-100" />}
-                  {tier === 'balanced' && <Gauge className="w-3 h-3 text-slate-100" />}
-                  {tier === 'ultra' && <Sparkles className="w-3 h-3 text-slate-100" />}
-                  <span>{preset.label}</span>
+                  {tier === 'performance' && <Zap className="w-3 h-3 text-white" />}
+                  {tier === 'balanced' && <Gauge className="w-3 h-3 text-white" />}
+                  {tier === 'ultra' && <Sparkles className="w-3 h-3 text-white" />}
+                  <span className="text-white">{preset.label}</span>
                 </button>
               );
             })}
@@ -761,7 +771,10 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
             Harness Learnings{' '}
             <span
               style={{
-                backgroundImage: `linear-gradient(135deg, ${displayPalette?.primary || '#f59e0b'}, ${displayPalette?.accent || '#dc2626'})`,
+                backgroundImage:
+                  displayPalette?.id === 'black-night'
+                    ? 'linear-gradient(135deg, #f8fafc, #94a3b8)'
+                    : `linear-gradient(135deg, ${displayPalette?.primary || '#f59e0b'}, ${displayPalette?.accent || '#dc2626'})`,
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
               }}
@@ -779,15 +792,27 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
               onClick={onEnterApp}
               className="glow-button rounded-full shadow-2xl hover:scale-[1.03] active:scale-[0.97] transition-all duration-200 text-sm font-semibold"
               style={{
-                ['--button-shine-left' as any]: displayPalette?.primary || '#f59e0b',
-                ['--button-shine-right' as any]: displayPalette?.accent || '#dc2626',
-                ['--button-glow-start' as any]: displayPalette?.primary || '#f59e0b',
-                ['--button-glow-end' as any]: displayPalette?.accent || '#dc2626',
+                ['--button-shine-left' as any]:
+                  displayPalette?.id === 'black-night' ? '#27272a' : displayPalette?.primary || '#f59e0b',
+                ['--button-shine-right' as any]:
+                  displayPalette?.id === 'black-night' ? '#09090b' : displayPalette?.accent || '#dc2626',
+                ['--button-glow-start' as any]:
+                  displayPalette?.id === 'black-night' ? '#050505' : displayPalette?.primary || '#f59e0b',
+                ['--button-glow-end' as any]:
+                  displayPalette?.id === 'black-night' ? '#000000' : displayPalette?.accent || '#dc2626',
+                ...(displayPalette?.id === 'black-night'
+                  ? {
+                      boxShadow: '0 0 35px 4px rgba(0, 0, 0, 0.95), inset 0 0 12px rgba(255, 255, 255, 0.08)',
+                    }
+                  : {}),
               }}
             >
               <div className="gradient" />
               <span className="px-7 py-3 rounded-full flex items-center gap-2.5">
-                <Sparkles className="w-4 h-4" style={{ color: displayPalette?.primary }} />
+                <Sparkles
+                  className="w-4 h-4"
+                  style={{ color: displayPalette?.id === 'black-night' ? '#f1f5f9' : displayPalette?.primary }}
+                />
                 <span className="font-bold text-white tracking-wide">Launch Aether</span>
               </span>
             </button>

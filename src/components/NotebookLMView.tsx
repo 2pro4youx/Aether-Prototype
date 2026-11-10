@@ -161,11 +161,31 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const getCleanMimeType = (file: File): string => {
+    if (file.type && file.type.includes('/')) return file.type;
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      case 'webp': return 'image/webp';
+      case 'gif': return 'image/gif';
+      case 'svg': return 'image/svg+xml';
+      case 'pdf': return 'application/pdf';
+      case 'txt': return 'text/plain';
+      case 'md': return 'text/markdown';
+      case 'csv': return 'text/csv';
+      case 'json': return 'application/json';
+      default: return file.type || 'application/octet-stream';
+    }
+  };
+
   const handleFiles = (files: FileList | File[]) => {
     const fileArray = Array.from(files);
     fileArray.forEach((file) => {
       const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name);
       const isTextOrCode = /\.(txt|md|csv|json|py|js|ts|tsx|jsx|html|css|c|cpp|rs|go|java|xml|yaml|yml|log|sh)$/i.test(file.name);
+      const mimeType = getCleanMimeType(file);
       const reader = new FileReader();
 
       if (isImage) {
@@ -175,7 +195,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
             name: file.name,
             size: file.size,
             sizeFormatted: formatFileSize(file.size),
-            type: file.type || 'image',
+            type: mimeType,
             isImage: true,
             dataUrl: e.target?.result as string,
           };
@@ -190,7 +210,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
             name: file.name,
             size: file.size,
             sizeFormatted: formatFileSize(file.size),
-            type: file.name.split('.').pop() || 'text',
+            type: mimeType,
             isImage: false,
             textContent: textContent.slice(0, 45000),
           };
@@ -215,7 +235,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
             name: file.name,
             size: file.size,
             sizeFormatted: formatFileSize(file.size),
-            type: file.name.split('.').pop() || 'document',
+            type: mimeType,
             isImage: false,
             dataUrl: e.target?.result as string,
           };
@@ -226,7 +246,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
             title: file.name,
             type: file.name.endsWith('.pdf') ? 'pdf' : 'text',
             excerpt: `Uploaded ${file.name} (${formatFileSize(file.size)})`,
-            fullContent: `Uploaded document: ${file.name}. Size: ${formatFileSize(file.size)}`,
+            fullContent: `[Document Attached: ${file.name}]\nDocument uploaded to workspace for synthesis and multimodal grounding.\nFile Size: ${formatFileSize(file.size)}`,
             words: 100,
             selected: true,
           });
@@ -292,17 +312,15 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
     const ac = new AbortController();
     abortControllerRef.current = ac;
 
-    let queryWithContext = textToSend || displayContent;
-    if (currentAttachments.length > 0) {
-      const attInfo = currentAttachments
-        .map(
-          (a) =>
-            `[Attachment: ${a.name} (${a.type})]${
-              a.textContent ? `\nContent:\n${a.textContent.slice(0, 10000)}` : ''
-            }`
-        )
-        .join('\n\n');
-      queryWithContext = `${queryWithContext}\n\nAttached user files:\n${attInfo}`;
+    let queryWithContext = textToSend;
+    if (!queryWithContext) {
+      if (currentAttachments.some((a) => a.isImage)) {
+        queryWithContext = 'Please examine the attached image in detail. Analyze and describe its contents, layout, text, diagrammatic elements, and key information.';
+      } else if (currentAttachments.length > 0) {
+        queryWithContext = `Please analyze and summarize the attached document${currentAttachments.length > 1 ? 's' : ''} in depth.`;
+      } else {
+        queryWithContext = displayContent;
+      }
     }
 
     try {
@@ -1056,6 +1074,21 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
                   type="text"
                   value={inputQuery}
                   onChange={(e) => setInputQuery(e.target.value)}
+                  onPaste={(e) => {
+                    const items = e.clipboardData?.items;
+                    if (!items) return;
+                    const pastedFiles: File[] = [];
+                    for (let i = 0; i < items.length; i++) {
+                      if (items[i].type.indexOf('image') !== -1) {
+                        const file = items[i].getAsFile();
+                        if (file) pastedFiles.push(file);
+                      }
+                    }
+                    if (pastedFiles.length > 0) {
+                      e.preventDefault();
+                      handleFiles(pastedFiles);
+                    }
+                  }}
                   placeholder={
                     attachments.length > 0
                       ? `Ask about ${attachments.length} attached document${attachments.length > 1 ? 's' : ''} or type math...`

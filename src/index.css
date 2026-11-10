@@ -1118,10 +1118,8 @@ body.glow-tuning-active .liquid-glass-tile::after {
 }
 
 .fullscreen-frost-sweep {
-  backdrop-filter: blur(28px) saturate(1.8) brightness(1.08);
-  -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.08);
   background: rgba(125, 125, 125, 0.05);
-  animation: fullscreenFrostSweep 640ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: fullscreenFrostSweep 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   will-change: opacity, backdrop-filter;
   transform: translateZ(0);
   pointer-events: none;
@@ -1865,24 +1863,56 @@ html:not(.lenis) {
   );
 }
 
+/* Optimized Frosted Liquid Glass Sidebar Deck for Gemini Workspace */
+.liquid-glass-frost-sidebar {
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  transform: translateZ(0);
+  will-change: width;
+  box-shadow: 
+    inset -1px 0 0 rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    4px 0 24px rgba(0, 0, 0, 0.04);
+}
+
+.dark .liquid-glass-frost-sidebar {
+  box-shadow: 
+    inset -1px 0 0 rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    4px 0 24px rgba(0, 0, 0, 0.25);
+}
+
 /* Conversation list liquid glass tiles in both minimized and maximized views */
 .gemini-conv-tile {
-  --tile-glow-opacity: 0.55 !important;
+  --tile-glow-opacity: 0.35 !important;
   --tile-border-glow-opacity: 0.95 !important;
   position: relative;
   isolation: isolate;
-  overflow: hidden;
-  backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, border-color 0.15s ease !important;
+  border-radius: 1rem !important; /* 16px */
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+              box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+              background-color 0.18s ease, 
+              border-color 0.18s ease !important;
   will-change: transform, box-shadow;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  outline: none;
+}
+
+/* Suppress overlapping pseudo-element border masks to guarantee silky, unbroken 16px corner contours */
+.gemini-conv-tile::after {
+  display: none !important;
 }
 
 .gemini-conv-tile:hover {
-  transform: translateY(-1px) scale(1.008);
+  transform: translateY(-1.5px);
+  z-index: 10;
+  border-color: rgba(255, 255, 255, 0.38) !important;
   box-shadow: 
-    0 8px 24px -4px rgba(0, 0, 0, 0.35),
-    0 0 16px -2px color-mix(in srgb, var(--palette-primary, #f59e0b) 28%, transparent) !important;
+    0 8px 24px -4px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.22),
+    0 0 18px -2px color-mix(in srgb, var(--palette-primary, #f59e0b) 45%, transparent) !important;
 }
 
 .gemini-conv-tile:active {
@@ -1902,17 +1932,19 @@ html:not(.lenis) {
 }
 
 .gemini-conv-tile-minimized:hover {
-  transform: scale(1.08) !important;
+  transform: scale(1.06) !important;
 }
 
 .dark .gemini-conv-tile {
-  --tile-glow-opacity: 0.65 !important;
+  --tile-glow-opacity: 0.4 !important;
   --tile-border-glow-opacity: 0.98 !important;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 
 .dark .gemini-conv-tile:hover {
-  background: rgba(30, 41, 59, 0.65);
+  background: rgba(24, 34, 53, 0.75);
+  border-color: rgba(255, 255, 255, 0.38) !important;
 }
 
 /* Reference-inspired illuminated prompt dock for Gemini Workspace - dynamically synced to active palette */

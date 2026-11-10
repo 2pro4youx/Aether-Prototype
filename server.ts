@@ -70,6 +70,115 @@ app.get('/api/gemini/status', async (req, res) => {
   }
 });
 
+// Helper to extract outermost balanced JSON object from a string
+function extractOutermostJson(str: string): { raw: string; start: number; end: number } | null {
+  const startIdx = str.indexOf('{');
+  if (startIdx === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startIdx; i < str.length; i++) {
+    const char = str[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') depth++;
+      else if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          return {
+            raw: str.slice(startIdx, i + 1),
+            start: startIdx,
+            end: i + 1,
+          };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// Helper to clean up raw JSON tool calls (like dalle.text2im) and format them into
+// human-readable markdown with live visual rendering via Pollinations AI.
+function cleanGeminiReply(reply: string): string {
+  if (!reply) return '';
+  const trimmed = reply.trim();
+
+  const extracted = extractOutermostJson(trimmed);
+  if (extracted && (extracted.raw.includes('"action"') || extracted.raw.includes('"dalle') || extracted.raw.includes('"thought"'))) {
+    try {
+      const parsed = JSON.parse(extracted.raw);
+      if (parsed.action || parsed.action_input || parsed.thought) {
+        let prompt = '';
+        if (typeof parsed.action_input === 'string') {
+          try {
+            const inputObj = JSON.parse(parsed.action_input);
+            prompt = inputObj.prompt || inputObj.text || parsed.action_input;
+          } catch {
+            prompt = parsed.action_input;
+          }
+        } else if (parsed.action_input && typeof parsed.action_input === 'object') {
+          prompt = parsed.action_input.prompt || parsed.action_input.text || JSON.stringify(parsed.action_input);
+        } else if (parsed.prompt) {
+          prompt = parsed.prompt;
+        }
+
+        let thought = (parsed.thought || '').replace(
+          /Since I cannot directly ['"]see['"] the user's local file in the same way a human sees a physical object,?\s*/gi,
+          ''
+        ).trim();
+
+        if (parsed.action === 'dalle.text2im' || prompt || thought) {
+          const cleanDesc = prompt || thought || 'Visual analysis';
+          const encodedPrompt = encodeURIComponent(cleanDesc.slice(0, 200));
+          const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&nologo=true`;
+
+          const formattedCard =
+            `### 🎨 Visual Synthesis & Representation\n\n` +
+            (thought ? `> **Visual Analysis**: ${thought}\n\n` : '') +
+            (prompt ? `**Visual Specification & Analysis**:\n${prompt}\n\n` : '') +
+            `![Generated Visual: ${cleanDesc.slice(0, 60)}](${imageUrl})\n`;
+
+          const before = trimmed.slice(0, extracted.start).trim();
+          const after = trimmed.slice(extracted.end).trim();
+          return [before, formattedCard, after].filter(Boolean).join('\n\n').trim();
+        }
+      }
+    } catch {
+      // Fallback regex
+      const thoughtMatch = trimmed.match(/"thought"\s*:\s*"([^"]+)"/);
+      const promptMatch = trimmed.match(/"prompt"\s*:\s*"([^"]+)"/);
+      if (promptMatch || thoughtMatch) {
+        const prompt = promptMatch ? promptMatch[1] : '';
+        const thought = (thoughtMatch ? thoughtMatch[1] : '').replace(
+          /Since I cannot directly ['"]see['"] the user's local file in the same way a human sees a physical object,?\s*/gi,
+          ''
+        ).trim();
+        const cleanDesc = prompt || thought;
+        const encodedPrompt = encodeURIComponent(cleanDesc);
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&nologo=true`;
+        return `### 🎨 Visual Synthesis & Representation\n\n` +
+          (thought ? `> **Visual Analysis**: ${thought}\n\n` : '') +
+          (prompt ? `**Visual Specification**:\n${prompt}\n\n` : '') +
+          `![Generated Visual](${imageUrl})\n`;
+      }
+    }
+  }
+
+  return reply;
+}
+
 // Grounded and Thinking Chat Endpoint
 app.post('/api/gemini/chat', async (req, res) => {
   try {
@@ -78,6 +187,7 @@ app.post('/api/gemini/chat', async (req, res) => {
       model = 'gemini-3.8-flash',
       enableThinking = false,
       sources = [],
+      attachments = [],
       history = [],
     } = req.body;
 
@@ -101,9 +211,13 @@ app.post('/api/gemini/chat', async (req, res) => {
       },
     });
 
-    // Build grounding context from active sources if provided
+    const hasImages = Array.isArray(attachments) && attachments.some(
+      (a: any) => a.isImage || a.type?.startsWith('image/') || (a.dataUrl && a.dataUrl.startsWith('data:image/'))
+    );
+
+    // Build grounding context from active sources if provided (omitted if visual image is analyzed)
     let sourcesContext = '';
-    if (Array.isArray(sources) && sources.length > 0) {
+    if (!hasImages && Array.isArray(sources) && sources.length > 0) {
       sourcesContext =
         `\n\n[Active Knowledge Sources for Grounding]:\n` +
         sources
@@ -114,14 +228,19 @@ app.post('/api/gemini/chat', async (req, res) => {
           .join('\n---\n');
     }
 
-    const targetModel = enableThinking ? 'gemini-4-argon' : model;
+    // Normalize requested model to the best active multimodal models (gemini-3.5-flash is ultra-reliable)
+    const requestedModel = (!model || model === 'gemini-2.5-pro' || model === 'gemini-2.5-flash' || model === 'gemini-1.5-flash' || model === 'gemini-1.5-pro' || model === 'gemini-flash-latest' || model === 'gemini-pro-latest')
+      ? 'gemini-3.5-flash'
+      : model;
+
+    const targetModel = enableThinking ? 'gemini-3.5-flash' : requestedModel;
     const isExtendedModel =
       enableThinking ||
-      targetModel === 'gemini-4-argon' ||
-      targetModel === 'gemini-2.5-pro' ||
-      targetModel === 'gemini-pro-latest';
+      targetModel === 'gemini-4-argon';
 
-    const systemInstruction = isExtendedModel
+    const systemInstruction = hasImages
+      ? `You are Gemini, a helpful, precise, and capable multimodal AI assistant built by Google. Inspect the visual data provided in the attached image parts. Carefully describe what you see, transcribe any visible text, words, and labels with complete accuracy, and format your response in clean Markdown.`
+      : isExtendedModel
       ? (sourcesContext
           ? `You are an expert research and academic synthesis assistant using Gemini extended reasoning mode. ` +
             `Generate thorough, exhaustive, in-depth, and well-structured long-form explanations by default. ` +
@@ -147,26 +266,69 @@ app.post('/api/gemini/chat', async (req, res) => {
     }
 
     // If using high thinking mode
-    if (enableThinking || targetModel === 'gemini-4-argon') {
+    if (enableThinking) {
       config.thinkingConfig = {
         thinkingLevel: ThinkingLevel.HIGH,
       };
     }
 
     // Construct prompt with history & grounding
-    const promptWithContext = sourcesContext
+    let promptWithContext = sourcesContext
       ? `${sourcesContext}\n\nUser Question:\n${message}`
       : message;
 
-    // Candidate fallback models in priority order (strictly valid models, gemini-2.5-flash deprecated)
+    if (hasImages && (!promptWithContext || promptWithContext.startsWith('Uploaded '))) {
+      promptWithContext = 'Please examine the attached image in detail. Read any text, transcribe words/phrases, analyze visual elements, colors, and layout.';
+    }
+
+    // Construct native multimodal contents: user text prompt followed by image inlineData parts
+    const contentsParts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+    contentsParts.push({ text: promptWithContext || 'Please describe and analyze what is in this image.' });
+
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      for (const att of attachments) {
+        if (att.dataUrl && typeof att.dataUrl === 'string' && att.dataUrl.includes('base64,')) {
+          const [header, base64Data] = att.dataUrl.split('base64,');
+          if (base64Data && base64Data.trim()) {
+            let mimeType = att.type || '';
+            if (!mimeType || !mimeType.includes('/')) {
+              const match = header.match(/data:([^;]+);/);
+              if (match && match[1]) {
+                mimeType = match[1];
+              } else if (att.isImage) {
+                mimeType = 'image/png';
+              } else if (att.name?.toLowerCase().endsWith('.pdf')) {
+                mimeType = 'application/pdf';
+              }
+            }
+            if (mimeType.startsWith('image/') || mimeType === 'application/pdf') {
+              contentsParts.push({
+                inlineData: {
+                  mimeType,
+                  data: base64Data.trim(),
+                },
+              });
+            }
+          }
+        }
+
+        if (att.textContent && !att.isImage) {
+          contentsParts.push({
+            text: `\n\n[Attached Document: ${att.name} (${att.type})]\n\`\`\`\n${att.textContent.slice(0, 45000)}\n\`\`\`\n`,
+          });
+        }
+      }
+    }
+
+    const finalContents = contentsParts.length === 1 ? contentsParts[0].text : (contentsParts as any);
+
+    // Candidate fallback models in priority order (strictly valid active models)
     const candidateModels = [
       targetModel,
-      'gemini-3.8-flash',
-      'gemini-4-argon',
+      'gemini-3.5-flash',
       'gemini-3.1-flash-lite',
-      'gemini-2.5-pro',
-      'gemini-flash-latest',
-      'gemini-pro-latest',
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
     ].filter((v, i, a) => a.indexOf(v) === i);
 
     let response: any = null;
@@ -177,7 +339,7 @@ app.post('/api/gemini/chat', async (req, res) => {
       try {
         const attempt = await ai.models.generateContent({
           model: m,
-          contents: promptWithContext,
+          contents: finalContents,
           config,
         });
         response = attempt;
@@ -192,7 +354,7 @@ app.post('/api/gemini/chat', async (req, res) => {
             delete noThinkingConfig.thinkingConfig;
             const attemptNoThinking = await ai.models.generateContent({
               model: m,
-              contents: promptWithContext,
+              contents: finalContents,
               config: noThinkingConfig,
             });
             response = attemptNoThinking;
@@ -209,7 +371,28 @@ app.post('/api/gemini/chat', async (req, res) => {
       throw lastError;
     }
 
-    const reply = response?.text || 'No response generated from the model.';
+    // Extract clean non-thought text from candidate parts
+    let rawReply = '';
+    const parts = response?.candidates?.[0]?.content?.parts || [];
+    if (parts.length > 0) {
+      const regularParts = parts.filter((p: any) => !p.thought && typeof p.text === 'string');
+      if (regularParts.length > 0) {
+        rawReply = regularParts.map((p: any) => p.text).join('\n\n').trim();
+      } else {
+        const textParts = parts.filter((p: any) => typeof p.text === 'string');
+        rawReply = textParts.map((p: any) => p.text).join('\n\n').trim();
+      }
+    }
+
+    if (!rawReply && response?.text) {
+      rawReply = response.text;
+    }
+
+    if (!rawReply) {
+      rawReply = 'No response generated from the model.';
+    }
+
+    const reply = cleanGeminiReply(rawReply);
 
     return res.json({
       reply,

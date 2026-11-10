@@ -84,7 +84,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [inputMessage, setInputMessage] = useState('');
-  const [selectedModel, setSelectedModel] = useState(propSelectedModel || 'gemini-3.8-flash');
+  const [selectedModel, setSelectedModel] = useState(propSelectedModel || 'gemini-3.5-flash');
 
   useEffect(() => {
     if (propSelectedModel && propSelectedModel !== selectedModel) {
@@ -110,11 +110,31 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const getCleanMimeType = (file: File): string => {
+    if (file.type && file.type.includes('/')) return file.type;
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      case 'webp': return 'image/webp';
+      case 'gif': return 'image/gif';
+      case 'svg': return 'image/svg+xml';
+      case 'pdf': return 'application/pdf';
+      case 'txt': return 'text/plain';
+      case 'md': return 'text/markdown';
+      case 'csv': return 'text/csv';
+      case 'json': return 'application/json';
+      default: return file.type || 'application/octet-stream';
+    }
+  };
+
   const handleFiles = (files: FileList | File[]) => {
     const fileArray = Array.from(files);
     fileArray.forEach((file) => {
       const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name);
       const isTextOrCode = /\.(txt|md|csv|json|py|js|ts|tsx|jsx|html|css|c|cpp|rs|go|java|xml|yaml|yml|log|sh)$/i.test(file.name);
+      const mimeType = getCleanMimeType(file);
       const reader = new FileReader();
 
       if (isImage) {
@@ -124,7 +144,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
             name: file.name,
             size: file.size,
             sizeFormatted: formatFileSize(file.size),
-            type: file.type || 'image',
+            type: mimeType,
             isImage: true,
             dataUrl: e.target?.result as string,
           };
@@ -139,7 +159,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
             name: file.name,
             size: file.size,
             sizeFormatted: formatFileSize(file.size),
-            type: file.name.split('.').pop() || 'text',
+            type: mimeType,
             isImage: false,
             textContent: textContent.slice(0, 45000),
           };
@@ -154,7 +174,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
             name: file.name,
             size: file.size,
             sizeFormatted: formatFileSize(file.size),
-            type: file.name.split('.').pop() || 'document',
+            type: mimeType,
             isImage: false,
             dataUrl: e.target?.result as string,
           };
@@ -471,17 +491,15 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     const ac = new AbortController();
     abortControllerRef.current = ac;
 
-    let promptWithContext = query || displayContent;
-    if (currentAttachments.length > 0) {
-      const attSummaries = currentAttachments
-        .map(
-          (a) =>
-            `[Attachment: ${a.name} (${a.type})]${
-              a.textContent ? `\nContent excerpt:\n${a.textContent.slice(0, 15000)}` : ''
-            }`
-        )
-        .join('\n\n');
-      promptWithContext = `${promptWithContext}\n\nAttached user files:\n${attSummaries}`;
+    let promptWithContext = query;
+    if (!promptWithContext) {
+      if (currentAttachments.some((a) => a.isImage)) {
+        promptWithContext = 'Please examine the attached image in detail. Analyze and describe its contents, layout, text, diagrammatic elements, and key information.';
+      } else if (currentAttachments.length > 0) {
+        promptWithContext = `Please analyze and summarize the attached document${currentAttachments.length > 1 ? 's' : ''} in depth.`;
+      } else {
+        promptWithContext = displayContent;
+      }
     }
 
     try {
@@ -589,18 +607,18 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
 
           {/* ================= LEFT SIDEBAR (CHATS, SEARCH, ACTIONS) ================= */}
           <aside
-            className={`relative z-20 flex flex-col shrink-0 transition-[width] duration-300 border-r ${
+            className={`relative z-20 flex flex-col shrink-0 transition-[width] duration-300 border-r liquid-glass-frost-sidebar ${
               isSidebarCollapsed
                 ? 'w-14 sm:w-16 items-center p-2.5 justify-between h-full'
                 : 'w-full md:w-80 lg:w-96 p-3 sm:p-4'
             } ${
               darkMode
-                ? 'border-white/10 bg-[#070b14]/95 text-slate-100'
-                : 'border-slate-300/80 bg-slate-50/95 text-slate-900 shadow-sm'
+                ? 'border-white/15 bg-slate-950/40 text-slate-100'
+                : 'border-slate-300/80 bg-white/55 text-slate-900 shadow-sm'
             }`}
             style={{
-              backdropFilter: 'none',
-              WebkitBackdropFilter: 'none',
+              backdropFilter: 'blur(28px) saturate(1.4)',
+              WebkitBackdropFilter: 'blur(28px) saturate(1.4)',
             }}
           >
             {isSidebarCollapsed ? (
@@ -637,7 +655,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                 <div className="w-6 h-px bg-white/10 my-2 shrink-0" />
 
                 {/* Scrollable Indexed Conversation Bubbles (OneNote Rail Style) */}
-                <div className="flex-1 w-full overflow-y-auto no-scrollbar flex flex-col items-center gap-2 py-1">
+                <div className="flex-1 w-full overflow-y-auto no-scrollbar flex flex-col items-center gap-2 py-2 px-1">
                   {conversations.map((conv, index) => {
                     const isSelected = selectedConvId === conv.id;
                     return (
@@ -722,7 +740,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                         borderColor: `${activePalette.primary}60`,
                       }}
                     >
-                      <Sparkles className="w-4 h-4 text-slate-100" style={{ color: activePalette.id === 'black-night' ? '#f1f5f9' : activePalette.primary }} />
+                      <Sparkles className="w-4 h-4 text-slate-100" style={{ color: darkMode ? '#f1f5f9' : activePalette.primary }} />
                     </div>
                     <div>
                       <h2 className="text-sm font-bold tracking-tight flex items-center gap-1.5">
@@ -732,7 +750,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                           style={{
                             backgroundColor: `${activePalette.primary}15`,
                             borderColor: `${activePalette.primary}40`,
-                            color: activePalette.primary,
+                            color: darkMode ? '#f1f5f9' : activePalette.primary,
                           }}
                         >
                           AI
@@ -775,7 +793,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                   }}
                   title="Start a new AI conversation"
                 >
-                  <Plus className="w-4 h-4 shrink-0 relative z-10 text-slate-100" style={{ color: activePalette.id === 'black-night' ? '#f1f5f9' : activePalette.primary }} />
+                  <Plus className="w-4 h-4 shrink-0 relative z-10 text-slate-100" style={{ color: darkMode ? '#f1f5f9' : activePalette.primary }} />
                   <span className="relative z-10 font-bold">New Conversation</span>
                 </button>
 
@@ -804,8 +822,8 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                   )}
                 </div>
 
-                {/* Conversation List Tiles */}
-                <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar min-h-0 pr-0.5">
+                {/* Conversation List Tiles with generous breathing padding to prevent clipping */}
+                <div className="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar min-h-0 p-2">
                   {filteredConversations.length === 0 ? (
                     <div className="text-center py-8 text-xs text-slate-500 font-mono">
                       No conversations match "{searchQuery}"
@@ -824,11 +842,11 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                           className={`p-3 rounded-2xl cursor-pointer select-none border transition-all duration-200 group relative liquid-glass-tile gemini-conv-tile ${
                             isSelected
                               ? darkMode
-                                ? 'bg-white/10 text-white font-semibold shadow-md'
+                                ? 'bg-white/12 text-white font-semibold shadow-md'
                                 : 'bg-white text-slate-950 font-semibold shadow-md'
                               : darkMode
-                              ? 'bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 border-white/10 hover:border-white/20'
-                              : 'bg-white/60 hover:bg-white text-slate-700 border-slate-200/90 hover:border-slate-300'
+                              ? 'bg-white/[0.04] hover:bg-white/[0.09] text-slate-200 border-white/10 hover:border-white/30'
+                              : 'bg-white/70 hover:bg-white text-slate-800 border-slate-200/90 hover:border-slate-300'
                           }`}
                           style={{
                             ...(isSelected
@@ -859,13 +877,13 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                               <MessageSquare
                                 className={`w-4 h-4 shrink-0 transition-colors ${
                                   isSelected
-                                    ? activePalette.id === 'black-night'
+                                    ? darkMode
                                       ? 'text-slate-100'
                                       : ''
                                     : 'text-slate-300 group-hover:text-white'
                                 }`}
                                 style={{
-                                  color: isSelected && activePalette.id !== 'black-night' ? activePalette.primary : undefined,
+                                  color: isSelected ? (darkMode ? '#f1f5f9' : activePalette.primary) : undefined,
                                 }}
                               />
                             </div>
@@ -1158,20 +1176,20 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                         isUser ? 'ml-auto flex-row-reverse' : 'mr-auto'
                       }`}
                     >
-                      {/* Avatar */}
+                      {/* Avatar matching active theme and palette */}
                       <div
-                        className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 border shadow-xs ${
-                          isUser
-                            ? 'bg-cyan-500/30 border-cyan-400/50 text-cyan-200'
-                            : 'border-white/15'
-                        }`}
+                        className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0 border shadow-xs"
                         style={
-                          !isUser
+                          isUser
                             ? {
+                                background: `linear-gradient(135deg, ${activePalette.primary}35, ${activePalette.accent}30)`,
+                                borderColor: `${activePalette.primary}70`,
+                                boxShadow: `0 0 10px ${activePalette.primary}25`,
+                              }
+                            : {
                                 background: `linear-gradient(135deg, ${activePalette.primary}30, ${activePalette.accent}30)`,
                                 borderColor: `${activePalette.primary}50`,
                               }
-                            : undefined
                         }
                       >
                         {isUser ? (
@@ -1184,18 +1202,52 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                         )}
                       </div>
 
-                      {/* Bubble */}
+                      {/* Bubble dynamically styled to match selected color palette and theme */}
                       <div
-                        className={`rounded-2xl p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed relative group/msg border ${
+                        className="rounded-2xl p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed relative group/msg border transition-all duration-200"
+                        style={
                           isUser
                             ? darkMode
-                              ? 'bg-cyan-500/25 text-white border-cyan-400/50 shadow-md font-medium'
-                              : 'bg-cyan-600 text-white border-cyan-700 shadow-sm font-medium'
+                              ? activePalette.id === 'black-night'
+                                ? {
+                                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03))',
+                                    borderColor: 'rgba(255, 255, 255, 0.22)',
+                                    boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.15)',
+                                    color: '#f8fafc',
+                                  }
+                                : {
+                                    background: `linear-gradient(135deg, ${activePalette.primary}35, ${activePalette.accent}25)`,
+                                    borderColor: `${activePalette.primary}75`,
+                                    boxShadow: `0 4px 24px -4px ${activePalette.primary}35, inset 0 1px 1px rgba(255, 255, 255, 0.2)`,
+                                    color: '#ffffff',
+                                  }
+                              : {
+                                  background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                                  borderColor: activePalette.primary,
+                                  boxShadow: `0 4px 18px -2px ${activePalette.primary}45`,
+                                  color: '#ffffff',
+                                }
                             : darkMode
-                            ? 'bg-slate-900/80 text-slate-100 border-white/10 shadow-lg'
-                            : 'bg-white/95 text-slate-900 border-slate-200/90 shadow-sm'
-                        }`}
-                        style={isUser ? { color: '#ffffff' } : undefined}
+                            ? activePalette.id === 'black-night'
+                              ? {
+                                  background: 'rgba(12, 12, 16, 0.85)',
+                                  borderColor: 'rgba(255, 255, 255, 0.12)',
+                                  boxShadow: '0 8px 32px -4px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+                                  color: '#f1f5f9',
+                                }
+                              : {
+                                  background: 'rgba(15, 23, 42, 0.78)',
+                                  borderColor: `${activePalette.primary}35`,
+                                  boxShadow: `0 8px 32px -4px ${activePalette.primary}15, inset 0 1px 0 rgba(255, 255, 255, 0.08)`,
+                                  color: '#f8fafc',
+                                }
+                            : {
+                                background: 'rgba(255, 255, 255, 0.95)',
+                                borderColor: `${activePalette.primary}40`,
+                                boxShadow: `0 8px 24px -4px ${activePalette.primary}15`,
+                                color: '#0f172a',
+                              }
+                        }
                       >
                         {/* Attachments preview if present in message */}
                         {msg.attachments && msg.attachments.length > 0 && (
@@ -1407,7 +1459,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                   </div>
                 )}
 
-                {/* Clean, low-profile autosizing textarea */}
+                {/* Clean, low-profile autosizing textarea with clipboard paste support */}
                 <textarea
                   ref={textareaRef}
                   rows={1}
@@ -1416,6 +1468,21 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                     setInputMessage(e.target.value);
                     e.target.style.height = 'auto';
                     e.target.style.height = `${Math.min(140, Math.max(32, e.target.scrollHeight))}px`;
+                  }}
+                  onPaste={(e) => {
+                    const items = e.clipboardData?.items;
+                    if (!items) return;
+                    const pastedFiles: File[] = [];
+                    for (let i = 0; i < items.length; i++) {
+                      if (items[i].type.indexOf('image') !== -1) {
+                        const file = items[i].getAsFile();
+                        if (file) pastedFiles.push(file);
+                      }
+                    }
+                    if (pastedFiles.length > 0) {
+                      e.preventDefault();
+                      handleFiles(pastedFiles);
+                    }
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {

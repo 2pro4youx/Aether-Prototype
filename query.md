@@ -1,0 +1,35 @@
+Implement multi-user Google Authentication, exclusive per-user cloud data storage with Supabase, and Google Docs/Slides integration across the project which are the future updates for today. Follow these exact steps, the docs/slides integration would go after:
+
+1. Dependencies & Config:
+- Install `@supabase/supabase-js` and `googleapis` (use `--legacy-peer-deps` if needed).
+- Create `src/lib/supabase.ts` using `https://pxunhenbcbpztguenwgw.supabase.co/rest/v1/` and `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4dW5oZW5iY2JwenRndWVud2d3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQxNjAzMjAsImV4cCI6MjEwOTczNjMyMH0.IGxLewjaNECKSi5X9mCHO53sFtRt8fZ2ofXrQppQP1I`.
+- Generate a `supabase_schema.sql` file in the root directory containing the tables (`notebooks`, `sources`, `chat_messages`, `workspace_files`) with `user_id uuid references auth.users(id) default auth.uid()` and Row Level Security (RLS) policies (`auth.uid() = user_id`).
+
+2. Google OAuth Sign-In (Frontend):
+- Add a Google Sign-In/Sign-Out button in the header using `supabase.auth.signInWithOAuth({ provider: 'google' })`.
+- Request these exact scopes in OAuth options: `https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/presentations` with `access_type: 'offline'` and `prompt: 'consent'`.
+- Gate the main app view behind authentication so logged-out users see a clean login screen.
+
+3. Exclusive Per-User Data & Gemini Chat Persistence:
+- Replace local/in-memory state for notebooks, note pages/RAG sources, and chat messages with Supabase queries (`select`, `insert`, `update`, `delete`) scoped to the logged-in user.
+- Whenever a user sends a message or Gemini replies, save both turns (`role: 'user' | 'model'`) to the `chat_messages` table tied to the active `notebook_id`.
+- When loading a notebook, fetch its saved `chat_messages` from Supabase and pass them into the `@google/genai` chat `history` array so Gemini retains full conversation context after relogging.
+
+### REDO DASHBOARD & ANALYTICS WINDOW
+do the following changes: 
+1. fix the *animations* removed while entering the google notebook workspace from onenote workspace and gemini workspace
+2. give the user the ability to *upload* all kind of documents that gemini supports in notebook lm window and also give the user the ability to delete messages and responses in all the gemini assitant tiles, fix the google notebook response when no sources are added, also tell the user that the topic is irrelated when off topic questions are asked with respect to sources uploaded. in the notebooklm chat window, remove compare mechanisms, instead add a option to create a list of all the topics covered in source.
+3. closing the workspace does not mean deleting it from the *library*, it shall be saved there. also give the user the ability to delete library folders and sort them in filtering section. give the user the ability to remove a workspace from a folder. give the user the ability to delete workspaces permanently from library, add a clean smooth animation of them dissappearing. also when folders are clicked from the sorting row, add a blur animation on the content of the folders, it shall be smooth. add the same animation for the sorting of the other row. also give the same hover glow animation to the `+ Add Workspace` card. also the `All folders` filter shall show folders not all workspaces. also rename `Untitled Workspaces` to `Assorted Workspaces` and store recently opened workspaces
+4. in the attached image 1 containing the gemini workspace, there shall be the following thing attached in image 2, ie. *chat ui* in gemini workspace
+5. in the third image, showing the *workspace studio tab*, the style shall be frost glass just like the style of the neural assistant, also copy and apply the animations of gemini neural assistant to the workspace pop out (entry) and hiding (exit) and remove the zoom in and out animation of the unfocused window, treat it as a bigger version of neural assistant window covering the upper part as it is right now. when a workspace is closed via the `X` icon, blur it out, make the animation smooth of its removal. also while changing workspaces, add the window change animation.
+6. redo the *dark night* color pallete, rename it to `Atom` and keep it only Black.
+7. In the *onenote window*, give user the ability to delete sections and pages, strictly prompt the user again if delete is clicked, make the delete popup fit the whole webpage ui
+8. all the gemini assistants shall not be usable until *api* is not connected, do not give it a default api since now the gemini agents work in absence of api
+9. *remember the user* if logged in earlier
+10. ![alt text](image.png) this shall be fixed, the edge is not round in *header bar*
+11. fix the *header bar* on its place where it is implemented. Make the aether logo just a white `A` just like other icons and keep the workspace icon white
+12. copy the animation of onenote window while changing pages and implement it on the gemini workspace window while changing conversations
+12. add a smooth animation, take reference of the neural assistant of minimizing and maximizing, and apply it to the two decks (source and generators) on the google notebook workspace window and apply it to them, optimize it too. also while creating a new workspace, prompt the user to fill in the `edit workspace tab` also make the tab liquid glass.
+14. in the `onenote window`, give the user text formatting options when right clicked on the particular block. dont add a scroll bar on the text/heading block and fit the whole block as per the text body entered (especially fix the image uploaded `saying tenses` by removing extra unsymetrical distancing of the container), when it is full or enter is pressed instead expand its size as the text body increases. when enter is pressed let the user add new to-do bullets. when tab is pressed remove the auto table insertion and instead add the indentation support. add bullet support in text block and if there is already a bullet being used and backspace is pressed, stop bulleting further, and if tab is pressed start a new bullet list. if there are already 2 bulleted hirarchel lists going on and backspace is pressed, sync the bullet to the leftmost bullet after the one used, just like onenote.
+15. In all the chat bots, smoothly scroll to the newly sent or generated message if there is presence of invisible scrollbar. Also add a option to copy the responses in both the notebooklm chat and the neural assistant chat just like in the gemini window chat. also give both the notebook lm gemini and the gemini workspace assitants the ability to give out all document types supported by gemini in responses when prompted to (eg. pdf, slide, document). also remove the user icon of gemini and and user in the gemini workspace window. 
+16. In both the notebooklm gemini assistant, and the gemini workspace gemini assistant do not read the images attached or the documents attached, fix it.

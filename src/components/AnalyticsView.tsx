@@ -58,11 +58,11 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         <div>
           <div
             className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
-            style={{ color: activePalette.id === 'black-night' ? '#f1f5f9' : activePalette.primary }}
+            style={{ color: darkMode ? '#f1f5f9' : activePalette.primary }}
           >
             <span
               className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: activePalette.id === 'black-night' ? '#f1f5f9' : activePalette.primary }}
+              style={{ backgroundColor: darkMode ? '#f1f5f9' : activePalette.primary }}
             />
             <span>Student Velocity & Telemetry · {activePalette.name}</span>
           </div>
@@ -99,12 +99,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             Total Study Minutes
           </span>
           <p
-            className="text-3xl font-extrabold tabular-nums"
-            style={{ color: activePalette.id === 'black-night' ? '#f1f5f9' : activePalette.primary }}
+            className={`text-3xl font-extrabold tabular-nums ${darkMode ? 'text-white' : ''}`}
+            style={!darkMode ? { color: activePalette.primary } : undefined}
           >
             {totalMinutes.toLocaleString()} m
           </p>
-          <span className={`text-[11px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <span className={`text-[11px] ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
             Equates to ~{totalHours} academic hours
           </span>
         </div>
@@ -122,7 +122,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
           </p>
           <span
             className="text-[11px] font-semibold"
-            style={{ color: activePalette.id === 'black-night' ? '#cbd5e1' : activePalette.accent }}
+            style={{ color: darkMode ? '#cbd5e1' : activePalette.accent }}
           >
             {subjectAnalytics[0]?.percentage}% of total cognitive effort
           </span>

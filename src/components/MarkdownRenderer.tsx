@@ -3,6 +3,7 @@ import { marked } from 'marked';
 import { getLanguageTheme } from '../utils/languageThemes';
 import { renderHighlightedCodeToHtml } from '../utils/codeHighlighter';
 import { parseAndRenderMath } from '../utils/mathRenderer';
+import { cleanGeminiReply } from '../utils/geminiClient';
 
 interface MarkdownRendererProps {
   content: string;
@@ -21,11 +22,26 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
 
   const rawHtml = useMemo(() => {
     try {
+      // Step 0: Pre-process and intercept any raw JSON action or image generation responses
+      const sanitizedContent = cleanGeminiReply(content);
+
       // Step 1: Pre-process and render KaTeX math formulas (equations, inline math, and formulations)
-      const mathResult = parseAndRenderMath(content);
-      const textToParse = mathResult.html || content;
+      const mathResult = parseAndRenderMath(sanitizedContent);
+      const textToParse = mathResult.html || sanitizedContent;
 
       const renderer = new marked.Renderer();
+
+      // Custom image renderer with frosted frame, lazy loading, and error fallback
+      renderer.image = function ({ href, title, text }: { href: string; title?: string | null; text: string }) {
+        const altText = text || title || 'Visual asset';
+        return `<div class="my-3 rounded-2xl overflow-hidden border ${
+          darkMode ? 'border-white/10 bg-slate-950/60 shadow-2xl' : 'border-slate-200 bg-white/80 shadow-md'
+        } p-1.5 transition-all duration-200 group"><div class="relative overflow-hidden rounded-xl flex items-center justify-center ${
+          darkMode ? 'bg-slate-900/60' : 'bg-slate-100/80'
+        }"><img src="${href}" alt="${altText}" loading="lazy" class="w-full max-h-[520px] object-contain rounded-xl transition duration-300 hover:scale-[1.01]" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'p-4 text-xs text-amber-400 bg-amber-950/20 rounded-xl border border-amber-500/30 flex items-center gap-2\\'><span>⚠️</span><span>Visual asset could not be loaded.</span></div>';" /></div>${
+          altText ? `<div class="px-3 py-1.5 text-[11px] font-mono text-center truncate ${darkMode ? 'text-slate-400' : 'text-slate-600'}">${altText}</div>` : ''
+        }</div>`;
+      };
 
       // Custom code block renderer with clean top bar, OneNote palette, and VS Code syntax highlighting
       renderer.code = function ({ text, lang }: { text: string; lang?: string }) {

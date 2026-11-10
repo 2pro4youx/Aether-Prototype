@@ -137,6 +137,12 @@ export default function App() {
   }, [workspaces]);
 
   useEffect(() => {
+    if (!activeWorkspaceId && workspaces.length > 0) {
+      setActiveWorkspaceId(workspaces[0].id);
+    }
+  }, [activeWorkspaceId, workspaces]);
+
+  useEffect(() => {
     localStorage.setItem('aether_active_workspace_v2', activeWorkspaceId);
   }, [activeWorkspaceId]);
 
@@ -248,7 +254,7 @@ export default function App() {
       setActivePaletteId(id);
     }
   }, [activePaletteId]);
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.8-flash');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash');
   const [enableThinking, setEnableThinking] = useState<boolean>(false);
 
   // Precision Cursor Style & Dynamic Color Adapter Slider (0 to 100)
@@ -1146,9 +1152,10 @@ export default function App() {
   // Source actions (synchronized to active workspace)
   const handleToggleSource = useCallback(
     (id: string) => {
+      const targetId = activeWorkspace?.id || activeWorkspaceId;
       setWorkspaces((prev) =>
         prev.map((w) =>
-          w.id === activeWorkspaceId
+          w.id === targetId
             ? {
                 ...w,
                 updatedAt: 'Just now',
@@ -1158,11 +1165,12 @@ export default function App() {
         )
       );
     },
-    [activeWorkspaceId]
+    [activeWorkspace?.id, activeWorkspaceId]
   );
 
   const handleAddSource = useCallback(
     (sourceData: Omit<NotebookSource, 'id' | 'dateAdded'>) => {
+      const targetId = activeWorkspace?.id || activeWorkspaceId;
       const newSource: NotebookSource = {
         ...sourceData,
         id: `src-${Date.now()}`,
@@ -1170,7 +1178,7 @@ export default function App() {
       };
       setWorkspaces((prev) =>
         prev.map((w) =>
-          w.id === activeWorkspaceId
+          w.id === targetId
             ? {
                 ...w,
                 updatedAt: 'Just now',
@@ -1181,15 +1189,16 @@ export default function App() {
       );
       logAudit('Source Indexed', `Added "${newSource.title}" (${newSource.words} words)`, 'source');
     },
-    [activeWorkspaceId]
+    [activeWorkspace?.id, activeWorkspaceId]
   );
 
   const handleDeleteSource = useCallback(
     (id: string) => {
+      const targetId = activeWorkspace?.id || activeWorkspaceId;
       const s = sources.find((item) => item.id === id);
       setWorkspaces((prev) =>
         prev.map((w) =>
-          w.id === activeWorkspaceId
+          w.id === targetId
             ? {
                 ...w,
                 updatedAt: 'Just now',
@@ -1202,15 +1211,16 @@ export default function App() {
         logAudit('Source Removed', `Deleted source "${s.title}"`, 'source');
       }
     },
-    [activeWorkspaceId, sources]
+    [activeWorkspace?.id, activeWorkspaceId, sources]
   );
 
   // Synchronized OneNote & Gemini handlers for active workspace
   const handleUpdateActiveNotebooks = useCallback(
     (updated: OneNoteNotebook[]) => {
+      const targetId = activeWorkspace?.id || activeWorkspaceId;
       setWorkspaces((prev) =>
         prev.map((w) =>
-          w.id === activeWorkspaceId
+          w.id === targetId
             ? {
                 ...w,
                 updatedAt: 'Just now',
@@ -1220,14 +1230,15 @@ export default function App() {
         )
       );
     },
-    [activeWorkspaceId]
+    [activeWorkspace?.id, activeWorkspaceId]
   );
 
   const handleUpdateActiveConversations = useCallback(
     (updated: GeminiConversation[]) => {
+      const targetId = activeWorkspace?.id || activeWorkspaceId;
       setWorkspaces((prev) =>
         prev.map((w) =>
-          w.id === activeWorkspaceId
+          w.id === targetId
             ? {
                 ...w,
                 updatedAt: 'Just now',
@@ -1237,14 +1248,15 @@ export default function App() {
         )
       );
     },
-    [activeWorkspaceId]
+    [activeWorkspace?.id, activeWorkspaceId]
   );
 
   const handleUpdateActiveChatMessages = useCallback(
     (updated: any[]) => {
+      const targetId = activeWorkspace?.id || activeWorkspaceId;
       setWorkspaces((prev) =>
         prev.map((w) =>
-          w.id === activeWorkspaceId
+          w.id === targetId
             ? {
                 ...w,
                 updatedAt: 'Just now',
@@ -1254,7 +1266,7 @@ export default function App() {
         )
       );
     },
-    [activeWorkspaceId]
+    [activeWorkspace?.id, activeWorkspaceId]
   );
 
   const handleUpdateWorkspace = useCallback((workspaceId: string, updates: Partial<Workspace>) => {
