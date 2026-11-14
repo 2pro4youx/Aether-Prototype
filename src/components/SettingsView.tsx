@@ -22,12 +22,28 @@ import {
   Wand2,
   Shuffle,
   Copy,
+  User,
+  Trash2,
+  Plus,
+  RotateCcw,
+  FileText,
+  Save,
 } from 'lucide-react';
 import { PALETTES } from '../data/mockData';
 import { ColorPaletteId, ColorPalette, CustomPaletteConfig, CursorStyleId } from '../types';
 import { CURSOR_OPTIONS, CursorOption, getCursorGradient, generateCursorSvg, normalizeCursorStyle } from '../utils/cursorUtils';
 import { getLenis } from '../hooks/useSmoothScroll';
 import { getActiveGeminiApiKey, setActiveGeminiApiKey, verifyGeminiApiKey, AVAILABLE_GEMINI_MODELS } from '../utils/geminiClient';
+import {
+  extractFirstName,
+  GEMINI_INSTRUCTION_STARTERS,
+  GeminiPersonalizationConfig,
+  getGeminiPersonalization,
+  getMemoryTierInfo,
+  MemoryCategory,
+  resolvePreferredNames,
+  setGeminiPersonalization,
+} from '../utils/personalization';
 
 interface SettingsViewProps {
   darkMode: boolean;
@@ -51,7 +67,14 @@ interface SettingsViewProps {
   onSignOut?: () => void;
   authenticatedEmail?: string;
   authenticatedName?: string;
+  accountBaseName?: string;
   isGuestSession?: boolean;
+  personalization?: GeminiPersonalizationConfig;
+  onUpdatePersonalization?: (
+    updater:
+      | Partial<GeminiPersonalizationConfig>
+      | ((prev: GeminiPersonalizationConfig) => GeminiPersonalizationConfig)
+  ) => void;
 }
 
 interface PrecisionCursorSectionProps {
@@ -591,8 +614,67 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSignOut,
   authenticatedEmail,
   authenticatedName,
+  accountBaseName,
   isGuestSession = false,
+  personalization: controlledPersonalization,
+  onUpdatePersonalization,
 }) => {
+  type SettingsTabId = 'general' | 'gemini-model' | 'gemini-personalization';
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabId>('general');
+  const [internalPersonalization, setInternalPersonalization] = useState<GeminiPersonalizationConfig>(() =>
+    getGeminiPersonalization()
+  );
+  const activePersonalization = controlledPersonalization || internalPersonalization;
+
+  const updatePersonalization = useCallback(
+    (
+      updater:
+        | Partial<GeminiPersonalizationConfig>
+        | ((prev: GeminiPersonalizationConfig) => GeminiPersonalizationConfig)
+    ) => {
+      if (onUpdatePersonalization) {
+        onUpdatePersonalization(updater);
+      } else {
+        setInternalPersonalization((prev) => {
+          const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+          return setGeminiPersonalization(next);
+        });
+      }
+    },
+    [onUpdatePersonalization]
+  );
+
+  // Personalization draft state for responsive typing and smooth slider dragging
+  const [draftCustomName, setDraftCustomName] = useState(activePersonalization.customName);
+  const [nameSavedBadge, setNameSavedBadge] = useState(false);
+  const [sliderMemoryLevel, setSliderMemoryLevel] = useState(activePersonalization.memoryLevel);
+  const memoryCommitTimerRef = useRef<number | null>(null);
+  const [newMemoryInput, setNewMemoryInput] = useState('');
+  const [newMemoryCategory, setNewMemoryCategory] = useState<MemoryCategory>('preference');
+  const [confirmClearMemories, setConfirmClearMemories] = useState(false);
+  const [draftInstructions, setDraftInstructions] = useState(activePersonalization.customInstructions);
+  const [instructionsSavedBadge, setInstructionsSavedBadge] = useState(false);
+
+  useEffect(() => {
+    setDraftCustomName(activePersonalization.customName);
+  }, [activePersonalization.customName]);
+
+  useEffect(() => {
+    setSliderMemoryLevel(activePersonalization.memoryLevel);
+  }, [activePersonalization.memoryLevel]);
+
+  useEffect(() => {
+    setDraftInstructions(activePersonalization.customInstructions);
+  }, [activePersonalization.customInstructions]);
+
+  useEffect(() => {
+    return () => {
+      if (memoryCommitTimerRef.current !== null) {
+        window.clearTimeout(memoryCommitTimerRef.current);
+      }
+    };
+  }, []);
+
   const [isCustomBuilderOpen, setIsCustomBuilderOpen] = useState(activePaletteId === 'custom');
   const [apiKeyInput, setApiKeyInput] = useState(() => getActiveGeminiApiKey());
   const [isTestingKey, setIsTestingKey] = useState(false);
@@ -602,6 +684,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     success: boolean;
     message: string;
   } | null>(null);
+
+  useEffect(() => {
+    const syncKeyInput = (e: Event) => {
+      const custom = e as CustomEvent<string>;
+      const next = typeof custom.detail === 'string' ? custom.detail : getActiveGeminiApiKey();
+      if (next) {
+        setApiKeyInput(next);
+      }
+    };
+    window.addEventListener('aether-gemini-key-updated', syncKeyInput);
+    return () => window.removeEventListener('aether-gemini-key-updated', syncKeyInput);
+  }, []);
 
   const handleSaveAndTestKey = async () => {
     const trimmedKey = apiKeyInput.trim();
@@ -656,25 +750,90 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   return (
     <div className="relative min-h-[100dvh] md:min-h-screen pt-5 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1560px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
       {/* Title */}
-      <div className="pr-14 md:pr-0">
-        <div
-          className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
-          style={{ color: activePalette.primary }}
-        >
-          <Settings className="w-3.5 h-3.5" />
-          <span>System & Visual Customization</span>
+      <div className="pr-14 md:pr-0 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+        <div>
+          <div
+            className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
+            style={{ color: activePalette.primary }}
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>System & Visual Customization</span>
+          </div>
+          <h1
+            className={`text-3xl sm:text-4xl font-extrabold tracking-tight mt-1 ${
+              darkMode ? 'text-slate-100' : 'text-slate-900'
+            }`}
+          >
+            Settings & Model Hub
+          </h1>
+          <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            Customize visual themes, Gemini models, and how Gemini remembers & addresses you.
+          </p>
         </div>
-        <h1
-          className={`text-3xl sm:text-4xl font-extrabold tracking-tight mt-1 ${
-            darkMode ? 'text-slate-100' : 'text-slate-900'
+
+        {/* Clean Settings Navigation Tabs */}
+        <div
+          role="tablist"
+          aria-label="Settings sections"
+          className={`inline-flex flex-wrap items-center gap-1 p-1.5 rounded-2xl border liquid-glass self-start lg:self-auto ${
+            darkMode ? 'bg-slate-900/75 border-white/10' : 'bg-white/85 border-slate-300/80'
           }`}
         >
-          Settings & Model Hub
-        </h1>
-        <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-          Select theme appearance, choose from 10 dynamic color gradients, and configure Gemini model intelligence.
-        </p>
+          {(
+            [
+              { id: 'general' as SettingsTabId, label: 'Studio & Theme', icon: Sliders },
+              { id: 'gemini-model' as SettingsTabId, label: 'Gemini Model & API', icon: Cpu },
+              { id: 'gemini-personalization' as SettingsTabId, label: 'Gemini Personalization', icon: Sparkles },
+            ]
+          ).map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeSettingsTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setActiveSettingsTab(tab.id)}
+                style={
+                  isActive
+                    ? {
+                        background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                        color: '#0f172a',
+                      }
+                    : {}
+                }
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isActive
+                    ? 'shadow-md'
+                    : darkMode
+                    ? 'text-slate-400 hover:text-white hover:bg-white/5'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span>{tab.label}</span>
+                {tab.id === 'gemini-personalization' && activePersonalization.memories.length > 0 && (
+                  <span
+                    className={`ml-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-md ${
+                      isActive
+                        ? 'bg-slate-950/20 text-slate-950'
+                        : darkMode
+                        ? 'bg-white/10 text-slate-300'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {activePersonalization.memories.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {activeSettingsTab === 'general' && (
+      <div className="space-y-8 onenote-page-content-reveal">
 
       {/* Live Active Theme & Palette Status Banner */}
       <div
@@ -1401,7 +1560,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
         </div>
       </div>
+      </div>
+      )}
 
+      {activeSettingsTab === 'gemini-model' && (
+      <div className="space-y-8 onenote-page-content-reveal">
       {/* Gemini AI Model Changer & Thinking Mode */}
       <div className="liquid-glass rounded-2xl p-6 shadow-xl flex flex-col gap-5 smooth-scroll-contain">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -1694,7 +1857,590 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           })}
         </div>
       </div>
+      </div>
+      )}
 
+      {activeSettingsTab === 'gemini-personalization' && (() => {
+        const tierInfo = getMemoryTierInfo(sliderMemoryLevel);
+        const { firstName: previewFirstName } = resolvePreferredNames(
+          accountBaseName || authenticatedName,
+          draftCustomName
+        );
+        const { firstName: savedFirstName } = resolvePreferredNames(
+          accountBaseName || authenticatedName,
+          activePersonalization.customName
+        );
+        const hasUnsavedInstructions =
+          draftInstructions !== activePersonalization.customInstructions;
+        const hasUnsavedName =
+          draftCustomName.trim() !== activePersonalization.customName.trim();
+
+        const handleCommitMemoryLevel = (level: number) => {
+          const clamped = Math.max(0, Math.min(100, Math.round(level)));
+          setSliderMemoryLevel(clamped);
+          if (memoryCommitTimerRef.current !== null) {
+            window.clearTimeout(memoryCommitTimerRef.current);
+          }
+          memoryCommitTimerRef.current = window.setTimeout(() => {
+            updatePersonalization({ memoryLevel: clamped });
+          }, 90);
+        };
+
+        const handleSaveCustomName = (e?: React.FormEvent) => {
+          if (e) e.preventDefault();
+          const cleaned = draftCustomName.trim().slice(0, 80);
+          setDraftCustomName(cleaned);
+          updatePersonalization({ customName: cleaned });
+          setNameSavedBadge(true);
+          window.setTimeout(() => setNameSavedBadge(false), 1800);
+        };
+
+        const handleAddManualMemory = (e: React.FormEvent) => {
+          e.preventDefault();
+          const clean = newMemoryInput.trim().slice(0, 220);
+          if (clean.length < 3) return;
+          updatePersonalization((prev) => ({
+            ...prev,
+            memories: [
+              {
+                id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                text: clean,
+                category: newMemoryCategory,
+                createdAt: new Date().toISOString(),
+                source: 'manual' as const,
+              },
+              ...prev.memories.filter(
+                (m) => m.text.toLowerCase() !== clean.toLowerCase()
+              ),
+            ].slice(0, 40),
+          }));
+          setNewMemoryInput('');
+        };
+
+        const handleDeleteMemory = (id: string) => {
+          updatePersonalization((prev) => ({
+            ...prev,
+            memories: prev.memories.filter((m) => m.id !== id),
+          }));
+        };
+
+        const handleSaveInstructions = () => {
+          const trimmed = draftInstructions.slice(0, 4000);
+          setDraftInstructions(trimmed);
+          updatePersonalization({ customInstructions: trimmed });
+          setInstructionsSavedBadge(true);
+          window.setTimeout(() => setInstructionsSavedBadge(false), 1800);
+        };
+
+        const handleAppendStarter = (starterText: string) => {
+          setDraftInstructions((prev) => {
+            const current = prev.trim();
+            if (current.toLowerCase().includes(starterText.toLowerCase())) return prev;
+            const next = current ? `${current}\n- ${starterText}` : `- ${starterText}`;
+            return next.slice(0, 4000);
+          });
+        };
+
+        return (
+          <div className="space-y-6 onenote-page-content-reveal">
+            {/* 1. Customize Name Card */}
+            <div className="liquid-glass rounded-2xl p-6 shadow-xl space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <h3
+                    className={`text-base font-bold flex items-center gap-2 ${
+                      darkMode ? 'text-slate-100' : 'text-slate-900'
+                    }`}
+                  >
+                    <User className="w-4 h-4" style={{ color: activePalette.primary }} />
+                    <span>1. Customize Name</span>
+                  </h3>
+                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Choose what Aether &amp; Gemini should call you. We always address you by your first name.
+                  </p>
+                </div>
+
+                {savedFirstName && (
+                  <div
+                    className="px-3 py-1.5 rounded-xl border text-xs font-mono font-semibold flex items-center gap-2 self-start sm:self-auto"
+                    style={{
+                      backgroundColor: `${activePalette.primary}18`,
+                      borderColor: `${activePalette.primary}45`,
+                      color: darkMode ? '#ffffff' : activePalette.primary,
+                    }}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: activePalette.primary }}
+                    />
+                    <span>Calling you: {savedFirstName}</span>
+                  </div>
+                )}
+              </div>
+
+              <form onSubmit={handleSaveCustomName} className="space-y-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                  <input
+                    type="text"
+                    maxLength={80}
+                    value={draftCustomName}
+                    onChange={(e) => setDraftCustomName(e.target.value)}
+                    placeholder={
+                      accountBaseName
+                        ? `Account name: ${accountBaseName} (enter custom name to override)`
+                        : 'Enter your preferred name...'
+                    }
+                    className={`flex-1 px-4 py-2.5 rounded-xl border text-sm font-medium focus:outline-none transition ${
+                      darkMode
+                        ? 'bg-slate-950/75 border-white/15 text-slate-100 placeholder-slate-500 focus:border-white/35'
+                        : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-slate-500'
+                    }`}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="submit"
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer hover:brightness-105"
+                      style={{
+                        background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                        color: '#0f172a',
+                      }}
+                    >
+                      {nameSavedBadge ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+                      <span>{nameSavedBadge ? 'Saved' : hasUnsavedName ? 'Save Name' : 'Save'}</span>
+                    </button>
+
+                    {(draftCustomName.trim() || activePersonalization.customName.trim()) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDraftCustomName('');
+                          updatePersonalization({ customName: '' });
+                        }}
+                        title="Revert to account profile name"
+                        className={`px-3 py-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                          darkMode
+                            ? 'bg-slate-900/70 border-white/10 text-slate-300 hover:bg-white/10'
+                            : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Use Account Name</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                    darkMode
+                      ? 'bg-slate-900/55 border-white/10 text-slate-300'
+                      : 'bg-slate-50/90 border-slate-200 text-slate-700'
+                  }`}
+                >
+                  <span>
+                    Greeting preview:{' '}
+                    <strong className={darkMode ? 'text-white' : 'text-slate-950'}>
+                      {previewFirstName
+                        ? `"Hey ${previewFirstName}, what are we mastering today?"`
+                        : '"Hey, what are we mastering today?"'}
+                    </strong>
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-400 shrink-0">
+                    {extractFirstName(accountBaseName) ? `Account: ${extractFirstName(accountBaseName)}` : 'First-name mode'}
+                  </span>
+                </div>
+              </form>
+            </div>
+
+            {/* 2. Functional Memory Slider Card */}
+            <div className="liquid-glass rounded-2xl p-6 shadow-xl space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <h3
+                    className={`text-base font-bold flex items-center gap-2 ${
+                      darkMode ? 'text-slate-100' : 'text-slate-900'
+                    }`}
+                  >
+                    <Brain className="w-4 h-4" style={{ color: activePalette.primary }} />
+                    <span>2. Adaptive Memory (Gemini Learns From You)</span>
+                  </h3>
+                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {tierInfo.description}
+                  </p>
+                </div>
+
+                <div
+                  className="px-3 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-2 self-start sm:self-auto"
+                  style={{
+                    backgroundColor: sliderMemoryLevel > 0 ? `${activePalette.primary}20` : undefined,
+                    borderColor:
+                      sliderMemoryLevel > 0
+                        ? `${activePalette.primary}50`
+                        : darkMode
+                        ? 'rgba(255,255,255,0.12)'
+                        : 'rgba(0,0,0,0.12)',
+                    color:
+                      sliderMemoryLevel > 0
+                        ? darkMode
+                          ? '#ffffff'
+                          : activePalette.primary
+                        : undefined,
+                  }}
+                >
+                  <span>{tierInfo.label}</span>
+                  <span className="opacity-70">· {sliderMemoryLevel}%</span>
+                </div>
+              </div>
+
+              {/* Interactive Range Slider */}
+              <div
+                className={`p-4 rounded-xl border space-y-3 ${
+                  darkMode ? 'bg-slate-900/60 border-white/10' : 'bg-slate-50/90 border-slate-200'
+                }`}
+              >
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <span className={darkMode ? 'text-slate-400' : 'text-slate-600'}>
+                    Learning &amp; Recall Depth
+                  </span>
+                  <span style={{ color: activePalette.primary }} className="font-bold">
+                    {sliderMemoryLevel === 0
+                      ? 'Paused (0 memories injected)'
+                      : `Up to ${tierInfo.maxRecallCount} learned facts injected into Gemini context`}
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  aria-label="Gemini memory level"
+                  value={sliderMemoryLevel}
+                  onChange={(e) => handleCommitMemoryLevel(Number(e.target.value))}
+                  className="w-full h-2.5 rounded-lg appearance-none cursor-pointer accent-current"
+                  style={{
+                    color: activePalette.primary,
+                    background: `linear-gradient(to right, ${activePalette.primary} 0%, ${activePalette.accent} ${sliderMemoryLevel}%, ${
+                      darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.14)'
+                    } ${sliderMemoryLevel}%, ${
+                      darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.14)'
+                    } 100%)`,
+                  }}
+                />
+
+                <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                  {[
+                    { val: 0, text: '0% Off' },
+                    { val: 25, text: '25% Light' },
+                    { val: 65, text: '65% Balanced' },
+                    { val: 100, text: '100% Deep' },
+                  ].map((mark) => (
+                    <button
+                      key={mark.val}
+                      type="button"
+                      onClick={() => handleCommitMemoryLevel(mark.val)}
+                      className={`px-2 py-0.5 rounded-md transition cursor-pointer ${
+                        Math.abs(sliderMemoryLevel - mark.val) <= 8
+                          ? 'font-bold text-white'
+                          : 'hover:text-slate-200'
+                      }`}
+                      style={
+                        Math.abs(sliderMemoryLevel - mark.val) <= 8
+                          ? { backgroundColor: `${activePalette.primary}30`, color: activePalette.primary }
+                          : {}
+                      }
+                    >
+                      {mark.text}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Learned Memory Bank + Manual Add */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className={`text-xs font-bold uppercase tracking-wider ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                      What Gemini Has Learned About You ({activePersonalization.memories.length}/40)
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Automatically updated as you chat in Gemini Workspace, NotebookLM, and the Floating Assistant.
+                    </p>
+                  </div>
+
+                  {activePersonalization.memories.length > 0 && (
+                    confirmClearMemories ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updatePersonalization({ memories: [] });
+                            setConfirmClearMemories(false);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[11px] font-bold cursor-pointer"
+                        >
+                          Confirm Clear
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmClearMemories(false)}
+                          className="px-2 py-1 rounded-lg border border-white/10 text-[11px] text-slate-400 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClearMemories(true)}
+                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer ${
+                          darkMode
+                            ? 'border-white/10 text-slate-400 hover:text-rose-300 hover:border-rose-500/30'
+                            : 'border-slate-300 text-slate-600 hover:text-rose-600 hover:border-rose-300'
+                        }`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Clear All</span>
+                      </button>
+                    )
+                  )}
+                </div>
+
+                {/* Add a memory manually */}
+                <form onSubmit={handleAddManualMemory} className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={newMemoryCategory}
+                    onChange={(e) => setNewMemoryCategory(e.target.value as MemoryCategory)}
+                    className={`px-3 py-2 rounded-xl border text-xs font-mono focus:outline-none ${
+                      darkMode
+                        ? 'bg-slate-950/75 border-white/15 text-slate-200'
+                        : 'bg-white border-slate-300 text-slate-800'
+                    }`}
+                  >
+                    <option value="preference">Preference</option>
+                    <option value="study">Study Topic</option>
+                    <option value="goal">Goal</option>
+                    <option value="background">Background</option>
+                    <option value="context">Context</option>
+                  </select>
+                  <input
+                    type="text"
+                    maxLength={220}
+                    value={newMemoryInput}
+                    onChange={(e) => setNewMemoryInput(e.target.value)}
+                    placeholder="Add something you want Gemini to remember (e.g. Preparing for OS final exam)..."
+                    className={`flex-1 px-3.5 py-2 rounded-xl border text-xs focus:outline-none ${
+                      darkMode
+                        ? 'bg-slate-950/75 border-white/15 text-slate-100 placeholder-slate-500'
+                        : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                    }`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={newMemoryInput.trim().length < 3}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-40"
+                    style={{
+                      background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                      color: '#0f172a',
+                    }}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Fact</span>
+                  </button>
+                </form>
+
+                {activePersonalization.memories.length === 0 ? (
+                  <div
+                    className={`p-5 rounded-xl border border-dashed text-center text-xs ${
+                      darkMode
+                        ? 'border-white/15 bg-slate-950/40 text-slate-400'
+                        : 'border-slate-300 bg-slate-50/70 text-slate-500'
+                    }`}
+                  >
+                    No learned memories saved yet. Chat naturally with Gemini about your courses, goals, or preferred learning style and memories will appear here automatically.
+                  </div>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                    {activePersonalization.memories.map((mem, idx) => {
+                      const isActiveInRecall =
+                        sliderMemoryLevel > 0 && idx < tierInfo.maxRecallCount;
+                      return (
+                        <div
+                          key={mem.id}
+                          className={`p-3 rounded-xl border flex items-start justify-between gap-3 transition ${
+                            darkMode
+                              ? 'bg-slate-900/65 border-white/10'
+                              : 'bg-white/90 border-slate-200'
+                          } ${!isActiveInRecall && sliderMemoryLevel > 0 ? 'opacity-55' : ''}`}
+                        >
+                          <div className="space-y-1 min-w-0">
+                            <p className={`text-xs leading-relaxed ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>
+                              {mem.text}
+                            </p>
+                            <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400 flex-wrap">
+                              <span
+                                className="px-1.5 py-0.5 rounded-md uppercase font-semibold"
+                                style={{
+                                  backgroundColor: `${activePalette.primary}18`,
+                                  color: activePalette.primary,
+                                }}
+                              >
+                                {mem.category}
+                              </span>
+                              <span>{mem.source === 'manual' ? 'Added by you' : 'Learned from chat'}</span>
+                              <span>·</span>
+                              <span>{isActiveInRecall ? 'Active in prompt' : sliderMemoryLevel === 0 ? 'Paused' : 'Queued'}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMemory(mem.id)}
+                            title="Forget this memory"
+                            className={`p-1.5 rounded-lg border transition cursor-pointer shrink-0 ${
+                              darkMode
+                                ? 'border-white/10 text-slate-400 hover:text-rose-300 hover:bg-rose-500/10'
+                                : 'border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50'
+                            }`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 3. Instructions for Gemini Card (Gemini Webapp Style) */}
+            <div className="liquid-glass rounded-2xl p-6 shadow-xl space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <h3
+                    className={`text-base font-bold flex items-center gap-2 ${
+                      darkMode ? 'text-slate-100' : 'text-slate-900'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" style={{ color: activePalette.primary }} />
+                    <span>3. Instructions for Gemini</span>
+                  </h3>
+                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Share persistent info, formatting rules, tone, or academic background so Gemini automatically tailors every response—just like Gemini&apos;s Saved Info.
+                  </p>
+                </div>
+
+                <span
+                  className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border self-start sm:self-auto ${
+                    activePersonalization.customInstructions.trim()
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35'
+                      : darkMode
+                      ? 'bg-slate-900 text-slate-400 border-white/10'
+                      : 'bg-slate-100 text-slate-500 border-slate-300'
+                  }`}
+                >
+                  {activePersonalization.customInstructions.trim()
+                    ? hasUnsavedInstructions
+                      ? 'Unsaved Edits'
+                      : 'Instructions Active'
+                    : 'No Instructions Set'}
+                </span>
+              </div>
+
+              {/* Starter Prompt Chips */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+                  Quick Starters (Click to add)
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {GEMINI_INSTRUCTION_STARTERS.map((starter) => (
+                    <button
+                      key={starter.id}
+                      type="button"
+                      onClick={() => handleAppendStarter(starter.instruction)}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                        darkMode
+                          ? 'bg-slate-900/75 border-white/10 text-slate-300 hover:text-white hover:border-white/25'
+                          : 'bg-white border-slate-300 text-slate-700 hover:text-slate-950 hover:border-slate-400'
+                      }`}
+                    >
+                      <Plus className="w-3 h-3" style={{ color: activePalette.primary }} />
+                      <span>{starter.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <textarea
+                  rows={6}
+                  maxLength={4000}
+                  value={draftInstructions}
+                  onChange={(e) => setDraftInstructions(e.target.value)}
+                  placeholder="Examples:&#10;- I'm a second-year Computer Science & Physics student.&#10;- Always explain math step-by-step using LaTeX equations.&#10;- Keep summaries concise unless I ask for an exhaustive deep dive.&#10;- Use Python and TypeScript for coding examples."
+                  className={`w-full p-4 rounded-xl border text-xs sm:text-sm leading-relaxed focus:outline-none transition resize-y min-h-[140px] ${
+                    darkMode
+                      ? 'bg-slate-950/75 border-white/15 text-slate-100 placeholder-slate-500 focus:border-white/35'
+                      : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-slate-500'
+                  }`}
+                />
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {draftInstructions.length} / 4000 characters · Applied across Gemini Workspace, NotebookLM &amp; Floating Chat
+                  </span>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    {(draftInstructions.trim() || activePersonalization.customInstructions.trim()) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDraftInstructions('');
+                          updatePersonalization({ customInstructions: '' });
+                        }}
+                        className={`px-3 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                          darkMode
+                            ? 'border-white/10 text-slate-300 hover:bg-white/10'
+                            : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Clear
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleSaveInstructions}
+                      className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer hover:brightness-105"
+                      style={{
+                        background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                        color: '#0f172a',
+                      }}
+                    >
+                      {instructionsSavedBadge ? (
+                        <Check className="w-3.5 h-3.5" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        {instructionsSavedBadge
+                          ? 'Instructions Saved'
+                          : hasUnsavedInstructions
+                          ? 'Save Instructions'
+                          : 'Save'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Account Session & Reset Controls (Visible cleanly across Settings) */}
+      {activeSettingsTab !== 'gemini-personalization' && (
+      <>
       {/* Authenticated Account & Session Management */}
       <div className="p-5 rounded-2xl liquid-glass flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className={`text-xs space-y-1 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
@@ -1766,6 +2512,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <span>{isJustReset ? 'Account Reset' : 'Reset Account'}</span>
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 };

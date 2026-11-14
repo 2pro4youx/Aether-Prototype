@@ -19,7 +19,13 @@ import {
 import { signInWithPopup, User } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
 import { ColorPalette } from '../types';
-import { setActiveGeminiApiKey, verifyGeminiApiKey } from '../utils/geminiClient';
+import {
+  getRememberedGoogleApiKey,
+  setActiveGeminiApiKey,
+  setRememberedGoogleApiKey,
+  verifyGeminiApiKey,
+} from '../utils/geminiClient';
+import { extractFirstName } from '../utils/personalization';
 
 interface AuthOnboardingModalProps {
   isOpen: boolean;
@@ -169,9 +175,13 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
         const hydration = await onGoogleAuthenticated(user);
         syncedKey = hydration?.syncedGeminiKey?.trim() || '';
       }
+      if (!syncedKey) {
+        syncedKey = getRememberedGoogleApiKey(user.uid);
+      }
 
       if (syncedKey) {
         setActiveGeminiApiKey(syncedKey);
+        setRememberedGoogleApiKey(user.uid, syncedKey);
         localStorage.setItem('aether_gemini_api_key', syncedKey);
         setApiKeyInput(syncedKey);
         setCloudRestoredKey(syncedKey);
@@ -180,6 +190,15 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
           success: true,
           message: 'Cloud account & saved Gemini API key restored',
         });
+        onComplete({
+          email,
+          apiKey: syncedKey,
+          uid: user.uid,
+          displayName,
+          photoURL: user.photoURL || undefined,
+          isGuest: false,
+        });
+        return;
       }
 
       setStep('gemini-key');
@@ -236,6 +255,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
     // If this exact key was already restored from the user's Firestore account, launch immediately
     if (cloudRestoredKey && keyToTest === cloudRestoredKey && signedInUser) {
       setActiveGeminiApiKey(keyToTest);
+      setRememberedGoogleApiKey(signedInUser.uid, keyToTest);
       localStorage.setItem('aether_gemini_api_key', keyToTest);
       onComplete({
         email: signedInUser.email,
@@ -263,6 +283,9 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
         });
         setTimeout(() => {
           localStorage.setItem('aether_gemini_api_key', keyToTest);
+          if (signedInUser?.uid) {
+            setRememberedGoogleApiKey(signedInUser.uid, keyToTest);
+          }
           const email = signedInUser?.email || 'guest@local.aether';
           const displayName = signedInUser?.displayName || guestNameInput.trim() || 'Guest';
           localStorage.setItem(
@@ -572,9 +595,12 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
                 <span>Connect Your Gemini API Key</span>
               </h3>
               <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                {(signedInUser?.displayName || guestNameInput.trim())
-                  ? `Hi ${signedInUser?.displayName || guestNameInput.trim()}, enter your Google Gemini API key to activate grounded NotebookLM reasoning, mathematical derivations, and multi-source synthesis.`
-                  : 'Enter your Google Gemini API key to activate grounded NotebookLM reasoning, mathematical derivations, and multi-source synthesis.'}
+                {(() => {
+                  const firstName = extractFirstName(signedInUser?.displayName || guestNameInput.trim());
+                  return firstName
+                    ? `Hi ${firstName}, enter your Google Gemini API key to activate grounded NotebookLM reasoning, mathematical derivations, and multi-source synthesis.`
+                    : 'Enter your Google Gemini API key to activate grounded NotebookLM reasoning, mathematical derivations, and multi-source synthesis.';
+                })()}
               </p>
             </div>
 

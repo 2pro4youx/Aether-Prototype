@@ -27,6 +27,7 @@ import {
   TimetableSlot,
   Workspace,
 } from '../types';
+import type { LearnedMemoryItem } from './personalization';
 
 export interface FloatingChatMessage {
   id: string;
@@ -69,6 +70,10 @@ export interface PreferencesStatePayload {
   glowMultiplier: number;
   canvasQuality?: string;
   geminiApiKey?: string;
+  customUserName?: string;
+  geminiMemoryLevel?: number;
+  geminiLearnedMemories?: LearnedMemoryItem[];
+  geminiCustomInstructions?: string;
 }
 
 export interface FloatingChatStatePayload {

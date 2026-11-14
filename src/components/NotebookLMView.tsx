@@ -40,6 +40,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { NotebookSource, ColorPalette, ChatAttachment } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { callGeminiChat, synthesizeStudyDocument, AVAILABLE_GEMINI_MODELS } from '../utils/geminiClient';
+import { extractFirstName } from '../utils/personalization';
 import { useChatSmoothScroll } from '../hooks/useSmoothScroll';
 import {
   dataUrlToBlobUrl,
@@ -107,6 +108,10 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const firstName = extractFirstName(userName);
+  const buildWelcomeText = (name: string) =>
+    `Welcome${name ? `, ${name}` : ''} to your grounded NotebookLM workspace. Add sources on the left to ground neural synthesis, ask research questions, or click the **OneNote Canvas** arrow on the right sidebar to open your companion workspace.`;
+
   const activeModelObj = AVAILABLE_GEMINI_MODELS.find((m) => m.id === selectedModel) || AVAILABLE_GEMINI_MODELS[0];
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     return chatMessages && chatMessages.length > 0
@@ -115,8 +120,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           {
             id: 'm-welcome',
             role: 'assistant',
-            content:
-              `Welcome${userName ? `, ${userName}` : ''} to your grounded NotebookLM workspace. Add sources on the left to ground neural synthesis, ask research questions, or click the **OneNote Canvas** arrow on the right sidebar to open your companion workspace.`,
+            content: buildWelcomeText(firstName),
             timestamp: 'Just now',
             model: selectedModel,
           },
@@ -131,14 +135,13 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
         {
           id: 'm-welcome',
           role: 'assistant',
-          content:
-            `Welcome${userName ? `, ${userName}` : ''} to your grounded NotebookLM workspace. Add sources on the left to ground neural synthesis, ask research questions, or click the **OneNote Canvas** arrow on the right sidebar to open your companion workspace.`,
+          content: buildWelcomeText(firstName),
           timestamp: 'Just now',
           model: selectedModel,
         },
       ]);
     }
-  }, [workspaceId]);
+  }, [workspaceId, firstName]);
 
   const [inputQuery, setInputQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -524,6 +527,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
 
       const result = await callGeminiChat({
         message: groundedPrompt,
+        rawUserMessage: textToSend || queryWithContext,
         model: selectedModel,
         enableThinking,
         sources: selectedSources,

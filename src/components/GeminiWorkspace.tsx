@@ -36,6 +36,7 @@ import {
 import { GeminiConversation, GeminiChatMessage, ChatAttachment, ColorPalette } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { callGeminiChat, AVAILABLE_GEMINI_MODELS, GeminiModelInfo } from '../utils/geminiClient';
+import { extractFirstName } from '../utils/personalization';
 import { LiquidGlassSvgFilter } from './LiquidGlassFilter';
 import { useChatSmoothScroll } from '../hooks/useSmoothScroll';
 import { dataUrlToBlobUrl, buildImageIframeDoc } from '../utils/iframePreview';
@@ -1484,7 +1485,10 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
 
                   <div>
                     <h3 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                      What can I help you explore today{userName ? `, ${userName}` : ''}?
+                      {(() => {
+                        const firstName = extractFirstName(userName);
+                        return `What can I help you explore today${firstName ? `, ${firstName}` : ''}?`;
+                      })()}
                     </h3>
                     <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto mt-1 leading-relaxed">
                       Gemini Workspace provides fast multimodal intelligence, LaTeX mathematical formatting, and code synthesis.

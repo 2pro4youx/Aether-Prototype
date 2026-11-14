@@ -348,7 +348,7 @@ export const TasksCard: React.FC<TasksCardProps> = ({
             <div
               key={task.id}
               onClick={() => handleTaskCheck(task.id, task.completed)}
-              className={`group flex items-start justify-between gap-3 p-3.5 rounded-xl border transition cursor-pointer select-none liquid-glass-tile ${
+              className={`group/item flex items-start justify-between gap-3 p-3.5 rounded-xl border transition cursor-pointer select-none liquid-glass-tile ${
                 task.completed ? 'opacity-65' : ''
               }`}
               style={!task.completed ? { borderColor: `${activePalette.primary}25` } : {}}
@@ -428,9 +428,25 @@ export const TasksCard: React.FC<TasksCardProps> = ({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    onDeleteTask(task.id);
+                  }}
+                  className={`p-1 rounded-lg opacity-0 pointer-events-none group-hover/item:opacity-100 group-hover/item:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
+                    darkMode
+                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
+                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                  }`}
+                  title="Delete task"
+                  aria-label="Delete task"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     openEditTaskModal(task);
                   }}
-                  className={`p-1 rounded-lg opacity-60 group-hover:opacity-100 transition ${
+                  className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
                     darkMode
                       ? 'text-slate-400 hover:text-white hover:bg-white/10'
                       : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
@@ -439,21 +455,6 @@ export const TasksCard: React.FC<TasksCardProps> = ({
                   aria-label="Edit task"
                 >
                   <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteTask(task.id);
-                  }}
-                  className={`p-1 rounded-lg opacity-0 group-hover:opacity-100 transition ${
-                    darkMode
-                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
-                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
-                  }`}
-                  title="Delete task"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

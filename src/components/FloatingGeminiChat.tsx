@@ -18,6 +18,7 @@ import { ColorPalette } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { LiquidGlassSvgFilter } from './LiquidGlassFilter';
 import { callGeminiChat, AVAILABLE_GEMINI_MODELS } from '../utils/geminiClient';
+import { extractFirstName } from '../utils/personalization';
 import { useChatSmoothScroll } from '../hooks/useSmoothScroll';
 import type { FloatingChatMessage } from '../utils/firebaseSync';
 
@@ -61,18 +62,19 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+  const firstName = extractFirstName(userName);
   const [internalMessages, setInternalMessages] = useState<Message[]>([
     {
       id: 'm-0',
       role: 'assistant',
-      text: userName ? `Hey ${userName}! How can I help you today?` : 'Hey! How can I help you today?',
+      text: firstName ? `Hey ${firstName}! How can I help you today?` : 'Hey! How can I help you today?',
       timestamp: 'Just now',
     },
   ]);
   const rawMessages = controlledMessages && controlledMessages.length > 0 ? controlledMessages : internalMessages;
   const messages = rawMessages.map((msg, idx) =>
-    idx === 0 && msg.id === 'm-0' && userName && msg.text === 'Hey! How can I help you today?'
-      ? { ...msg, text: `Hey ${userName}! How can I help you today?` }
+    idx === 0 && msg.id === 'm-0' && /^Hey(?: [^!]+)?! How can I help you today\?$/.test(msg.text)
+      ? { ...msg, text: firstName ? `Hey ${firstName}! How can I help you today?` : 'Hey! How can I help you today?' }
       : msg
   );
   const messagesRef = useRef(messages);

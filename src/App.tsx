@@ -10,6 +10,8 @@ import { auth } from './firebase';
 import {
   setActiveGeminiApiKey,
   getActiveGeminiApiKey,
+  getRememberedGoogleApiKey,
+  setRememberedGoogleApiKey,
 } from './utils/geminiClient';
 import {
   AppStateKey,
@@ -75,7 +77,18 @@ import { SettingsView } from './components/SettingsView';
 import { FloatingGeminiChat } from './components/FloatingGeminiChat';
 import { AuthOnboardingModal } from './components/AuthOnboardingModal';
 import { SmoothCursor } from './components/SmoothCursor';
+import { WindowTransitionOverlay } from './components/WindowTransitionOverlay';
 import { useSmoothScroll, getLenis, resizeLenis } from './hooks/useSmoothScroll';
+import {
+  DEFAULT_GEMINI_PERSONALIZATION,
+  GeminiPersonalizationConfig,
+  getGeminiPersonalization,
+  PERSONALIZATION_EVENT,
+  PERSONALIZATION_STORAGE_KEY,
+  resolvePreferredNames,
+  setActiveAccountBaseName,
+  setGeminiPersonalization,
+} from './utils/personalization';
 
 const DEFAULT_FLOATING_MESSAGES: FloatingChatMessage[] = [
   {
@@ -179,10 +192,14 @@ export default function App() {
       'aether_folders_v3',
       'aether_library_v2',
       'aether_floating_chat_v1',
+      PERSONALIZATION_STORAGE_KEY,
     ].forEach((k) => localStorage.removeItem(k));
 
     setActiveGeminiApiKey('');
     setSyncedGeminiKey('');
+    setGeminiPersonalization(DEFAULT_GEMINI_PERSONALIZATION, { silent: true });
+    setGeminiPersonalizationState(DEFAULT_GEMINI_PERSONALIZATION);
+    setActiveAccountBaseName('');
     setTasks([]);
     setPlanners([]);
     setDashboardCards(DEFAULT_DASHBOARD_CARDS);
@@ -205,29 +222,12 @@ export default function App() {
     setIsWorkspaceSelectorOpen(false);
     setIsOneNoteOpen(false);
     setIsGeminiWorkspaceOpen(false);
-    setWindowChangeCount((c) => c + 1);
   }, []);
 
-  // Dominant frost sweep counter when entering OneNote workspace (especially from Google Notebook)
-  const [oneNoteOpenCount, setOneNoteOpenCount] = useState(0);
-  const prevOverlayWindowRef = useRef({ oneNote: false, gemini: false });
+  // Optional nonce for transitions that don't change tab/workspace props (e.g., dark mode toggle)
+  const [transitionNonce, setTransitionNonce] = useState(0);
 
-  useEffect(() => {
-    const prev = prevOverlayWindowRef.current;
-    if (isOneNoteOpen && !prev.oneNote) {
-      setOneNoteOpenCount((c) => c + 1);
-    } else if ((!isOneNoteOpen && prev.oneNote) || isGeminiWorkspaceOpen !== prev.gemini) {
-      setWindowChangeCount((c) => c + 1);
-    }
-    prevOverlayWindowRef.current = { oneNote: isOneNoteOpen, gemini: isGeminiWorkspaceOpen };
-  }, [isOneNoteOpen, isGeminiWorkspaceOpen]);
-
-
-  // Frost sweep overlay — increments on every tab change to re-trigger CSS animation
-  const [windowChangeCount, setWindowChangeCount] = useState(0);
-  const isInitialMount = useRef(true);
-
-  // Smooth scroll to top when changing windows/tabs (except full-height canvases)
+  // Sync ref & scroll to top when changing windows/tabs (except full-height canvases)
   useEffect(() => {
     activeTabRef.current = activeTab;
     if (activeTab !== 'dashboard') {
@@ -241,12 +241,6 @@ export default function App() {
       } else {
         window.scrollTo({ top: 0, behavior: 'instant' });
       }
-    }
-    // Trigger frost sweep overlay on every tab change (skip the very first mount)
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-    } else {
-      setWindowChangeCount((c) => c + 1);
     }
   }, [activeTab]);
 
@@ -401,16 +395,60 @@ export default function App() {
     }
   }, [floatingChatMessages]);
 
-  // Reactive Gemini API key tracker so Settings or Onboarding key updates sync to cloud preferences
+  // Reactive Gemini API key tracker so Settings or Onboarding key updates sync to cloud preferences immediately
   const [syncedGeminiKey, setSyncedGeminiKey] = useState<string>(() => getActiveGeminiApiKey());
   useEffect(() => {
     const handleKeyUpdate = (e: Event) => {
       const custom = e as CustomEvent<string>;
-      setSyncedGeminiKey(typeof custom.detail === 'string' ? custom.detail : getActiveGeminiApiKey());
+      const nextKey = (typeof custom.detail === 'string' ? custom.detail : getActiveGeminiApiKey()).trim();
+      setSyncedGeminiKey(nextKey);
+      const currentUser = auth.currentUser;
+      if (currentUser && nextKey) {
+        setRememberedGoogleApiKey(currentUser.uid, nextKey);
+        latestSlicesRef.current.preferences.geminiApiKey = nextKey;
+        if (knownStateKeysRef.current.has('preferences') || hydratingUidRef.current === currentUser.uid) {
+          void upsertAppStateDoc(
+            currentUser.uid,
+            'preferences',
+            latestSlicesRef.current.preferences,
+            knownStateKeysRef.current,
+            writtenHashesRef.current
+          ).catch(() => {});
+        }
+      }
     };
     window.addEventListener('aether-gemini-key-updated', handleKeyUpdate);
     return () => window.removeEventListener('aether-gemini-key-updated', handleKeyUpdate);
   }, []);
+
+  // Reactive Gemini Personalization state (custom name, functional memory slider + learned facts, instructions)
+  const [geminiPersonalization, setGeminiPersonalizationState] = useState<GeminiPersonalizationConfig>(() =>
+    getGeminiPersonalization()
+  );
+
+  useEffect(() => {
+    const handlePersonalizationUpdated = (e: Event) => {
+      const custom = e as CustomEvent<GeminiPersonalizationConfig>;
+      const next = custom.detail || getGeminiPersonalization();
+      setGeminiPersonalizationState(next);
+    };
+    window.addEventListener(PERSONALIZATION_EVENT, handlePersonalizationUpdated);
+    return () => window.removeEventListener(PERSONALIZATION_EVENT, handlePersonalizationUpdated);
+  }, []);
+
+  const handleUpdatePersonalization = useCallback(
+    (
+      updater:
+        | Partial<GeminiPersonalizationConfig>
+        | ((prev: GeminiPersonalizationConfig) => GeminiPersonalizationConfig)
+    ) => {
+      setGeminiPersonalizationState((prev) => {
+        const rawNext = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+        return setGeminiPersonalization(rawNext, { silent: true });
+      });
+    },
+    []
+  );
 
   // One-time reset of legacy seeded dummy dashboard tasks
   useEffect(() => {
@@ -576,11 +614,11 @@ export default function App() {
     (newDark: boolean) => {
       if (newDark === darkMode) return;
 
-      // Pull out the standard window change animation on mode toggle
-      setWindowChangeCount((c) => c + 1);
+      // Flowy blur veil when toggling light/dark theme (theme swaps right at the 20% frost crest)
+      setTransitionNonce((c) => c + 1);
       setTimeout(() => {
         setDarkMode(newDark);
-      }, 160);
+      }, 95);
     },
     [darkMode]
   );
@@ -1573,6 +1611,10 @@ export default function App() {
       smoothScroll,
       glowMultiplier,
       geminiApiKey: syncedGeminiKey,
+      customUserName: geminiPersonalization.customName,
+      geminiMemoryLevel: geminiPersonalization.memoryLevel,
+      geminiLearnedMemories: geminiPersonalization.memories,
+      geminiCustomInstructions: geminiPersonalization.customInstructions,
     } as PreferencesStatePayload,
     floatingChat: {
       messages: floatingChatMessages,
@@ -1608,6 +1650,10 @@ export default function App() {
       smoothScroll,
       glowMultiplier,
       geminiApiKey: syncedGeminiKey,
+      customUserName: geminiPersonalization.customName,
+      geminiMemoryLevel: geminiPersonalization.memoryLevel,
+      geminiLearnedMemories: geminiPersonalization.memories,
+      geminiCustomInstructions: geminiPersonalization.customInstructions,
     },
     floatingChat: {
       messages: floatingChatMessages,
@@ -1674,6 +1720,28 @@ export default function App() {
     }
     if (typeof p.geminiApiKey === 'string' && p.geminiApiKey.trim()) {
       setActiveGeminiApiKey(p.geminiApiKey.trim());
+    }
+    if (
+      typeof p.customUserName === 'string' ||
+      typeof p.geminiMemoryLevel === 'number' ||
+      Array.isArray(p.geminiLearnedMemories) ||
+      typeof p.geminiCustomInstructions === 'string'
+    ) {
+      setGeminiPersonalizationState((prev) => {
+        const merged = setGeminiPersonalization(
+          {
+            customName: typeof p.customUserName === 'string' ? p.customUserName : prev.customName,
+            memoryLevel: typeof p.geminiMemoryLevel === 'number' ? p.geminiMemoryLevel : prev.memoryLevel,
+            memories: Array.isArray(p.geminiLearnedMemories) ? p.geminiLearnedMemories : prev.memories,
+            customInstructions:
+              typeof p.geminiCustomInstructions === 'string'
+                ? p.geminiCustomInstructions
+                : prev.customInstructions,
+          },
+          { silent: true }
+        );
+        return merged;
+      });
     }
     queueMicrotask(() => {
       isApplyingRemoteRef.current = false;
@@ -1799,8 +1867,29 @@ export default function App() {
             }
           );
 
+          const cloudKey = loaded.preferences?.geminiApiKey?.trim() || '';
+          const rememberedLocalKey = getRememberedGoogleApiKey(user.uid);
+          const effectiveGeminiKey = cloudKey || rememberedLocalKey;
+
+          if (effectiveGeminiKey) {
+            setRememberedGoogleApiKey(user.uid, effectiveGeminiKey);
+            setActiveGeminiApiKey(effectiveGeminiKey);
+            if (!cloudKey && loaded.hasCloudData) {
+              await upsertAppStateDoc(
+                user.uid,
+                'preferences',
+                {
+                  ...(loaded.preferences || latestSlicesRef.current.preferences),
+                  geminiApiKey: effectiveGeminiKey,
+                },
+                knownStateKeysRef.current,
+                writtenHashesRef.current
+              );
+            }
+          }
+
           return {
-            syncedGeminiKey: loaded.preferences?.geminiApiKey,
+            syncedGeminiKey: effectiveGeminiKey || undefined,
           };
         } catch (err) {
           console.error('Firebase cloud sync hydration error:', err);
@@ -1841,9 +1930,13 @@ export default function App() {
         setAuthProfile({ email, name: displayName, isGuest: false });
 
         const result = await hydrateAndSubscribeUser(user);
-        const restoredKey = result?.syncedGeminiKey?.trim() || getActiveGeminiApiKey();
+        const restoredKey =
+          result?.syncedGeminiKey?.trim() ||
+          getRememberedGoogleApiKey(user.uid) ||
+          getActiveGeminiApiKey();
 
         if (!isAuthModalOpenRef.current && restoredKey) {
+          setRememberedGoogleApiKey(user.uid, restoredKey);
           setActiveGeminiApiKey(restoredKey);
           setIsAuthenticated(true);
           if (activeTabRef.current === 'lander') {
@@ -1983,6 +2076,10 @@ export default function App() {
           smoothScroll,
           glowMultiplier,
           geminiApiKey: syncedGeminiKey,
+          customUserName: geminiPersonalization.customName,
+          geminiMemoryLevel: geminiPersonalization.memoryLevel,
+          geminiLearnedMemories: geminiPersonalization.memories,
+          geminiCustomInstructions: geminiPersonalization.customInstructions,
         } satisfies PreferencesStatePayload,
         knownStateKeysRef.current,
         writtenHashesRef.current
@@ -2000,6 +2097,7 @@ export default function App() {
     smoothScroll,
     glowMultiplier,
     syncedGeminiKey,
+    geminiPersonalization,
     firebaseUser,
     isCloudSyncReady,
   ]);
@@ -2128,7 +2226,6 @@ export default function App() {
         setActiveTab('notebooklm');
       } else {
         setIsOneNoteOpen(true);
-        setOneNoteOpenCount((c) => c + 1);
       }
     } else if (ctx === 'gemini') {
       setIsOneNoteOpen(false);
@@ -2478,7 +2575,6 @@ export default function App() {
     setIsGeminiWorkspaceOpen(false);
     setActiveTab('notebooklm');
     setIsWorkspaceSelectorOpen(false);
-    setWindowChangeCount((c) => c + 1);
   }, []);
 
   const handleOpenFolderInLibrary = useCallback((folderName: string) => {
@@ -2487,7 +2583,6 @@ export default function App() {
     setIsGeminiWorkspaceOpen(false);
     setIsWorkspaceSelectorOpen(false);
     setActiveTab('library');
-    setWindowChangeCount((c) => c + 1);
   }, []);
 
   const handleCreateNewWorkspace = useCallback(
@@ -2553,7 +2648,6 @@ export default function App() {
       setIsGeminiWorkspaceOpen(false);
       setActiveTab('notebooklm');
       setIsWorkspaceSelectorOpen(false);
-      setWindowChangeCount((c) => c + 1);
       logAudit(
         isOneNoteOnly ? 'OneNote Workspace Created' : 'Workspace Created',
         `Created ${newWs.name} in folder "${targetFolder}"`,
@@ -2616,9 +2710,11 @@ export default function App() {
   const handleResetData = () => {
     const preservedAuth = localStorage.getItem('aether_auth_user');
     const preservedKey = localStorage.getItem('aether_gemini_api_key');
+    const preservedGoogleKeys = localStorage.getItem('aether_google_api_keys_v1');
     localStorage.clear();
     if (preservedAuth) localStorage.setItem('aether_auth_user', preservedAuth);
     if (preservedKey) localStorage.setItem('aether_gemini_api_key', preservedKey);
+    if (preservedGoogleKeys) localStorage.setItem('aether_google_api_keys_v1', preservedGoogleKeys);
     localStorage.setItem('aether_analytics_reset_v1', 'true');
     localStorage.setItem('aether_dashboard_reset_v1', 'true');
     setTasks([]);
@@ -2641,15 +2737,25 @@ export default function App() {
     setDarkMode(true);
     setCursorStyle('circle');
     setCursorColorAdapter(70);
+    setGeminiPersonalization(DEFAULT_GEMINI_PERSONALIZATION, { silent: true });
+    setGeminiPersonalizationState(DEFAULT_GEMINI_PERSONALIZATION);
     if (!preservedAuth) {
       setActiveTab('lander');
     }
   };
 
-  const activeUserName =
+  const accountBaseName =
     firebaseUser?.displayName ||
     authProfile.name ||
     (firebaseUser?.email ? firebaseUser.email.split('@')[0] : undefined);
+  const { effectiveFullName, firstName: activeFirstName } = resolvePreferredNames(
+    accountBaseName,
+    geminiPersonalization.customName
+  );
+  const activeUserName = activeFirstName || undefined;
+  useEffect(() => {
+    setActiveAccountBaseName(accountBaseName);
+  }, [accountBaseName]);
   const activeUserEmail =
     firebaseUser?.email || (!authProfile.isGuest ? authProfile.email : undefined);
   const isGuestSession = !firebaseUser && Boolean(authProfile.isGuest || !activeUserEmail);
@@ -2666,8 +2772,10 @@ export default function App() {
         color: darkMode ? '#f8fafc' : '#0f172a',
       }}
     >
-      {/* Dynamic theme-reactive Topographic Background Canvas Layer fitted to entire screen */}
-      <div className="fixed inset-0 pointer-events-none bg-topo z-0" aria-hidden="true" />
+      {/* Dynamic theme-reactive Topographic Background Canvas Layer fitted to entire screen (skipped on lander) */}
+      {activeTab !== 'lander' && (
+        <div className="fixed inset-0 pointer-events-none bg-topo z-0" aria-hidden="true" />
+      )}
 
       {/* Dynamic Hardware Cursor Style Injection */}
       {cursorCss && <style id="aether-custom-cursor" dangerouslySetInnerHTML={{ __html: cursorCss }} />}
@@ -2680,14 +2788,14 @@ export default function App() {
         darkMode={darkMode}
       />
 
-      {/* Fullscreen frost sweep overlay — long blur reveal on window change & mode toggle */}
-      {windowChangeCount > 0 && (
-        <div
-          key={`frost-${windowChangeCount}`}
-          className="fixed inset-0 z-[160] pointer-events-none fullscreen-frost-sweep"
-          aria-hidden="true"
-        />
-      )}
+      {/* Isolated GPU transition overlay — handles window, tab, workspace, and mode transitions */}
+      <WindowTransitionOverlay
+        activeTab={activeTab}
+        isOneNoteOpen={isOneNoteOpen}
+        isGeminiWorkspaceOpen={isGeminiWorkspaceOpen}
+        activeWorkspaceId={activeWorkspaceId}
+        transitionNonce={transitionNonce}
+      />
 
       {/* Top-to-Bottom Glowing Blur Morph Animation on Color Theme Change (Disabled on lander page) */}
       {paletteMorph && activeTab !== 'lander' && (
@@ -2784,7 +2892,15 @@ export default function App() {
         <main key={activeTab} className={`flex-1 w-full tab-content-reveal ${activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-full overflow-hidden flex flex-col' : 'min-h-[100dvh] md:min-h-screen'}`}>
               {activeTab === 'lander' && (
                 <PolygonCanvas
-                  onEnterApp={() => setIsAuthModalOpen(true)}
+                  isLoggedIn={isAuthenticated || Boolean(firebaseUser)}
+                  onEnterApp={() => {
+                    if (isAuthenticated || (firebaseUser && getActiveGeminiApiKey())) {
+                      setIsAuthenticated(true);
+                      setActiveTab('dashboard');
+                    } else {
+                      setIsAuthModalOpen(true);
+                    }
+                  }}
                   activePalette={activePalette}
                   onPaletteChange={setActivePaletteId}
                 />
@@ -2938,21 +3054,15 @@ export default function App() {
                   }}
                   onSignOut={handleSignOut}
                   authenticatedEmail={activeUserEmail}
-                  authenticatedName={activeUserName}
+                  authenticatedName={effectiveFullName || accountBaseName}
+                  accountBaseName={accountBaseName}
                   isGuestSession={isGuestSession}
+                  personalization={geminiPersonalization}
+                  onUpdatePersonalization={handleUpdatePersonalization}
                 />
               )}
         </main>
       </div>
-
-      {/* Dominant Entrance Frost Sweep Overlay when sliding into OneNote (especially from Google Notebook) */}
-      {oneNoteOpenCount > 0 && isOneNoteOpen && (
-        <div
-          key={`onenote-frost-${oneNoteOpenCount}`}
-          className="onenote-enter-frost-sweep"
-          aria-hidden="true"
-        />
-      )}
 
       {/* Workspace Transition Scrim Curtain */}
       {(isOneNoteOpen || isGeminiWorkspaceOpen) && (
@@ -2961,7 +3071,7 @@ export default function App() {
             setIsOneNoteOpen(false);
             setIsGeminiWorkspaceOpen(false);
           }}
-          className="fixed inset-0 z-40 bg-slate-950/40 pointer-events-auto transition-opacity duration-500 ease-out"
+          className="fixed inset-0 z-40 bg-slate-950/40 pointer-events-auto transition-opacity duration-[360ms] ease-out"
         />
       )}
 
@@ -3033,7 +3143,23 @@ export default function App() {
         onGoogleAuthenticated={hydrateAndSubscribeUser}
         onComplete={(authData) => {
           if (authData?.apiKey) {
-            setSyncedGeminiKey(authData.apiKey);
+            const cleanKey = authData.apiKey.trim();
+            setSyncedGeminiKey(cleanKey);
+            latestSlicesRef.current.preferences.geminiApiKey = cleanKey;
+            const targetUid = authData.uid || firebaseUser?.uid || auth.currentUser?.uid;
+            if (targetUid && !authData.isGuest) {
+              setRememberedGoogleApiKey(targetUid, cleanKey);
+              void upsertAppStateDoc(
+                targetUid,
+                'preferences',
+                {
+                  ...latestSlicesRef.current.preferences,
+                  geminiApiKey: cleanKey,
+                },
+                knownStateKeysRef.current,
+                writtenHashesRef.current
+              ).catch(() => {});
+            }
           }
           if (authData) {
             setAuthProfile({

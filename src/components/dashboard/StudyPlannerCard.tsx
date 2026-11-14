@@ -309,7 +309,7 @@ export const StudyPlannerCard: React.FC<StudyPlannerCardProps> = ({
         {filtered.map((p) => (
           <div
             key={p.id}
-            className="p-4 rounded-xl border space-y-2.5 transition group liquid-glass-tile"
+            className="p-4 rounded-xl border space-y-2.5 transition group/item liquid-glass-tile"
           >
             <div className="flex items-start justify-between gap-2">
               <div className="space-y-0.5 min-w-0">
@@ -334,8 +334,21 @@ export const StudyPlannerCard: React.FC<StudyPlannerCardProps> = ({
                 </span>
                 <button
                   type="button"
+                  onClick={() => onDeletePlanner(p.id)}
+                  className={`p-1 rounded-lg opacity-0 pointer-events-none group-hover/item:opacity-100 group-hover/item:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
+                    darkMode
+                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
+                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                  }`}
+                  title="Delete study plan"
+                  aria-label="Delete study plan"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => openEditPlanner(p)}
-                  className={`p-1 rounded-lg opacity-60 group-hover:opacity-100 transition ${
+                  className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
                     darkMode
                       ? 'text-slate-400 hover:text-white hover:bg-white/10'
                       : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
@@ -344,18 +357,6 @@ export const StudyPlannerCard: React.FC<StudyPlannerCardProps> = ({
                   aria-label="Edit study plan"
                 >
                   <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onDeletePlanner(p.id)}
-                  className={`p-1 rounded-lg opacity-0 group-hover:opacity-100 transition ${
-                    darkMode
-                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
-                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
-                  }`}
-                  title="Delete study plan"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

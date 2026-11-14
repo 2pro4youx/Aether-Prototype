@@ -465,7 +465,7 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
 
           {activeCourse && (
             <div className="flex flex-col gap-2.5 flex-1 min-h-0">
-              <div className="flex items-center justify-between gap-2 shrink-0">
+              <div className="group/course flex items-center justify-between gap-2 shrink-0">
                 <div
                   className={`flex-1 h-1.5 rounded-full overflow-hidden ${
                     darkMode ? 'bg-slate-800/80' : 'bg-slate-200'
@@ -484,8 +484,21 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
                 </span>
                 <button
                   type="button"
+                  onClick={() => handleDeleteCourse(activeCourse.id)}
+                  className={`p-1 rounded-lg opacity-0 pointer-events-none group-hover/course:opacity-100 group-hover/course:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
+                    darkMode
+                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
+                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                  }`}
+                  title="Delete course"
+                  aria-label="Delete course"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => openEditCourse(activeCourse)}
-                  className={`p-1 rounded-lg transition ${
+                  className={`p-1 rounded-lg opacity-60 group-hover/course:opacity-100 transition ${
                     darkMode
                       ? 'text-slate-400 hover:text-white hover:bg-white/10'
                       : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
@@ -494,18 +507,6 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
                   aria-label="Edit course"
                 >
                   <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteCourse(activeCourse.id)}
-                  className={`p-1 rounded-lg transition ${
-                    darkMode
-                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
-                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
-                  }`}
-                  title="Delete course"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
 
@@ -537,7 +538,7 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
                   <div
                     key={topic.id}
                     onClick={() => handleToggleTopic(activeCourse.id, topic.id)}
-                    className={`group flex items-center justify-between gap-2 px-3 py-2 rounded-xl border cursor-pointer transition liquid-glass-tile ${
+                    className={`group/item flex items-center justify-between gap-2 px-3 py-2 rounded-xl border cursor-pointer transition liquid-glass-tile ${
                       topic.completed ? 'opacity-65' : ''
                     }`}
                   >
@@ -567,13 +568,27 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
+                          handleDeleteTopic(activeCourse.id, topic.id);
+                        }}
+                        className={`p-1 rounded opacity-0 pointer-events-none group-hover/item:opacity-100 group-hover/item:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
+                          darkMode ? 'text-slate-500 hover:text-red-400' : 'text-slate-400 hover:text-red-600'
+                        }`}
+                        title="Delete topic"
+                        aria-label="Delete topic"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setEditingTopic({
                             courseId: activeCourse.id,
                             topicId: topic.id,
                             title: topic.title,
                           });
                         }}
-                        className={`p-1 rounded opacity-60 group-hover:opacity-100 transition ${
+                        className={`p-1 rounded opacity-60 group-hover/item:opacity-100 transition ${
                           darkMode
                             ? 'text-slate-400 hover:text-white hover:bg-white/10'
                             : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
@@ -582,18 +597,6 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
                         aria-label="Edit topic"
                       >
                         <Pencil className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteTopic(activeCourse.id, topic.id);
-                        }}
-                        className={`p-1 rounded opacity-0 group-hover:opacity-100 transition ${
-                          darkMode ? 'text-slate-500 hover:text-red-400' : 'text-slate-400 hover:text-red-600'
-                        }`}
-                      >
-                        <Trash2 className="w-3 h-3" />
                       </button>
                     </div>
                   </div>

@@ -1,4 +1,12 @@
 import { ChatAttachment, NotebookSource } from '../types';
+import {
+  appendPersonalizationToSystemInstruction,
+  buildActiveGeminiPersonalizationPayload,
+  extractDeterministicLocalSignals,
+  getGeminiPersonalization,
+  MemoryCategory,
+  mergeLearnedMemories,
+} from './personalization';
 
 export interface GeminiModelInfo {
   id: string;
@@ -50,6 +58,8 @@ export const AVAILABLE_GEMINI_MODELS: GeminiModelInfo[] = [
 
 export interface GeminiRequestOptions {
   message: string;
+  rawUserMessage?: string;
+  skipMemoryLearning?: boolean;
   model?: string;
   enableThinking?: boolean;
   sources?: Array<{ title: string; content: string } | NotebookSource>;
@@ -78,6 +88,38 @@ export function getActiveGeminiApiKey(): string {
   }
 
   return '';
+}
+
+const GOOGLE_UID_KEYS_STORAGE = 'aether_google_api_keys_v1';
+
+export function getRememberedGoogleApiKey(uid: string): string {
+  if (typeof window === 'undefined' || !uid) return '';
+  try {
+    const raw = localStorage.getItem(GOOGLE_UID_KEYS_STORAGE);
+    if (!raw) return '';
+    const map = JSON.parse(raw) as Record<string, string>;
+    const val = map?.[uid];
+    return typeof val === 'string' ? val.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+export function setRememberedGoogleApiKey(uid: string, key: string): void {
+  if (typeof window === 'undefined' || !uid) return;
+  const trimmed = key.trim();
+  try {
+    const raw = localStorage.getItem(GOOGLE_UID_KEYS_STORAGE);
+    const map: Record<string, string> = raw ? JSON.parse(raw) : {};
+    if (trimmed) {
+      map[uid] = trimmed;
+    } else {
+      delete map[uid];
+    }
+    localStorage.setItem(GOOGLE_UID_KEYS_STORAGE, JSON.stringify(map));
+  } catch {
+    // Ignore storage quota issues
+  }
 }
 
 export function setActiveGeminiApiKey(key: string): void {
@@ -565,6 +607,88 @@ export async function verifyGeminiApiKey(rawKey: string): Promise<VerifyKeyResul
   }
 }
 
+function cleanLearningPrompt(rawText: string): string {
+  return (rawText || '')
+    .replace(/^\[NotebookLM Grounding Protocol:[\s\S]*?\]\s*/i, '')
+    .trim();
+}
+
+async function scheduleGeminiMemoryLearning(params: {
+  apiKey: string;
+  userMessage: string;
+  assistantReply: string;
+}): Promise<void> {
+  const { apiKey, userMessage, assistantReply } = params;
+  const cleanUser = cleanLearningPrompt(userMessage);
+  if (!apiKey || cleanUser.length < 10) return;
+  if (!assistantReply || assistantReply.startsWith('⚠️')) return;
+
+  const current = getGeminiPersonalization();
+  if (current.memoryLevel <= 0) return;
+
+  try {
+    const backendRes = await postBackendJson<{
+      memories?: Array<{ text: string; category?: MemoryCategory }>;
+    }>(
+      '/api/gemini/learn-memory',
+      {
+        userMessage: cleanUser.slice(0, 2000),
+        assistantReply: assistantReply.slice(0, 600),
+        memoryLevel: current.memoryLevel,
+        existingMemories: current.memories.map((m) => m.text),
+        apiKey,
+      },
+      apiKey,
+      12000
+    );
+
+    if (backendRes.status === 'ok' && Array.isArray(backendRes.data?.memories)) {
+      if (backendRes.data.memories.length > 0) {
+        mergeLearnedMemories(backendRes.data.memories, 'auto');
+      }
+      return;
+    }
+
+    if (backendRes.status === 'unavailable') {
+      const level = current.memoryLevel;
+      const sensitivity =
+        level <= 35
+          ? 'CONSERVATIVE: Extract only explicit personal preferences/facts stated directly by the user.'
+          : level <= 70
+          ? 'BALANCED: Extract clear study topics, goals, or style preferences.'
+          : 'DEEP: Extract enduring study interests, goals, weak spots, and learning preferences.';
+      const existingList = current.memories.slice(0, 25).map((m) => `- ${m.text}`).join('\n') || 'None yet';
+      const prompt =
+        `${sensitivity}\nExisting memories (do not repeat):\n${existingList}\n\n` +
+        `Return ONLY valid JSON {"memories":[{"text":"...","category":"study|preference|goal|background|context"}]} with 0 to 2 concise memories from:\n${cleanUser.slice(0, 1500)}`;
+
+      const restRes = await callDirectGoogleRest({
+        apiKey,
+        model: 'gemini-3.5-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json' },
+        timeoutMs: 12000,
+      });
+
+      const match = restRes.text.match(/\{[\s\S]*\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]) as { memories?: Array<{ text: string; category?: MemoryCategory }> };
+        if (Array.isArray(parsed.memories) && parsed.memories.length > 0) {
+          mergeLearnedMemories(parsed.memories.slice(0, 2), 'auto');
+          return;
+        }
+      }
+    }
+  } catch {
+    // Fallback to deterministic local extraction if API call fails
+  }
+
+  const localSignals = extractDeterministicLocalSignals(cleanUser, current.memoryLevel);
+  if (localSignals.length > 0) {
+    mergeLearnedMemories(localSignals, 'auto');
+  }
+}
+
 /**
  * Unified Gemini API Caller
  * 1. Tries Express / Cloud Run endpoint `/api/gemini/chat`
@@ -574,6 +698,8 @@ export async function verifyGeminiApiKey(rawKey: string): Promise<VerifyKeyResul
 export async function callGeminiChat(options: GeminiRequestOptions): Promise<GeminiResponse> {
   const {
     message,
+    rawUserMessage,
+    skipMemoryLearning = false,
     model = 'gemini-3.5-flash-lite',
     enableThinking = false,
     sources = [],
@@ -598,6 +724,7 @@ export async function callGeminiChat(options: GeminiRequestOptions): Promise<Gem
   }));
 
   const requestedModel = mapClientRestModel(model);
+  const personalization = buildActiveGeminiPersonalizationPayload();
   const hasImages = attachments.some(
     (a) => a.isImage || a.type?.startsWith('image/') || (a.dataUrl && a.dataUrl.startsWith('data:image/'))
   );
@@ -637,6 +764,7 @@ export async function callGeminiChat(options: GeminiRequestOptions): Promise<Gem
       sources: hasImages ? [] : formattedSources,
       attachments,
       history,
+      personalization,
       apiKey,
     },
     apiKey,
@@ -645,9 +773,17 @@ export async function callGeminiChat(options: GeminiRequestOptions): Promise<Gem
 
   if (backendRes.status === 'ok') {
     const cleaned = backendRes.data?.reply ? cleanGeminiReply(backendRes.data.reply) : '';
+    const finalReply = cleaned.trim() || 'Sorry, I could not generate a response.';
+    if (!skipMemoryLearning) {
+      void scheduleGeminiMemoryLearning({
+        apiKey,
+        userMessage: rawUserMessage || message,
+        assistantReply: finalReply,
+      });
+    }
     return {
       success: true,
-      reply: cleaned.trim() || 'Sorry, I could not generate a response.',
+      reply: finalReply,
       modelUsed: backendRes.data?.modelUsed || requestedModel,
       thinkingUsed: Boolean(backendRes.data?.thinkingUsed),
     };
@@ -686,11 +822,16 @@ export async function callGeminiChat(options: GeminiRequestOptions): Promise<Gem
       }
     }
 
-    const systemInstruction = hasImages
+    const baseSystemInstruction = hasImages
       ? 'You are Gemini, a helpful multimodal AI assistant. Inspect visual data accurately and respond in clean Markdown.'
       : sourcesContext
       ? 'You are a research synthesis assistant grounded in the provided study sources. Cite sources as [1], [2], etc., using clean Markdown and LaTeX.'
       : 'You are Gemini, a helpful, capable AI assistant. Format responses cleanly with Markdown and LaTeX when helpful.';
+
+    const systemInstruction = appendPersonalizationToSystemInstruction(
+      baseSystemInstruction,
+      personalization
+    );
 
     const restResult = await callDirectGoogleRest({
       apiKey,
@@ -700,9 +841,18 @@ export async function callGeminiChat(options: GeminiRequestOptions): Promise<Gem
       generationConfig: enableThinking ? { maxOutputTokens: 8192 } : undefined,
     });
 
+    const finalReply = cleanGeminiReply(restResult.text);
+    if (!skipMemoryLearning) {
+      void scheduleGeminiMemoryLearning({
+        apiKey,
+        userMessage: rawUserMessage || message,
+        assistantReply: finalReply,
+      });
+    }
+
     return {
       success: true,
-      reply: cleanGeminiReply(restResult.text),
+      reply: finalReply,
       modelUsed: restResult.modelUsed,
       thinkingUsed: Boolean(enableThinking || model === 'gemini-4-argon'),
     };
@@ -727,6 +877,8 @@ export async function streamGeminiChat(
 ): Promise<{ success: boolean; fullText: string; error?: string }> {
   const {
     message,
+    rawUserMessage,
+    skipMemoryLearning = false,
     model = 'gemini-3.5-flash-lite',
     enableThinking = false,
     sources = [],
@@ -739,6 +891,8 @@ export async function streamGeminiChat(
   if (!apiKey) {
     return { success: false, fullText: '', error: 'Gemini API key is missing.' };
   }
+
+  const personalization = buildActiveGeminiPersonalizationPayload();
 
   if (backendApiStatus !== 'static-host') {
     try {
@@ -756,6 +910,7 @@ export async function streamGeminiChat(
           sources,
           attachments,
           history,
+          personalization,
           apiKey,
         }),
       });
@@ -808,7 +963,15 @@ export async function streamGeminiChat(
           }
         }
 
-        return { success: true, fullText: cleanGeminiReply(fullText) };
+        const cleaned = cleanGeminiReply(fullText);
+        if (!skipMemoryLearning) {
+          void scheduleGeminiMemoryLearning({
+            apiKey,
+            userMessage: rawUserMessage || message,
+            assistantReply: cleaned,
+          });
+        }
+        return { success: true, fullText: cleaned };
       }
     } catch (err: any) {
       if (err?.name === 'AbortError') {
@@ -821,6 +984,8 @@ export async function streamGeminiChat(
   // Static hosting direct fallback
   const result = await callGeminiChat({
     message,
+    rawUserMessage,
+    skipMemoryLearning,
     model,
     enableThinking,
     sources,

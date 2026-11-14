@@ -33,6 +33,7 @@ import { TimetableCard } from './dashboard/TimetableCard';
 import { CalendarCard } from './dashboard/CalendarCard';
 import { DashboardModal } from './dashboard/DashboardModal';
 import { resizeLenis } from '../hooks/useSmoothScroll';
+import { extractFirstName } from '../utils/personalization';
 
 interface DashboardProps {
   studyDays: StudyDay[];
@@ -1094,9 +1095,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
             style={{ color: activePalette.primary }}
           >
             <span>
-              {userName
-                ? `Welcome, ${userName} · Neural Research Command · ${activePalette.name}`
-                : `Neural Research Command · ${activePalette.name}`}
+              {(() => {
+                const firstName = extractFirstName(userName);
+                return firstName
+                  ? `Welcome, ${firstName} · Neural Research Command · ${activePalette.name}`
+                  : `Neural Research Command · ${activePalette.name}`;
+              })()}
             </span>
           </div>
           <h1

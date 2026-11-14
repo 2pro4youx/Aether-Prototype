@@ -378,6 +378,57 @@ function cleanGeminiReply(reply: string): string {
   return reply;
 }
 
+function appendServerPersonalization(
+  baseInstruction: string,
+  personalization?: {
+    firstName?: string;
+    memoryLevel?: number;
+    memories?: string[];
+    customInstructions?: string;
+  }
+): string {
+  if (!personalization || typeof personalization !== 'object') return baseInstruction;
+  const sections: string[] = [];
+
+  const firstName = typeof personalization.firstName === 'string' ? personalization.firstName.trim() : '';
+  if (firstName) {
+    sections.push(
+      `[User Identity]: The user's first name is "${firstName}". Always address them naturally by their first name ("${firstName}") rather than their full name or surname whenever greeting or referring to them.`
+    );
+  }
+
+  const instructions =
+    typeof personalization.customInstructions === 'string'
+      ? personalization.customInstructions.trim().slice(0, 4000)
+      : '';
+  if (instructions) {
+    sections.push(
+      `[Custom Instructions for Gemini from User]:\nFollow these user-defined preferences and instructions consistently:\n${instructions}`
+    );
+  }
+
+  const memLevel = typeof personalization.memoryLevel === 'number' ? personalization.memoryLevel : 0;
+  const memList = Array.isArray(personalization.memories)
+    ? personalization.memories
+        .filter((m): m is string => typeof m === 'string' && m.trim().length > 0)
+        .slice(0, 25)
+    : [];
+
+  if (memLevel > 0 && memList.length > 0) {
+    const tierTag = memLevel <= 35 ? 'Light' : memLevel <= 70 ? 'Balanced' : 'Deep';
+    sections.push(
+      `[Learned User Memory · ${tierTag} (${Math.round(memLevel)}%)]:\nUse these learned details about the user naturally to personalize explanations, examples, and tone without awkwardly repeating them unless relevant:\n` +
+        memList.map((m) => `- ${m}`).join('\n') +
+        (memLevel >= 71
+          ? '\n(Deep memory active: proactively connect concepts to their ongoing goals, coursework, and preferred reasoning style.)'
+          : '')
+    );
+  }
+
+  if (sections.length === 0) return baseInstruction;
+  return `${baseInstruction}\n\n${sections.join('\n\n')}`;
+}
+
 // Grounded and Thinking Chat Endpoint
 app.post('/api/gemini/chat', async (req, res) => {
   try {
@@ -388,6 +439,7 @@ app.post('/api/gemini/chat', async (req, res) => {
       sources = [],
       attachments = [],
       history = [],
+      personalization,
     } = req.body;
 
     if (!message || typeof message !== 'string') {
@@ -435,7 +487,7 @@ app.post('/api/gemini/chat', async (req, res) => {
       enableThinking ||
       model === 'gemini-4-argon';
 
-    const systemInstruction = hasImages
+    const baseSystemInstruction = hasImages
       ? `You are Gemini, a helpful, precise, and capable multimodal AI assistant built by Google. Inspect the visual data provided in the attached image parts. Carefully describe what you see, transcribe any visible text, words, and labels with complete accuracy, and format your response in clean Markdown.`
       : isExtendedModel
       ? (sourcesContext
@@ -452,6 +504,8 @@ app.post('/api/gemini/chat', async (req, res) => {
           : `You are Gemini, a helpful, capable, and thoughtful AI assistant built by Google. ` +
             `Respond naturally, directly, intelligently, and conversationally without being subservient. ` +
             `Format your responses using clean Markdown, bullet points, and LaTeX math formulas when applicable.`);
+
+    const systemInstruction = appendServerPersonalization(baseSystemInstruction, personalization);
 
     const config: Record<string, unknown> = {
       systemInstruction,
@@ -632,6 +686,7 @@ app.post('/api/gemini/stream', async (req, res) => {
       enableThinking = false,
       sources = [],
       attachments = [],
+      personalization,
     } = req.body;
 
     if (!message || typeof message !== 'string') {
@@ -673,7 +728,7 @@ app.post('/api/gemini/stream', async (req, res) => {
     const targetModel = mapServerModel(enableThinking ? 'gemini-4-hydrogen' : model);
     const isExtendedModel = enableThinking || model === 'gemini-4-argon';
 
-    const systemInstruction = hasImages
+    const baseSystemInstruction = hasImages
       ? `You are Gemini, a helpful, precise, and capable multimodal AI assistant built by Google. Inspect visual attachments and transcribe or analyze with precision.`
       : isExtendedModel
       ? (sourcesContext
@@ -682,6 +737,8 @@ app.post('/api/gemini/stream', async (req, res) => {
       : (sourcesContext
           ? `You are a research synthesis assistant grounded in the provided study sources. Cite sources as [1], [2].`
           : `You are Gemini, a helpful, capable, and thoughtful AI assistant built by Google.`);
+
+    const systemInstruction = appendServerPersonalization(baseSystemInstruction, personalization);
 
     const config: Record<string, unknown> = { systemInstruction };
     if (isExtendedModel) config.maxOutputTokens = 8192;
@@ -1013,6 +1070,122 @@ app.post('/api/gemini/decode-exam-schedule', async (req, res) => {
     console.error('Exam Schedule Decode Error:', err);
     const errorMessage = err instanceof Error ? err.message : 'Failed to decode exam schedule image';
     return res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Functional User Memory Extraction Endpoint (powers the Settings -> Gemini Personalization Memory Slider)
+app.post('/api/gemini/learn-memory', async (req, res) => {
+  try {
+    const {
+      userMessage = '',
+      assistantReply = '',
+      memoryLevel = 65,
+      existingMemories = [],
+    } = req.body as {
+      userMessage?: string;
+      assistantReply?: string;
+      memoryLevel?: number;
+      existingMemories?: string[];
+    };
+
+    const level = Math.max(0, Math.min(100, Math.round(Number(memoryLevel) || 0)));
+    if (level <= 0 || !userMessage || typeof userMessage !== 'string' || userMessage.trim().length < 10) {
+      return res.json({ memories: [] });
+    }
+
+    const apiKey = resolveApiKey(req);
+    if (!apiKey) {
+      return res.status(401).json({ error: 'Gemini API key is missing.' });
+    }
+
+    const sensitivityRule =
+      level <= 35
+        ? 'CONSERVATIVE mode: Only extract facts or preferences the user EXPLICITLY states about themselves (e.g., "I prefer concise bullets", "I am a CS major", "Remember my exam is Friday"). If this is just a question or general chat with no explicit personal fact, return an empty array.'
+        : level <= 70
+        ? 'BALANCED mode: Extract clear personal facts, courses/subjects being studied, learning preferences, goals, projects, or background context revealed by the user. Skip pure one-off trivia unless it clearly signals a recurring course or preference.'
+        : 'DEEP adaptive mode: Extract enduring study subjects, academic goals, recurring technical/research topics, conceptual learning style preferences, exam/project timelines, or skill level cues implied by the user message.';
+
+    const existingBlock =
+      Array.isArray(existingMemories) && existingMemories.length > 0
+        ? `Already saved memories (DO NOT repeat or duplicate these):\n${existingMemories
+            .slice(0, 30)
+            .map((m) => `- ${m}`)
+            .join('\n')}`
+        : 'No saved memories yet.';
+
+    const extractionPrompt =
+      `${sensitivityRule}\n\n` +
+      `${existingBlock}\n\n` +
+      `Analyze the latest user message below and return 0 to 2 concise, durable memory statements (third-person phrasing like "Studying Linear Algebra for upcoming midterm" or "Prefers Python analogies over theory"). Do NOT include trivial filler.\n\n` +
+      `User Message:\n${userMessage.slice(0, 2000)}\n` +
+      (assistantReply ? `\nAssistant Context Summary:\n${String(assistantReply).slice(0, 600)}` : '');
+
+    const config = {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          memories: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                text: {
+                  type: Type.STRING,
+                  description: 'Concise factual statement about the user (10-140 chars).',
+                },
+                category: {
+                  type: Type.STRING,
+                  description: 'One of: study, preference, goal, background, context',
+                },
+              },
+              required: ['text', 'category'],
+            },
+          },
+        },
+        required: ['memories'],
+      },
+    };
+
+    if (vertexKeyCache.get(apiKey) === 'aiplatform') {
+      const vertexRes = await callVertexExpressRest(apiKey, 'gemini-3.5-flash-lite', extractionPrompt, config);
+      let parsed: { memories?: Array<{ text: string; category?: string }> } = { memories: [] };
+      try {
+        parsed = JSON.parse(vertexRes.text.trim());
+      } catch {
+        const m = vertexRes.text.match(/\{[\s\S]*\}/);
+        if (m) parsed = JSON.parse(m[0]);
+      }
+      return res.json({ memories: Array.isArray(parsed.memories) ? parsed.memories.slice(0, 2) : [] });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+    });
+
+    const { response } = await generateWithModelFallback(
+      ai,
+      'gemini-3.5-flash-lite',
+      extractionPrompt,
+      config
+    );
+
+    const rawText = (response?.text ?? '{}').trim();
+    let parsed: { memories?: Array<{ text: string; category?: string }> } = { memories: [] };
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      const m = rawText.match(/\{[\s\S]*\}/);
+      if (m) parsed = JSON.parse(m[0]);
+    }
+
+    return res.json({
+      memories: Array.isArray(parsed.memories) ? parsed.memories.slice(0, 2) : [],
+    });
+  } catch (err) {
+    console.warn('Memory learning endpoint warning:', err);
+    return res.json({ memories: [] });
   }
 });
 
