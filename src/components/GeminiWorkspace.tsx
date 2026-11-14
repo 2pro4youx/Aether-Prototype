@@ -50,29 +50,38 @@ interface GeminiWorkspaceProps {
   selectedModel?: string;
   onChangeModel?: (model: string) => void;
   smoothScroll?: boolean;
+  userName?: string;
 }
 
 const SUPPORTED_MODELS: GeminiModelInfo[] = AVAILABLE_GEMINI_MODELS;
 
 const SUGGESTED_PROMPTS = [
   {
-    title: 'Attention Formulation',
-    prompt: 'Derive the Scaled Dot-Product Attention formula and explain why dividing by sqrt(d_k) prevents softmax gradient vanishing.',
-    icon: Sigma,
-  },
-  {
-    title: 'Quantum Decoherence',
-    prompt: 'Explain the mechanism of environmental decoherence in quantum superposition and write down the decay equation.',
+    title: 'Explain From First Principles',
+    subtitle: 'Break tough ideas into clear intuition, analogies, and core concepts.',
+    prompt:
+      'Act as my Socratic study tutor. Briefly outline the Feynman 4-step method for mastering tough concepts, then ask me what topic I want to break down first.',
     icon: Brain,
   },
   {
-    title: 'React Performance',
-    prompt: 'How does structural sharing in immutable React state maintain 120 FPS frame rates without cloning whole state trees?',
+    title: 'Step-by-Step Solver',
+    subtitle: 'Tackle math, physics, or engineering problems with LaTeX derivations.',
+    prompt:
+      'Walk me through a clean LaTeX derivation of the quadratic formula by completing the square, showing every step clearly, then ask what equation or problem I want to solve next.',
+    icon: Sigma,
+  },
+  {
+    title: 'Active Recall & Quiz',
+    subtitle: 'Test your memory with targeted practice questions and instant feedback.',
+    prompt:
+      'Help me run an active recall study session. Share a crisp 3-step active recall routine in bullet points, and ask which subject or chapter you should quiz me on.',
     icon: Sparkles,
   },
   {
-    title: 'Clean Architecture',
-    prompt: 'Draft an architectural proposal for an offline-first real-time workspace with local persistence and low-latency rendering.',
+    title: 'Study Sprint & Research Plan',
+    subtitle: 'Structure study roadmaps, essay outlines, or clean code architecture.',
+    prompt:
+      'Design a focused 90-minute deep-work study and research sprint template with milestone checkpoints, then ask me about my upcoming exam, essay, or coding project so we can tailor it.',
     icon: Zap,
   },
 ];
@@ -87,6 +96,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
   selectedModel: propSelectedModel,
   onChangeModel,
   smoothScroll = true,
+  userName,
 }) => {
   const [selectedConvId, setSelectedConvId] = useState<string>(() => {
     return conversations[0]?.id || '';
@@ -104,7 +114,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
   const [enableWebSearch, setEnableWebSearch] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [deletingConvId, setDeletingConvId] = useState<string | null>(null);
@@ -1474,33 +1484,58 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
 
                   <div>
                     <h3 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                      What can I help you explore today?
+                      What can I help you explore today{userName ? `, ${userName}` : ''}?
                     </h3>
                     <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto mt-1 leading-relaxed">
                       Gemini Workspace provides fast multimodal intelligence, LaTeX mathematical formatting, and code synthesis.
                     </p>
                   </div>
 
-                  {/* Suggestion Chips */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left pt-2">
+                  {/* Reworked 4 Starter Options */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left pt-2">
                     {SUGGESTED_PROMPTS.map((item, idx) => {
                       const Icon = item.icon;
                       return (
                         <div
                           key={idx}
                           onClick={() => handleSendMessage(item.prompt)}
-                          className={`p-3.5 rounded-2xl border cursor-pointer transition select-none liquid-glass-tile gemini-button-tile ${
+                          className={`group p-4 rounded-2xl border cursor-pointer transition-all select-none liquid-glass-tile gemini-button-tile ${
                             darkMode
                               ? 'bg-slate-900/50 hover:bg-slate-800/80 border-white/10 hover:border-white/25'
-                              : 'bg-white/80 hover:bg-white border-slate-300/80 shadow-xs'
+                              : 'bg-white/85 hover:bg-white border-slate-300/80 shadow-xs'
                           }`}
                         >
-                          <div className="flex items-center gap-2 mb-1">
-                            <Icon className="w-3.5 h-3.5" style={{ color: activePalette.primary }} />
-                            <h4 className="text-xs font-bold">{item.title}</h4>
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className="w-7 h-7 rounded-lg flex items-center justify-center border shrink-0 transition-transform duration-200 group-hover:scale-105"
+                                style={{
+                                  backgroundColor: `${activePalette.primary}18`,
+                                  borderColor: `${activePalette.primary}40`,
+                                }}
+                              >
+                                <Icon className="w-3.5 h-3.5" style={{ color: activePalette.primary }} />
+                              </div>
+                              <h4
+                                className={`text-xs font-bold truncate ${
+                                  darkMode ? 'text-slate-100' : 'text-slate-900'
+                                }`}
+                              >
+                                {item.title}
+                              </h4>
+                            </div>
+                            <ChevronRight
+                              className={`w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-80 group-hover:translate-x-0.5 transition-all ${
+                                darkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}
+                            />
                           </div>
-                          <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
-                            {item.prompt}
+                          <p
+                            className={`text-[11px] leading-relaxed pl-9.5 ${
+                              darkMode ? 'text-slate-400' : 'text-slate-600'
+                            }`}
+                          >
+                            {item.subtitle}
                           </p>
                         </div>
                       );

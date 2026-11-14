@@ -63,6 +63,7 @@ interface NotebookLMViewProps {
   activePalette: ColorPalette;
   darkMode: boolean;
   smoothScroll?: boolean;
+  userName?: string;
 }
 
 export interface ChatMessage {
@@ -90,6 +91,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
   activePalette,
   darkMode,
   smoothScroll = true,
+  userName,
 }) => {
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
@@ -114,7 +116,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
             id: 'm-welcome',
             role: 'assistant',
             content:
-              'Welcome to your grounded NotebookLM workspace. Add sources on the left to ground neural synthesis, ask research questions, or click the **OneNote Canvas** arrow on the right sidebar to open your companion workspace.',
+              `Welcome${userName ? `, ${userName}` : ''} to your grounded NotebookLM workspace. Add sources on the left to ground neural synthesis, ask research questions, or click the **OneNote Canvas** arrow on the right sidebar to open your companion workspace.`,
             timestamp: 'Just now',
             model: selectedModel,
           },
@@ -130,7 +132,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           id: 'm-welcome',
           role: 'assistant',
           content:
-            'Welcome to your grounded NotebookLM workspace. Add sources on the left to ground neural synthesis, ask research questions, or click the **OneNote Canvas** arrow on the right sidebar to open your companion workspace.',
+            `Welcome${userName ? `, ${userName}` : ''} to your grounded NotebookLM workspace. Add sources on the left to ground neural synthesis, ask research questions, or click the **OneNote Canvas** arrow on the right sidebar to open your companion workspace.`,
           timestamp: 'Just now',
           model: selectedModel,
         },
@@ -801,7 +803,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           } ${
             darkMode ? 'border-white/10' : 'border-slate-200/90'
           }`}
-          style={{ contain: 'paint', willChange: 'width' }}
+          style={{ willChange: 'width' }}
         >
           {/* Minimized Sources Strip (Animated Crossfade) */}
           <motion.div
@@ -1522,7 +1524,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           } ${
             darkMode ? 'border-white/10' : 'border-slate-200/90'
           }`}
-          style={{ contain: 'paint', willChange: 'width' }}
+          style={{ willChange: 'width' }}
         >
           {/* Minimized Studio Strip (Animated Crossfade) */}
           <motion.div

@@ -31,6 +31,7 @@ interface FloatingGeminiChatProps {
   smoothScroll?: boolean;
   messages?: FloatingChatMessage[];
   onUpdateMessages?: (messages: FloatingChatMessage[]) => void;
+  userName?: string;
 }
 
 type Message = FloatingChatMessage;
@@ -45,6 +46,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
   smoothScroll = true,
   messages: controlledMessages,
   onUpdateMessages,
+  userName,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
@@ -63,11 +65,16 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
     {
       id: 'm-0',
       role: 'assistant',
-      text: "Hey! How can I help you today?",
+      text: userName ? `Hey ${userName}! How can I help you today?` : 'Hey! How can I help you today?',
       timestamp: 'Just now',
     },
   ]);
-  const messages = controlledMessages && controlledMessages.length > 0 ? controlledMessages : internalMessages;
+  const rawMessages = controlledMessages && controlledMessages.length > 0 ? controlledMessages : internalMessages;
+  const messages = rawMessages.map((msg, idx) =>
+    idx === 0 && msg.id === 'm-0' && userName && msg.text === 'Hey! How can I help you today?'
+      ? { ...msg, text: `Hey ${userName}! How can I help you today?` }
+      : msg
+  );
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const setMessages = (updater: Message[] | ((prev: Message[]) => Message[])) => {

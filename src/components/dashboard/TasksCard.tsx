@@ -224,7 +224,7 @@ export const TasksCard: React.FC<TasksCardProps> = ({
                     darkMode ? 'text-slate-100' : 'text-slate-900'
                   }`}
                 >
-                  {cardTitle || 'Daily Study Tasks & Chores'}
+                  {cardTitle || 'Tasks'}
                 </h3>
               </button>
             ) : (
@@ -233,7 +233,7 @@ export const TasksCard: React.FC<TasksCardProps> = ({
                   darkMode ? 'text-slate-100' : 'text-slate-900'
                 }`}
               >
-                {cardTitle || 'Daily Study Tasks & Chores'}
+                {cardTitle || 'Tasks'}
               </h3>
             )}
           </div>

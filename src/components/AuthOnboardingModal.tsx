@@ -14,6 +14,7 @@ import {
   Clipboard,
   ShieldCheck,
   Check,
+  User as UserIcon,
 } from 'lucide-react';
 import { signInWithPopup, User } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
@@ -59,7 +60,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
   activePalette,
   darkMode,
 }) => {
-  const [step, setStep] = useState<'google-auth' | 'gemini-key'>('google-auth');
+  const [step, setStep] = useState<'google-auth' | 'guest-name' | 'gemini-key'>('google-auth');
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
   const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
   const [signedInUser, setSignedInUser] = useState<{
@@ -68,6 +69,8 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
     displayName: string;
     photoURL?: string;
   } | null>(null);
+  const [guestNameInput, setGuestNameInput] = useState('');
+  const [guestNameError, setGuestNameError] = useState<string | null>(null);
   const [cloudRestoredKey, setCloudRestoredKey] = useState<string | null>(null);
 
   // Gemini API Key state
@@ -84,7 +87,9 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
   // Initialize key ONLY from active Firebase user or user manual storage
   useEffect(() => {
     if (isOpen) {
+      setStep('google-auth');
       setGoogleAuthError(null);
+      setGuestNameError(null);
       const currentFbUser = auth.currentUser;
       if (currentFbUser && currentFbUser.email) {
         setSignedInUser({
@@ -95,6 +100,23 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
         });
       } else {
         setSignedInUser(null);
+      }
+
+      try {
+        const rawSavedUser = localStorage.getItem('aether_auth_user');
+        if (rawSavedUser) {
+          const parsedUser = JSON.parse(rawSavedUser);
+          if (
+            parsedUser?.isGuest &&
+            typeof parsedUser?.name === 'string' &&
+            parsedUser.name.trim() &&
+            parsedUser.name !== 'Guest Learner'
+          ) {
+            setGuestNameInput(parsedUser.name.trim());
+          }
+        }
+      } catch {
+        // Ignore invalid saved user payload
       }
 
       const stored = typeof window !== 'undefined' ? localStorage.getItem('aether_gemini_api_key') : null;
@@ -242,7 +264,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
         setTimeout(() => {
           localStorage.setItem('aether_gemini_api_key', keyToTest);
           const email = signedInUser?.email || 'guest@local.aether';
-          const displayName = signedInUser?.displayName || 'Guest Learner';
+          const displayName = signedInUser?.displayName || guestNameInput.trim() || 'Guest';
           localStorage.setItem(
             'aether_auth_user',
             JSON.stringify({
@@ -383,7 +405,12 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
               {/* Guest / Direct Entry Button */}
               <button
                 type="button"
-                onClick={() => setStep('gemini-key')}
+                onClick={() => {
+                  setSignedInUser(null);
+                  setCloudRestoredKey(null);
+                  setGuestNameError(null);
+                  setStep('guest-name');
+                }}
                 className={`w-full py-2.5 px-4 rounded-2xl border text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${
                   darkMode
                     ? 'border-white/15 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white'
@@ -400,6 +427,109 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
               Google Sign-In securely syncs your notes, workspaces &amp; chats across devices. Guest mode stays local on this browser.
             </p>
           </div>
+        ) : step === 'guest-name' ? (
+          /* STEP 1.5: Guest Name Capture */
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const cleaned = guestNameInput.trim();
+              if (!cleaned) {
+                setGuestNameError('Please enter your name so we can personalize your session.');
+                return;
+              }
+              setGuestNameInput(cleaned);
+              setGuestNameError(null);
+              setStep('gemini-key');
+            }}
+            className="space-y-5 animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: `${activePalette.primary}30` }}>
+              <button
+                type="button"
+                onClick={() => setStep('google-auth')}
+                className={`flex items-center gap-1.5 text-xs transition cursor-pointer ${
+                  darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back</span>
+              </button>
+
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono font-semibold"
+                style={{
+                  backgroundColor: `${activePalette.primary}18`,
+                  borderColor: `${activePalette.primary}45`,
+                  color: darkMode ? '#ffffff' : activePalette.primary,
+                }}
+              >
+                <UserIcon className="w-3 h-3 shrink-0" style={{ color: activePalette.primary }} />
+                <span>Guest Profile</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+                <UserIcon className="w-5 h-5 shrink-0" style={{ color: activePalette.primary }} />
+                <span>What should we call you?</span>
+              </h3>
+              <p className={`text-xs leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                Enter your name to personalize your dashboard, neural synthesis greetings, and workspace session on this browser.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="guest-display-name"
+                className={`block text-[11px] font-mono uppercase tracking-wider font-semibold ${
+                  darkMode ? 'text-slate-300' : 'text-slate-700'
+                }`}
+              >
+                Your Name
+              </label>
+              <input
+                id="guest-display-name"
+                type="text"
+                autoFocus
+                maxLength={48}
+                value={guestNameInput}
+                onChange={(e) => {
+                  setGuestNameInput(e.target.value);
+                  if (guestNameError) setGuestNameError(null);
+                }}
+                placeholder="Enter your name..."
+                className={`w-full px-4 py-3 rounded-xl border text-sm font-medium focus:outline-none transition ${
+                  darkMode
+                    ? 'bg-slate-950/80 border-white/20 text-slate-100 placeholder-slate-500 focus:border-white/40'
+                    : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-slate-500'
+                }`}
+                style={{
+                  borderColor: guestNameInput.trim() ? `${activePalette.primary}80` : undefined,
+                }}
+              />
+              {guestNameError && (
+                <p className="text-xs font-mono text-rose-400 flex items-center gap-1.5 pt-0.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{guestNameError}</span>
+                </p>
+              )}
+            </div>
+
+            <div className={`flex items-center justify-end gap-3 pt-2 border-t ${darkMode ? 'border-white/10' : 'border-slate-200'}`}>
+              <button
+                type="submit"
+                disabled={!guestNameInput.trim()}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                  color: '#0f172a',
+                }}
+              >
+                <span>Continue</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </form>
         ) : (
           /* STEP 2: Gemini API Key Setup */
           <div className="space-y-5 animate-in fade-in zoom-in-95 duration-200">
@@ -407,19 +537,33 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
             <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: `${activePalette.primary}30` }}>
               <button
                 type="button"
-                onClick={() => setStep('google-auth')}
-                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition cursor-pointer"
+                onClick={() => setStep(signedInUser ? 'google-auth' : 'guest-name')}
+                className={`flex items-center gap-1.5 text-xs transition cursor-pointer ${
+                  darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                }`}
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Back</span>
               </button>
 
-              {signedInUser && (
+              {signedInUser ? (
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-mono text-emerald-300 max-w-[70%] truncate">
                   <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                  <span className="truncate">{signedInUser.email}</span>
+                  <span className="truncate">{signedInUser.displayName} · {signedInUser.email}</span>
                 </div>
-              )}
+              ) : guestNameInput.trim() ? (
+                <div
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono font-semibold max-w-[70%] truncate"
+                  style={{
+                    backgroundColor: `${activePalette.primary}18`,
+                    borderColor: `${activePalette.primary}45`,
+                    color: darkMode ? '#ffffff' : activePalette.primary,
+                  }}
+                >
+                  <UserIcon className="w-3 h-3 shrink-0" style={{ color: activePalette.primary }} />
+                  <span className="truncate">{guestNameInput.trim()} · Guest</span>
+                </div>
+              ) : null}
             </div>
 
             <div className="space-y-1">
@@ -428,7 +572,9 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
                 <span>Connect Your Gemini API Key</span>
               </h3>
               <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                Enter your Google Gemini API key to activate grounded NotebookLM reasoning, mathematical derivations, and multi-source synthesis.
+                {(signedInUser?.displayName || guestNameInput.trim())
+                  ? `Hi ${signedInUser?.displayName || guestNameInput.trim()}, enter your Google Gemini API key to activate grounded NotebookLM reasoning, mathematical derivations, and multi-source synthesis.`
+                  : 'Enter your Google Gemini API key to activate grounded NotebookLM reasoning, mathematical derivations, and multi-source synthesis.'}
               </p>
             </div>
 

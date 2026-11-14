@@ -67,10 +67,11 @@ interface DashboardProps {
   onUpdateTimetableSlots?: (slots: TimetableSlot[]) => void;
   localCalendarEvents?: CalendarEventEntry[];
   onUpdateLocalCalendarEvents?: (events: CalendarEventEntry[]) => void;
+  userName?: string;
 }
 
 const DEFAULT_CARD_TITLES: Record<DashboardCardType, string> = {
-  tasks: 'Daily Study Tasks & Chores',
+  tasks: 'Tasks',
   planner: 'Study Planner',
   syllabus: 'Syllabus Tracker',
   exam_schedule: 'Exam Schedule',
@@ -100,10 +101,10 @@ const CARD_CATALOG: Array<{
 }> = [
   {
     type: 'tasks',
-    title: 'Daily Study Tasks + Chores',
-    description: 'Track daily tasks and chores with optional completion countdowns.',
-    defaultColSpan: 7,
-    defaultWidthPct: 58.33,
+    title: 'Tasks',
+    description: 'Track daily tasks and priorities with optional completion countdowns.',
+    defaultColSpan: 6,
+    defaultWidthPct: 50,
     defaultHeight: 460,
     icon: CheckCircle2,
   },
@@ -158,8 +159,15 @@ export const DEFAULT_DASHBOARD_CARDS: DashboardCardInstance[] = [
   {
     id: 'card-tasks-default',
     type: 'tasks',
-    colSpan: 7,
-    widthPct: 58.33,
+    colSpan: 6,
+    widthPct: 50,
+    height: 460,
+  },
+  {
+    id: 'card-timetable-default',
+    type: 'timetable',
+    colSpan: 6,
+    widthPct: 50,
     height: 460,
   },
 ];
@@ -308,6 +316,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onUpdateTimetableSlots,
   localCalendarEvents: controlledLocalCalendarEvents,
   onUpdateLocalCalendarEvents,
+  userName,
 }) => {
   const [hoveredDay, setHoveredDay] = useState<StudyDay | null>(null);
   const [showAddCardModal, setShowAddCardModal] = useState(false);
@@ -326,13 +335,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
   }, [onMetaverseEditChange]);
 
-  // Modular Dashboard Cards layout (default: Daily Study Tasks + Chores)
+  // Modular Dashboard Cards layout (default: Tasks & Weekly Timetable side by side)
   const [internalCards, setInternalCards] = useState<DashboardCardInstance[]>(() => {
     try {
       const saved = localStorage.getItem('aether_dashboard_cards_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const isLegacyDefault =
+            parsed.length === 1 &&
+            parsed[0]?.id === 'card-tasks-default' &&
+            parsed[0]?.type === 'tasks' &&
+            parsed[0]?.colSpan === 7 &&
+            parsed[0]?.widthPct === 58.33 &&
+            parsed[0]?.height === 460 &&
+            !parsed[0]?.title;
+          if (!isLegacyDefault) return parsed;
+        }
       }
     } catch {
       // fallback to default
@@ -1074,7 +1093,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
             style={{ color: activePalette.primary }}
           >
-            <span>Neural Research Command · {activePalette.name}</span>
+            <span>
+              {userName
+                ? `Welcome, ${userName} · Neural Research Command · ${activePalette.name}`
+                : `Neural Research Command · ${activePalette.name}`}
+            </span>
           </div>
           <h1
             className={`text-3xl sm:text-4xl font-extrabold tracking-tight mt-1 ${
@@ -1698,7 +1721,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               Add Dashboard Card
             </p>
             <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              Tasks & Chores · Study Planner · Syllabus · Exam Schedule · Timetable · Calendar
+              Tasks · Study Planner · Syllabus · Exam Schedule · Timetable · Calendar
             </p>
           </div>
         </div>

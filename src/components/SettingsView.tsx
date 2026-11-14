@@ -50,6 +50,8 @@ interface SettingsViewProps {
   onToggleSmoothScroll: (enabled: boolean) => void;
   onSignOut?: () => void;
   authenticatedEmail?: string;
+  authenticatedName?: string;
+  isGuestSession?: boolean;
 }
 
 interface PrecisionCursorSectionProps {
@@ -588,10 +590,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onToggleSmoothScroll,
   onSignOut,
   authenticatedEmail,
+  authenticatedName,
+  isGuestSession = false,
 }) => {
   const [isCustomBuilderOpen, setIsCustomBuilderOpen] = useState(activePaletteId === 'custom');
   const [apiKeyInput, setApiKeyInput] = useState(() => getActiveGeminiApiKey());
   const [isTestingKey, setIsTestingKey] = useState(false);
+  const [isJustReset, setIsJustReset] = useState(false);
   const [keyStatus, setKeyStatus] = useState<{
     tested: boolean;
     success: boolean;
@@ -1704,8 +1709,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <p>
             Connected as{' '}
-            <span className="font-mono text-white font-semibold">
-              {authenticatedEmail || 'Guest Session'}
+            <span className={`font-mono font-semibold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+              {authenticatedEmail
+                ? authenticatedName
+                  ? `${authenticatedName} (${authenticatedEmail})`
+                  : authenticatedEmail
+                : authenticatedName
+                ? `${authenticatedName} · Guest Session`
+                : 'Guest Session'}
             </span>
           </p>
         </div>
@@ -1731,19 +1742,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             Cloud &amp; Local State Management
           </p>
           <p>
-            Your notes, chats, workspaces, themes, and study logs sync automatically to your Google account across devices.
+            {isGuestSession
+              ? 'Your guest session stays saved locally on this browser. Resetting clears your workspace data while keeping your login.'
+              : 'Your notes, chats, workspaces, themes, and study logs sync automatically to your Google account across devices.'}
           </p>
         </div>
         <button
-          onClick={onResetData}
-          className={`px-3 py-1.5 rounded-xl text-xs border transition flex items-center gap-1.5 cursor-pointer ${
-            darkMode
+          type="button"
+          onClick={() => {
+            onResetData();
+            setIsJustReset(true);
+            setTimeout(() => setIsJustReset(false), 1800);
+          }}
+          className={`px-3 py-1.5 rounded-xl text-xs border transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
+            isJustReset
+              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/35'
+              : darkMode
               ? 'bg-slate-900 hover:bg-red-950/60 hover:text-red-300 text-slate-400 border-white/10'
               : 'bg-white hover:bg-red-50 hover:text-red-600 text-slate-600 border-slate-200'
           }`}
         >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Reset Sample Data</span>
+          {isJustReset ? <Check className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          <span>{isJustReset ? 'Account Reset' : 'Reset Account'}</span>
         </button>
       </div>
     </div>

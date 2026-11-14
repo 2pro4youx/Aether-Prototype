@@ -86,19 +86,30 @@ const DEFAULT_FLOATING_MESSAGES: FloatingChatMessage[] = [
   },
 ];
 
-function getSavedAuthUserEmail(): string | undefined {
+interface SavedAuthProfile {
+  email?: string;
+  name?: string;
+  isGuest?: boolean;
+}
+
+function getSavedAuthProfile(): SavedAuthProfile {
   try {
     const raw = localStorage.getItem('aether_auth_user');
-    if (!raw) return undefined;
+    if (!raw) return {};
     const parsed = JSON.parse(raw);
-    return typeof parsed?.email === 'string' ? parsed.email : undefined;
+    return {
+      email: typeof parsed?.email === 'string' ? parsed.email : undefined,
+      name: typeof parsed?.name === 'string' ? parsed.name : undefined,
+      isGuest: Boolean(parsed?.isGuest),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
 export default function App() {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(() => auth.currentUser);
+  const [authProfile, setAuthProfile] = useState<SavedAuthProfile>(() => getSavedAuthProfile());
   const [isCloudSyncReady, setIsCloudSyncReady] = useState(false);
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -143,6 +154,7 @@ export default function App() {
     prevSyncedWorkspaceIdsRef.current.clear();
     setIsCloudSyncReady(false);
     setFirebaseUser(null);
+    setAuthProfile({});
 
     void signOut(auth).catch(() => {});
 
@@ -295,7 +307,17 @@ export default function App() {
       const saved = localStorage.getItem('aether_dashboard_cards_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const isLegacyDefault =
+            parsed.length === 1 &&
+            parsed[0]?.id === 'card-tasks-default' &&
+            parsed[0]?.type === 'tasks' &&
+            parsed[0]?.colSpan === 7 &&
+            parsed[0]?.widthPct === 58.33 &&
+            parsed[0]?.height === 460 &&
+            !parsed[0]?.title;
+          if (!isLegacyDefault) return parsed;
+        }
       }
     } catch {
       // fallback
@@ -1594,7 +1616,17 @@ export default function App() {
 
   const applyDashboardRemote = useCallback((d: DashboardStatePayload) => {
     isApplyingRemoteRef.current = true;
-    if (Array.isArray(d.cards) && d.cards.length > 0) setDashboardCards(d.cards);
+    if (Array.isArray(d.cards) && d.cards.length > 0) {
+      const isLegacyDefault =
+        d.cards.length === 1 &&
+        d.cards[0]?.id === 'card-tasks-default' &&
+        d.cards[0]?.type === 'tasks' &&
+        d.cards[0]?.colSpan === 7 &&
+        d.cards[0]?.widthPct === 58.33 &&
+        d.cards[0]?.height === 460 &&
+        !d.cards[0]?.title;
+      setDashboardCards(isLegacyDefault ? DEFAULT_DASHBOARD_CARDS : d.cards);
+    }
     if (Array.isArray(d.tasks)) setTasks(d.tasks);
     if (Array.isArray(d.planners)) setPlanners(d.planners);
     if (Array.isArray(d.syllabusCourses)) setSyllabusCourses(d.syllabusCourses);
@@ -1803,8 +1835,10 @@ export default function App() {
             email,
             name: displayName,
             photoURL: user.photoURL || undefined,
+            isGuest: false,
           })
         );
+        setAuthProfile({ email, name: displayName, isGuest: false });
 
         const result = await hydrateAndSubscribeUser(user);
         const restoredKey = result?.syncedGeminiKey?.trim() || getActiveGeminiApiKey();
@@ -2612,6 +2646,14 @@ export default function App() {
     }
   };
 
+  const activeUserName =
+    firebaseUser?.displayName ||
+    authProfile.name ||
+    (firebaseUser?.email ? firebaseUser.email.split('@')[0] : undefined);
+  const activeUserEmail =
+    firebaseUser?.email || (!authProfile.isGuest ? authProfile.email : undefined);
+  const isGuestSession = !firebaseUser && Boolean(authProfile.isGuest || !activeUserEmail);
+
   return (
     <div
       className={`relative ${
@@ -2785,6 +2827,7 @@ export default function App() {
                   onUpdateTimetableSlots={setTimetableSlots}
                   localCalendarEvents={localCalendarEvents}
                   onUpdateLocalCalendarEvents={setLocalCalendarEvents}
+                  userName={activeUserName}
                 />
               )}
 
@@ -2821,6 +2864,7 @@ export default function App() {
                     enableThinking={enableThinking}
                     activePalette={activePalette}
                     darkMode={darkMode}
+                    userName={activeUserName}
                   />
                 ))}
 
@@ -2893,7 +2937,9 @@ export default function App() {
                     logAudit('Smooth Scrolling', `Smooth momentum scrolling set to ${val ? 'ON' : 'OFF'}`, 'system');
                   }}
                   onSignOut={handleSignOut}
-                  authenticatedEmail={firebaseUser?.email || getSavedAuthUserEmail()}
+                  authenticatedEmail={activeUserEmail}
+                  authenticatedName={activeUserName}
+                  isGuestSession={isGuestSession}
                 />
               )}
         </main>
@@ -2950,6 +2996,7 @@ export default function App() {
           logAudit('Model Changed', `Switched AI model to ${m}`, 'ai');
         }}
         smoothScroll={smoothScroll}
+        userName={activeUserName}
       />
 
       {/* Floating Gemini Chatbox on the Right with Liquid Glass Accent (Floats over OneNote window) */}
@@ -2966,6 +3013,7 @@ export default function App() {
           hidden={isGeminiWorkspaceOpen || activeTab === 'lander' || isMetaverseEdit}
           messages={floatingChatMessages}
           onUpdateMessages={setFloatingChatMessages}
+          userName={activeUserName}
         />
       )}
 
@@ -2986,6 +3034,15 @@ export default function App() {
         onComplete={(authData) => {
           if (authData?.apiKey) {
             setSyncedGeminiKey(authData.apiKey);
+          }
+          if (authData) {
+            setAuthProfile({
+              email: authData.email,
+              name: authData.displayName,
+              isGuest: Boolean(authData.isGuest),
+            });
+          } else {
+            setAuthProfile(getSavedAuthProfile());
           }
           setIsAuthenticated(true);
           setIsAuthModalOpen(false);

@@ -223,12 +223,12 @@ nav.liquid-glass,
   border-radius: inherit;
   pointer-events: none;
   z-index: 0;
-  transform: translateZ(0);
-  will-change: opacity;
   background: radial-gradient(
-    320px circle at var(--pointer-x, -999px) var(--pointer-y, -999px),
+    340px circle at var(--pointer-x, -999px) var(--pointer-y, -999px),
     color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) calc((1 - var(--pointer-ratio, 0.5)) * 100%), var(--button-glow-end, var(--palette-accent))) 0%,
-    transparent 70%
+    color-mix(in srgb, color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) calc((1 - var(--pointer-ratio, 0.5)) * 100%), var(--button-glow-end, var(--palette-accent))) 46%, transparent) 28%,
+    color-mix(in srgb, color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) calc((1 - var(--pointer-ratio, 0.5)) * 100%), var(--button-glow-end, var(--palette-accent))) 14%, transparent) 54%,
+    transparent 76%
   );
   opacity: 0;
   transition: opacity 0.22s ease;
@@ -249,15 +249,14 @@ nav.liquid-glass,
 .liquid-glass-tile::after {
   content: '';
   position: absolute;
-  inset: -1px;
+  inset: 0;
   border-radius: inherit;
   padding: 1.5px;
-  transform: translateZ(0);
-  will-change: opacity;
   background: radial-gradient(
     280px circle at var(--pointer-x, -999px) var(--pointer-y, -999px),
     color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) calc((1 - var(--pointer-ratio, 0.5)) * 100%), var(--button-glow-end, var(--palette-accent))) 0%,
-    transparent 70%
+    color-mix(in srgb, color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) calc((1 - var(--pointer-ratio, 0.5)) * 100%), var(--button-glow-end, var(--palette-accent))) 42%, transparent) 35%,
+    transparent 72%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
@@ -839,25 +838,23 @@ body.glow-tuning-active .liquid-glass-tile::after {
   }
 }
 
-/* Dynamic theme-reactive Topographic Background Pattern - Scaled/Zoomed to fit each screen */
+/* Dynamic theme-reactive Ambient Topographic Background Canvas (Seamless, zero dashed scanlines) */
 .bg-topo {
-  background-image: 
-    radial-gradient(circle at 50% 0%, var(--palette-shadow) 0%, transparent 60%),
-    url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' viewBox='0 0 500 500' preserveAspectRatio='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 100 C 150 150 350 50 500 100 M0 200 C 100 280 400 120 500 200 M0 300 C 200 380 300 220 500 300 M0 400 C 150 450 350 350 500 400 M0 50 C 250 80 250 20 500 50 M0 150 C 180 180 320 120 500 150 M0 250 C 220 310 280 190 500 250 M0 350 C 120 420 380 280 500 350 M0 450 C 200 490 300 410 500 450' stroke='rgba(15,23,42,0.22)' fill='none' stroke-width='1.2' stroke-dasharray='5 2' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+  background-image:
+    radial-gradient(ellipse 80% 55% at 50% 0%, var(--palette-shadow) 0%, transparent 65%),
+    radial-gradient(ellipse 60% 45% at 85% 95%, color-mix(in srgb, var(--palette-accent, #dc2626) 8%, transparent) 0%, transparent 70%);
   background-size: 100% 100%, 100% 100%;
-  background-position: center top, center center;
+  background-position: center top, right bottom;
   background-repeat: no-repeat, no-repeat;
-  transform: translateZ(0);
 }
 
 .dark .bg-topo {
-  background-image: 
-    radial-gradient(circle at 50% 0%, var(--palette-shadow) 0%, transparent 65%),
-    url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' viewBox='0 0 500 500' preserveAspectRatio='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 100 C 150 150 350 50 500 100 M0 200 C 100 280 400 120 500 200 M0 300 C 200 380 300 220 500 300 M0 400 C 150 450 350 350 500 400 M0 50 C 250 80 250 20 500 50 M0 150 C 180 180 320 120 500 150 M0 250 C 220 310 280 190 500 250 M0 350 C 120 420 380 280 500 350 M0 450 C 200 490 300 410 500 450' stroke='rgba(255,255,255,0.06)' fill='none' stroke-width='1.2' stroke-dasharray='5 2' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+  background-image:
+    radial-gradient(ellipse 85% 60% at 50% 0%, var(--palette-shadow) 0%, transparent 68%),
+    radial-gradient(ellipse 65% 50% at 15% 90%, color-mix(in srgb, var(--palette-accent, #dc2626) 10%, transparent) 0%, transparent 72%);
   background-size: 100% 100%, 100% 100%;
-  background-position: center top, center center;
+  background-position: center top, left bottom;
   background-repeat: no-repeat, no-repeat;
-  transform: translateZ(0);
 }
 
 /* Custom scrollbars */
@@ -1277,20 +1274,18 @@ body.glow-tuning-active .liquid-glass-tile::after {
   filter: blur(12px);
 }
 
-/* Slick Hyprland Sliding Physics & Workspace Transitions with Hardware-Accelerated Transforms */
+/* Slick Hyprland Sliding Physics & Workspace Transitions */
 .hyprland-slide {
   transition: transform 560ms cubic-bezier(0.16, 1, 0.3, 1),
               translate 560ms cubic-bezier(0.16, 1, 0.3, 1),
               opacity 480ms cubic-bezier(0.16, 1, 0.3, 1),
               visibility 0s linear 0ms;
-  will-change: transform, translate, opacity;
-  transform: translate3d(0, 0, 0);
-  backface-visibility: hidden;
-  contain: layout style;
 }
 
-/* Defer visibility: hidden until exit slide finishes so exit slides render all the way offscreen */
+/* Defer visibility: hidden until exit slide finishes and promote GPU layer only while sliding offscreen */
 .hyprland-slide[aria-hidden="true"] {
+  will-change: transform, translate, opacity;
+  backface-visibility: hidden;
   transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1),
               translate 520ms cubic-bezier(0.22, 1, 0.36, 1),
               opacity 440ms cubic-bezier(0.22, 1, 0.36, 1),
