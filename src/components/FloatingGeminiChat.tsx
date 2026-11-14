@@ -224,7 +224,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
   return (
     <aside
       aria-label="Floating Gemini Assistant"
-      className={`fixed right-4 sm:right-6 bottom-4 sm:bottom-6 z-[60] flex flex-col items-end pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+      className={`fixed right-3 md:right-6 bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-6 z-[60] flex flex-col items-end pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
         hidden ? 'translate-y-28 opacity-0 pointer-events-none select-none invisible' : 'translate-y-0 opacity-100'
       }`}
     >
@@ -253,7 +253,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
               borderColor: `${activePalette.primary}60`,
               boxShadow: `0 8px 32px ${activePalette.primary}25`,
             }}
-            className={`pointer-events-auto acrylic-glass-panel-minimized liquid-glass liquid-glass-tile no-lift floating-gemini-tile border group relative overflow-hidden p-3 sm:p-3.5 rounded-2xl shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 flex items-center gap-2.5 cursor-pointer ${
+            className={`pointer-events-auto acrylic-glass-panel-minimized liquid-glass liquid-glass-tile no-lift floating-gemini-tile border group relative overflow-hidden p-3 md:p-3.5 rounded-2xl shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 flex items-center gap-2.5 cursor-pointer ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
             title="Open Gemini"
@@ -271,7 +271,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
                 <Sparkles className="w-4 h-4 fill-slate-950" />
                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-slate-950 animate-pulse" />
               </div>
-              <div className="text-left pr-1 hidden sm:block">
+              <div className="text-left pr-1 hidden md:block">
                 <p className="text-xs font-bold transition flex items-center gap-1.5" style={{ color: activePalette.primary }}>
                   <span>Gemini</span>
                 </p>
@@ -303,7 +303,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
             }}
             onPointerMove={handleTilePointerMove}
             onPointerLeave={handleTilePointerLeave}
-            className={`pointer-events-auto no-lift flex flex-col overflow-hidden relative transition-[box-shadow,border-color,background-color] duration-300 liquid-glass liquid-glass-tile floating-gemini-tile border rounded-3xl shadow-2xl w-[calc(100vw-2rem)] sm:w-96 max-w-sm h-[520px] max-h-[85vh] border-white/20`}
+            className={`pointer-events-auto no-lift flex flex-col overflow-hidden relative transition-[box-shadow,border-color,background-color] duration-300 liquid-glass liquid-glass-tile floating-gemini-tile border rounded-3xl shadow-2xl w-[calc(100vw-1.5rem)] md:w-96 max-w-sm h-[440px] md:h-[520px] max-h-[calc(100dvh-8.5rem)] md:max-h-[85vh] border-white/20`}
             style={{
               transformOrigin: 'bottom right',
               borderColor: `${activePalette.primary}50`,

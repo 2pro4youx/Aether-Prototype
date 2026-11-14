@@ -139,7 +139,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
         setKeyStatus({
           tested: true,
           success: true,
-          message: `Live Connection Confirmed · ${res.model || 'gemini-2.5-flash'} ready`,
+          message: `Live Connection Confirmed · ${res.model || 'gemini-3.5-flash-lite'} ready`,
         });
         setTimeout(() => {
           localStorage.setItem('aether_gemini_api_key', keyToTest);
@@ -192,7 +192,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
 
       {/* Main Liquid Glass Modal Container */}
       <div
-        className={`relative w-full max-w-xl rounded-3xl border shadow-2xl p-6 sm:p-8 backdrop-blur-2xl transition-all duration-300 liquid-glass no-lift my-auto ${
+        className={`relative w-full max-w-xl rounded-3xl border shadow-2xl p-4 md:p-8 max-h-[90dvh] overflow-y-auto md:max-h-none md:overflow-visible backdrop-blur-2xl transition-all duration-300 liquid-glass no-lift my-auto ${
           darkMode
             ? 'bg-slate-900/90 border-white/20 text-slate-100 shadow-[0_24px_64px_-16px_rgba(0,0,0,0.85)]'
             : 'bg-white/95 border-slate-300 text-slate-900 shadow-[0_24px_64px_-16px_rgba(0,0,0,0.18)]'

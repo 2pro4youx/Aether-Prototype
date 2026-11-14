@@ -1154,7 +1154,7 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
                 />
 
                 {/* Hover overlay quick buttons (Icon-only: Bezel icon, Split/Parallel toggle icon, Trash icon) */}
-                <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity bg-slate-950/85 backdrop-blur-md p-1 rounded-lg border border-white/10 shadow-xl z-10">
+                <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-85 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity bg-slate-950/85 backdrop-blur-md p-1 rounded-lg border border-white/10 shadow-xl z-10">
                   {/* 1. Bezel Icon (Icon-only) */}
                   <button
                     type="button"
@@ -1871,7 +1871,7 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
                     />
 
                     {/* Hover overlay quick buttons (Icon-only: Bezel icon, Swap icon, Trash icon) */}
-                    <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover/sideimg:opacity-100 transition-opacity bg-slate-950/85 backdrop-blur-md p-1 rounded-lg border border-white/10 shadow-xl z-10">
+                    <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-85 md:opacity-0 md:group-hover/sideimg:opacity-100 transition-opacity bg-slate-950/85 backdrop-blur-md p-1 rounded-lg border border-white/10 shadow-xl z-10">
                       {/* 1. Bezel Icon (Icon-only) */}
                       <button
                         type="button"
@@ -2138,7 +2138,7 @@ const NoteBlockItem: React.FC<NoteBlockItemProps> = React.memo(({
       }
     >
       {/* Outer Skirt Controls: Drag Handle, Delete, and Companion Controls */}
-      <div className="opacity-0 group-hover:opacity-100 transition flex flex-col items-center gap-1 shrink-0 pt-0.5 text-slate-500 relative z-30">
+      <div className="opacity-70 md:opacity-0 md:group-hover:opacity-100 transition flex flex-col items-center gap-1 shrink-0 pt-0.5 text-slate-500 relative z-30">
         <div className="flex items-center gap-0.5 h-5">
           <button
             data-lenis-prevent
@@ -3748,7 +3748,7 @@ const PageListItem = React.memo<PageListItemProps>(({
                 setIsEditing(true);
               }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="opacity-0 group-hover/pageitem:opacity-100 p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition"
+              className="opacity-80 md:opacity-0 md:group-hover/pageitem:opacity-100 p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition"
               title="Rename page"
             >
               <Pencil className="w-3 h-3" />
@@ -3762,7 +3762,7 @@ const PageListItem = React.memo<PageListItemProps>(({
                 onDelete(page);
               }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="opacity-0 group-hover/pageitem:opacity-100 p-0.5 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition"
+              className="opacity-80 md:opacity-0 md:group-hover/pageitem:opacity-100 p-0.5 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition"
               title={`Delete page "${page.title}"`}
             >
               <Trash2 className="w-3 h-3" />
@@ -3824,6 +3824,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
   const [isNotebookDropdownOpen, setIsNotebookDropdownOpen] = useState(false);
   const [copiedNotification, setCopiedNotification] = useState(false);
   const [isPagesSidebarCollapsed, setIsPagesSidebarCollapsed] = useState(false);
+  const [mobilePagesOpen, setMobilePagesOpen] = useState(false);
 
   // Renaming state for notebooks and sections
   const [editingNotebookId, setEditingNotebookId] = useState<string | null>(null);
@@ -4681,8 +4682,8 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
       aria-hidden={!isOpen}
       className={`${
         standalone
-          ? 'relative flex-1 min-h-0 w-full h-full flex overflow-hidden'
-          : `fixed inset-0 z-50 flex hyprland-slide ${
+          ? 'relative flex-1 min-h-0 w-full h-full flex overflow-hidden pt-12 pb-16 md:pt-0 md:pb-0'
+          : `fixed inset-0 z-50 h-[100dvh] md:h-auto pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] md:pt-0 md:pb-0 flex hyprland-slide ${
               isOpen
                 ? 'translate-x-0 opacity-100 pointer-events-auto visible frost-edge'
                 : 'translate-x-[100%] opacity-0 pointer-events-none invisible'
@@ -4690,9 +4691,9 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
       } ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}
       style={standalone ? undefined : { backgroundColor: darkMode ? activePalette.bgDark : '#f8fafc' }}
     >
-      {/* FAINTED ARROW ON THE LEFT (HYPRLAND BACK TRIGGER - omitted in standalone OneNote workspaces) */}
+      {/* FAINTED ARROW ON THE LEFT (HYPRLAND BACK TRIGGER - omitted in standalone OneNote workspaces and mobile <768px) */}
       {!standalone && (
-        <div className="relative group shrink-0 z-50">
+        <div className="hidden md:block relative group shrink-0 z-50">
           <button
             onClick={onCloseBack}
             aria-label="Return to Primary Workspace"
@@ -4739,10 +4740,25 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
       >
         {/* Top OneNote App Bar & Section Tabs (Distinct Floating Liquid Glass Tile) */}
         <div
-          className="mx-2.5 sm:mx-3 mt-2.5 sm:mt-3 mb-0 rounded-2xl liquid-glass no-lift border border-white/10 px-4 py-2 flex items-center justify-between gap-3 shrink-0 min-h-[50px] shadow-xl relative z-[150]"
+          className="mx-2 md:mx-3 mt-2 md:mt-3 mb-0 rounded-2xl liquid-glass no-lift border border-white/10 px-2.5 md:px-4 py-2 flex items-center justify-between gap-2 md:gap-3 shrink-0 min-h-[48px] md:min-h-[50px] shadow-xl relative z-[150]"
           style={{ isolation: 'auto' }}
         >
-          <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+            {/* Mobile Pages Drawer Trigger (< 768px ONLY) */}
+            <button
+              type="button"
+              onClick={() => setMobilePagesOpen(true)}
+              className={`md:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold shrink-0 ${
+                darkMode
+                  ? 'bg-slate-900/50 border-white/15 text-slate-200'
+                  : 'bg-white/80 border-slate-300 text-slate-800 shadow-xs'
+              }`}
+              aria-label="Open Pages Drawer"
+            >
+              <PanelLeftOpen className="w-3.5 h-3.5" style={{ color: activePalette.primary }} />
+              <span>Pages</span>
+            </button>
+
             {/* Custom Webpage-Fitted Liquid Glass Notebook Dropdown Container */}
             <div ref={notebookDropdownRef} className="relative shrink-0 z-[200]">
               <div className="flex items-center gap-1">
@@ -4789,7 +4805,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
               {isNotebookDropdownOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className={`absolute top-full left-0 mt-2 min-w-[280px] max-w-sm rounded-2xl border p-2 shadow-2xl z-[300] select-none ${
+                  className={`absolute top-full left-0 mt-2 w-[calc(100vw-2rem)] max-w-[320px] md:w-auto md:min-w-[280px] md:max-w-sm rounded-2xl border p-2 shadow-2xl z-[300] select-none ${
                     darkMode
                       ? 'border-white/15 bg-slate-950/95 shadow-black/80 text-slate-200'
                       : 'border-slate-200 bg-white/95 shadow-slate-900/25 text-slate-800'
@@ -4896,7 +4912,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleStartRenameNotebook(nb.id, nb.title)}
-                                className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white opacity-0 group-hover/nbitem:opacity-100 transition cursor-pointer"
+                                className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white opacity-80 md:opacity-0 md:group-hover/nbitem:opacity-100 transition cursor-pointer"
                                 title="Rename notebook"
                               >
                                 <Pencil className="w-3 h-3" />
@@ -4906,7 +4922,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setNotebookToDelete(nb)}
-                                className="p-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 opacity-0 group-hover/nbitem:opacity-100 transition cursor-pointer"
+                                className="p-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 opacity-80 md:opacity-0 md:group-hover/nbitem:opacity-100 transition cursor-pointer"
                                 title={`Delete notebook "${nb.title}"`}
                               >
                                 <Trash2 className="w-3 h-3" />
@@ -5030,7 +5046,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
                                 handleStartRenameSection(section.id, section.title);
                               }}
                               onPointerDown={(e) => e.stopPropagation()}
-                              className="opacity-0 group-hover/sectab:opacity-100 p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition cursor-pointer"
+                              className="opacity-80 md:opacity-0 md:group-hover/sectab:opacity-100 p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition cursor-pointer"
                               title="Rename section"
                             >
                               <Pencil className="w-2.5 h-2.5" />
@@ -5046,7 +5062,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
                                 setSectionToDelete(section);
                               }}
                               onPointerDown={(e) => e.stopPropagation()}
-                              className="opacity-0 group-hover/sectab:opacity-100 p-0.5 ml-0.5 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                              className="opacity-80 md:opacity-0 md:group-hover/sectab:opacity-100 p-0.5 ml-0.5 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition cursor-pointer"
                               title={`Delete section "${section.title}"`}
                             >
                               <X className="w-3 h-3" />
@@ -5076,13 +5092,15 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={onCloseBack}
-                className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition flex items-center gap-1 ${
+                className={`px-2.5 md:px-3 py-1.5 rounded-xl border text-xs font-semibold transition flex items-center gap-1 ${
                   darkMode
                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30'
                     : 'bg-amber-500/15 text-amber-900 border-amber-500/40 hover:bg-amber-500/25 shadow-sm'
                 }`}
               >
-                <span>Back to Workspace</span>
+                <ChevronLeft className="w-3.5 h-3.5 md:hidden" />
+                <span className="hidden md:inline">Back to Workspace</span>
+                <span className="md:hidden">Back</span>
               </button>
             </div>
           )}
@@ -5102,9 +5120,76 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
             />
           )}
 
-          {/* Interactive Liquid Glass Pages Sidebar Tile (Collapsible / Resizable with Zero-Lag Hardware Transition) */}
+          {/* ANDROID / MOBILE SLIDE-OVER PAGES DRAWER (< 768px ONLY) */}
+          <AnimatePresence>
+            {mobilePagesOpen && (
+              <div className="fixed inset-0 z-[220] md:hidden flex">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setMobilePagesOpen(false)}
+                  className="fixed inset-0 bg-black/65 backdrop-blur-sm"
+                />
+                <motion.div
+                  initial={{ x: '-100%' }}
+                  animate={{ x: 0 }}
+                  exit={{ x: '-100%' }}
+                  transition={{ type: 'spring', stiffness: 360, damping: 32 }}
+                  className={`relative z-10 w-[82vw] max-w-[300px] h-full flex flex-col border-r shadow-2xl pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] ${
+                    darkMode
+                      ? 'bg-slate-950/95 border-white/15 text-slate-200'
+                      : 'bg-white/95 border-slate-200 text-slate-800'
+                  }`}
+                >
+                  <div className="p-3 border-b border-white/10 flex items-center justify-between gap-2 shrink-0">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                      Pages ({currentSection?.pages.length || 0})
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleAddPage}
+                        className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Page</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMobilePagesOpen(false)}
+                        className="p-1.5 rounded-lg border border-white/10 text-slate-400 hover:text-white"
+                        aria-label="Close Pages Drawer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 custom-scrollbar">
+                    {currentSection?.pages.map((page) => (
+                      <PageListItem
+                        key={page.id}
+                        page={page}
+                        isSelected={selectedPageId === page.id}
+                        darkMode={darkMode}
+                        accentColor={currentSection?.color || activePalette.primary}
+                        onSelect={(id) => {
+                          handleSelectPage(id);
+                          setMobilePagesOpen(false);
+                        }}
+                        onDelete={(p) => setPageToDelete(p)}
+                        onRename={handleRenamePage}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+
+          {/* Interactive Liquid Glass Pages Sidebar Tile (Desktop >= 768px) */}
           <div
-            className={`relative shrink-0 liquid-glass rounded-2xl border shadow-xl flex flex-col overflow-hidden z-20 ml-2.5 sm:ml-3 mb-2.5 sm:mb-3 transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-[width] ${
+            className={`hidden md:flex relative shrink-0 liquid-glass rounded-2xl border shadow-xl flex-col overflow-hidden z-20 ml-2.5 sm:ml-3 mb-2.5 sm:mb-3 transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-[width] ${
               isPagesSidebarCollapsed ? 'w-12 sm:w-14' : 'w-64 sm:w-72'
             } ${
               darkMode
@@ -5449,7 +5534,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
               >
               <div
                 ref={contentInnerRef}
-                className="max-w-5xl xl:max-w-6xl mx-auto p-6 sm:p-10 space-y-4 pb-28"
+                className="max-w-5xl xl:max-w-6xl mx-auto p-3.5 md:p-10 space-y-4 pb-24 md:pb-28"
               >
                 <div
                   key={`${selectedSectionId}-${selectedPageId}`}
@@ -5572,8 +5657,8 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
               : 'bg-white/95 border-slate-200 text-slate-800 shadow-slate-400/40'
           }`}
           style={{
-            top: `${blockContextMenu.y}px`,
-            left: `${blockContextMenu.x}px`,
+            top: `${typeof window !== 'undefined' ? Math.max(8, Math.min(blockContextMenu.y, window.innerHeight - 340)) : blockContextMenu.y}px`,
+            left: `${typeof window !== 'undefined' ? Math.max(8, Math.min(blockContextMenu.x, window.innerWidth - 252)) : blockContextMenu.x}px`,
           }}
           onClick={(e) => e.stopPropagation()}
         >

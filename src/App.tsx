@@ -419,7 +419,7 @@ export default function App() {
     },
     [activePaletteId]
   );
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash-lite');
   const [enableThinking, setEnableThinking] = useState<boolean>(false);
 
   // Precision Cursor Style & Dynamic Color Adapter Slider (0 to 100)
@@ -1922,7 +1922,7 @@ export default function App() {
   return (
     <div
       className={`relative ${
-        activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-screen overflow-hidden' : 'min-h-screen overflow-x-clip'
+        activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-[100dvh] md:h-screen overflow-hidden' : 'min-h-[100dvh] md:min-h-screen overflow-x-clip'
       } flex flex-col font-sans transition-colors duration-300 ${
         darkMode ? 'dark text-slate-100' : 'text-slate-900'
       }`}
@@ -2013,7 +2013,7 @@ export default function App() {
       <div
         aria-hidden={isOneNoteOpen || isGeminiWorkspaceOpen}
         className={`${
-          activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-screen overflow-hidden' : 'min-h-screen'
+          activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-[100dvh] md:h-screen overflow-hidden' : 'min-h-[100dvh] md:min-h-screen'
         } flex flex-col w-full hyprland-slide relative z-10 origin-top ${
           isOneNoteOpen
             ? '-translate-x-[100%] opacity-0 pointer-events-none select-none invisible'
@@ -2045,7 +2045,7 @@ export default function App() {
         />
 
         {/* Main Tab View Switcher — content fades in after frost peak for a seamless reveal */}
-        <main key={activeTab} className={`flex-1 w-full tab-content-reveal ${activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-full overflow-hidden flex flex-col' : 'min-h-screen'}`}>
+        <main key={activeTab} className={`flex-1 w-full tab-content-reveal ${activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-full overflow-hidden flex flex-col' : 'min-h-[100dvh] md:min-h-screen'}`}>
               {activeTab === 'lander' && (
                 <PolygonCanvas
                   onEnterApp={() => setIsAuthModalOpen(true)}
@@ -2309,24 +2309,24 @@ export default function App() {
           }}
         >
           <div
-            className={`liquid-glass no-lift px-5 py-3.5 rounded-2xl shadow-2xl backdrop-blur-2xl flex items-center gap-4 border border-white/60 dark:border-white/15 bg-white/85 dark:bg-slate-900/90 text-xs shadow-black/20 transition-all duration-200 ease-out ${
+            className={`liquid-glass no-lift px-3.5 py-2.5 md:px-5 md:py-3.5 rounded-2xl shadow-2xl backdrop-blur-2xl flex items-center gap-3 md:gap-4 border border-white/60 dark:border-white/15 bg-white/85 dark:bg-slate-900/90 text-xs shadow-black/20 transition-all duration-200 ease-out ${
               isAdjustingGlow
                 ? 'scale-[1.05] shadow-2xl shadow-black/40 ring-1 ring-white/30 dark:ring-white/15'
                 : 'scale-100'
             }`}
           >
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md shrink-0 transition-transform duration-150"
+              className="w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center text-white shadow-md shrink-0 transition-transform duration-150"
               style={{
                 background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
                 boxShadow: '0 4px 14px var(--palette-shadow)',
                 transform: isAdjustingGlow ? 'scale(1.08)' : 'scale(1)',
               }}
             >
-              <Sliders className="w-5 h-5 animate-pulse" />
+              <Sliders className="w-4 h-4 md:w-5 md:h-5 animate-pulse" />
             </div>
 
-            <div className="flex flex-col gap-1.5 min-w-[240px]">
+            <div className="flex flex-col gap-1.5 min-w-0 flex-1 md:flex-none md:min-w-[240px]">
               <div className="flex items-center justify-between font-semibold">
                 <span className="flex items-center gap-1.5 text-slate-800 dark:text-slate-100 text-xs">
                   <Sparkles className="w-3.5 h-3.5" style={{ color: activePalette.primary }} />

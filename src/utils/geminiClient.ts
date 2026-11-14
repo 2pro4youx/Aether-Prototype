@@ -11,12 +11,19 @@ export interface GeminiModelInfo {
 
 export const AVAILABLE_GEMINI_MODELS: GeminiModelInfo[] = [
   {
+    id: 'gemini-3.5-flash-lite',
+    name: 'Gemini 3.5 Flash Lite',
+    tag: 'Fast Multimodal',
+    badge: 'Recommended Default',
+    description: 'Fast, token-efficient multimodal model balancing speed and nuanced reading of documents and visual attachments.',
+    recommended: true,
+  },
+  {
     id: 'gemini-3.5-flash',
     name: 'Gemini 3.5 Flash',
     tag: 'Vision & Multimodal Pro',
-    badge: 'Recommended Default',
+    badge: 'Multimodal Pro',
     description: 'Ultra-responsive, high-throughput multimodal model with exceptional vision recognition for screenshots, diagrams, handwriting, and source synthesis.',
-    recommended: true,
   },
   {
     id: 'gemini-3.1-flash-lite',
@@ -24,13 +31,6 @@ export const AVAILABLE_GEMINI_MODELS: GeminiModelInfo[] = [
     tag: 'Ultra-Low Latency',
     badge: 'Lightning Fast',
     description: 'Lightweight latency-optimized vision model designed for rapid image inspection, document Q&A, and real-time study notes.',
-  },
-  {
-    id: 'gemini-3.5-flash-lite',
-    name: 'Gemini 3.5 Flash Lite',
-    tag: 'Fast Multimodal',
-    badge: 'High Throughput',
-    description: 'Fast, token-efficient multimodal model balancing speed and nuanced reading of documents and visual attachments.',
   },
   {
     id: 'gemini-3.8-flash',
@@ -234,19 +234,23 @@ function setCachedKeyEndpoint(apiKey: string, mode: 'generativelanguage' | 'aipl
 function mapClientRestModel(model?: string): string {
   if (
     !model ||
-    model === 'gemini-3.8-flash' ||
-    model === 'gemini-3.5-flash' ||
-    model === 'gemini-3.5-flash-lite' ||
-    model === 'gemini-2.5-pro' ||
+    model === 'gemini-2.5-flash-lite' ||
     model === 'gemini-2.5-flash' ||
+    model === 'gemini-2.0-flash' ||
     model === 'gemini-1.5-flash' ||
+    model === 'gemini-flash-latest'
+  ) {
+    return 'gemini-3.5-flash-lite';
+  }
+  if (
+    model === 'gemini-2.5-pro' ||
+    model === 'gemini-2.0-pro' ||
     model === 'gemini-1.5-pro' ||
-    model === 'gemini-flash-latest' ||
+    model === 'gemini-pro' ||
     model === 'gemini-pro-latest'
   ) {
-    return model === 'gemini-3.5-flash-lite' ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash';
+    return 'gemini-4-argon';
   }
-  if (model === 'gemini-4-argon') return 'gemini-2.5-pro';
   return model;
 }
 
@@ -353,7 +357,9 @@ async function callDirectGoogleRest(options: {
 }): Promise<{ text: string; modelUsed: string }> {
   const { apiKey, model, contents, systemInstruction, generationConfig, timeoutMs = 30000 } = options;
   const cachedMode = getCachedKeyEndpoint(apiKey);
-  const candidates = Array.from(new Set([mapClientRestModel(model), 'gemini-2.5-flash', 'gemini-2.5-flash-lite']));
+  const candidates = Array.from(
+    new Set([mapClientRestModel(model), 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-4-hydrogen'])
+  );
 
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -492,12 +498,17 @@ export async function verifyGeminiApiKey(rawKey: string): Promise<VerifyKeyResul
     if (glResp.ok) {
       setCachedKeyEndpoint(apiKey, 'generativelanguage');
       const data = await glResp.json().catch(() => ({}));
-      const firstModel = Array.isArray(data?.models)
-        ? data.models.find((m: any) => String(m?.name || '').includes('flash'))?.name?.replace(/^models\//, '')
-        : undefined;
+      const modelNames: string[] = Array.isArray(data?.models)
+        ? data.models.map((m: any) => String(m?.name || '').replace(/^models\//, ''))
+        : [];
+      const preferred =
+        modelNames.find((name) => name === 'gemini-3.5-flash-lite') ||
+        modelNames.find((name) => name.includes('3.5-flash')) ||
+        modelNames.find((name) => name.includes('flash-lite') && !name.includes('2.5')) ||
+        'gemini-3.5-flash-lite';
       return {
         valid: true,
-        model: firstModel || 'gemini-2.5-flash',
+        model: preferred,
         mode: 'ai-studio',
       };
     }
@@ -508,7 +519,7 @@ export async function verifyGeminiApiKey(rawKey: string): Promise<VerifyKeyResul
     // If this is an `AQ.` key and Generative Language API rejected it, check Vertex AI Express once.
     if (apiKey.startsWith('AQ.')) {
       const vxResp = await fetch(
-        `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+        `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash-lite:generateContent?key=${encodeURIComponent(apiKey)}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -517,7 +528,6 @@ export async function verifyGeminiApiKey(rawKey: string): Promise<VerifyKeyResul
             contents: [{ role: 'user', parts: [{ text: 'OK' }] }],
             generationConfig: {
               maxOutputTokens: 2,
-              thinkingConfig: { thinkingBudget: 0 },
             },
           }),
         }
@@ -525,7 +535,7 @@ export async function verifyGeminiApiKey(rawKey: string): Promise<VerifyKeyResul
 
       if (vxResp.ok) {
         setCachedKeyEndpoint(apiKey, 'aiplatform');
-        return { valid: true, model: 'gemini-2.5-flash', mode: 'vertex-express' };
+        return { valid: true, model: 'gemini-3.5-flash-lite', mode: 'vertex-express' };
       }
       const vxErr = await vxResp.json().catch(() => null);
       const vxMsg = String(vxErr?.error?.message || '');
@@ -562,7 +572,7 @@ export async function verifyGeminiApiKey(rawKey: string): Promise<VerifyKeyResul
 export async function callGeminiChat(options: GeminiRequestOptions): Promise<GeminiResponse> {
   const {
     message,
-    model = 'gemini-2.5-flash',
+    model = 'gemini-3.5-flash-lite',
     enableThinking = false,
     sources = [],
     attachments = [],
@@ -715,7 +725,7 @@ export async function streamGeminiChat(
 ): Promise<{ success: boolean; fullText: string; error?: string }> {
   const {
     message,
-    model = 'gemini-2.5-flash',
+    model = 'gemini-3.5-flash-lite',
     enableThinking = false,
     sources = [],
     attachments = [],
@@ -873,7 +883,7 @@ export async function synthesizeStudyDocument(options: {
 
   const restResult = await callDirectGoogleRest({
     apiKey,
-    model: model || 'gemini-2.5-flash',
+    model: model || 'gemini-3.5-flash-lite',
     contents: [{ role: 'user', parts: [{ text: `${synthesisPrompt}\n\n${combinedSources}` }] }],
     systemInstruction: 'You are an elite academic synthesizer. Produce beautifully formatted, insightful markdown documents.',
   });
@@ -926,7 +936,7 @@ export async function decodeExamScheduleImage(options: {
 
   const restResult = await callDirectGoogleRest({
     apiKey,
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.5-flash-lite',
     contents: [
       {
         role: 'user',

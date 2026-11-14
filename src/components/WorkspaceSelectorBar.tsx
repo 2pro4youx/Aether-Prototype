@@ -191,9 +191,9 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
         {/* Liquid Glass Chromatic Layer matching Workspace Card */}
         <div className="liquidglass pointer-events-none z-0" aria-hidden="true" />
 
-        <div className="max-w-[1720px] mx-auto px-4 sm:px-8 py-4 space-y-4 relative z-20 isolate">
+        <div className="max-w-[1720px] mx-auto px-3.5 md:px-8 py-4 space-y-4 relative z-20 isolate max-h-[88dvh] overflow-y-auto md:max-h-none md:overflow-visible">
           {/* Bar Header */}
-          <div className="flex items-center justify-between relative z-20">
+          <div className="flex flex-wrap items-center justify-between gap-2 relative z-20">
             <div className="flex items-center gap-3 relative z-20">
               <div
                 className="w-8 h-8 rounded-xl flex items-center justify-center shadow-sm shrink-0"
@@ -253,7 +253,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
           </div>
 
           {/* Workspace Cards Carousel / Grid with Drag-and-Drop Reorder & Removal Animation */}
-          <div className="pt-14 pb-16 px-12 overflow-x-auto no-scrollbar">
+          <div className="pt-4 pb-6 px-3 md:pt-14 md:pb-16 md:px-12 overflow-x-auto no-scrollbar">
             {openWorkspaces.length > 0 && (
               <Reorder.Group
                 axis="x"
@@ -343,7 +343,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                         ? `0 12px 36px -6px rgba(0, 0, 0, 0.35), 0 0 24px -2px ${activePalette.primary}40`
                         : undefined,
                     }}
-                    className={`w-72 sm:w-84 h-full rounded-3xl p-5 border transition-[box-shadow,border-color,background-color] duration-300 flex flex-col justify-between relative overflow-hidden liquid-glass liquid-glass-tile floating-gemini-tile no-lift ${
+                    className={`w-[78vw] max-w-[300px] md:w-84 md:max-w-none h-full rounded-3xl p-5 border transition-[box-shadow,border-color,background-color] duration-300 flex flex-col justify-between relative overflow-hidden liquid-glass liquid-glass-tile floating-gemini-tile no-lift ${
                       isActive
                         ? darkMode
                           ? 'bg-slate-900/90 shadow-2xl'

@@ -2016,4 +2016,39 @@ html:not(.lenis) {
     inset 0 0 16px color-mix(in srgb, var(--palette-primary, #f59e0b) 12%, transparent) !important;
 }
 
+/* =========================================================================
+   Android & Mobile Viewport Refinements (Strictly < 768px & Coarse Touch)
+   Zero impact on desktop (>= 768px) layouts, hover spotlights, or motion.
+   ========================================================================= */
+@media (max-width: 767px) {
+  body {
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: contain;
+  }
 
+  button,
+  a,
+  [role="button"],
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  .glow-hud-wrapper {
+    bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+    width: calc(100vw - 1.5rem);
+    max-width: 360px;
+  }
+}
+
+/* Prevent sticky hover spotlight halos lingering after touch taps on Android */
+@media (hover: none) and (pointer: coarse) {
+  .liquid-glass:hover::before,
+  .liquid-glass-tile:hover::before,
+  .liquid-glass:hover::after,
+  .liquid-glass-tile:hover::after,
+  .gemini-stage-glow:hover::before {
+    opacity: 0 !important;
+  }
+}

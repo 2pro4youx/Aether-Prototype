@@ -182,7 +182,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const currentFolderTarget = activeFolder === 'all' ? 'Assorted Workspaces' : activeFolder;
 
   return (
-    <div className="relative min-h-screen pt-28 pb-16 px-4 sm:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
+    <div className="relative min-h-[100dvh] md:min-h-screen pt-16 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
@@ -370,7 +370,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       {activeFolder !== 'all' && (
         <div className="flex items-center justify-between gap-4 flex-wrap text-xs">
           <div
-            className={`flex items-center gap-1 p-0.5 rounded-lg border ${
+            className={`flex items-center gap-1 p-0.5 rounded-lg border overflow-x-auto max-w-full no-scrollbar md:overflow-visible ${
               darkMode ? 'bg-slate-900/20 border-white/10' : 'bg-white/20 border-slate-200/50'
             }`}
           >
@@ -389,7 +389,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       }
                     : {}
                 }
-                className={`px-2.5 py-1 rounded-md capitalize transition font-medium cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md capitalize transition font-medium cursor-pointer shrink-0 ${
                   activeType === t
                     ? 'font-bold'
                     : darkMode
@@ -489,7 +489,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                               e.stopPropagation();
                               setFolderToDelete(folderName);
                             }}
-                            className="opacity-0 group-hover:opacity-100 transition p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/15"
+                            className="opacity-80 md:opacity-0 md:group-hover:opacity-100 transition p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/15"
                             title="Delete folder"
                           >
                             <Trash2 className="w-4 h-4" />

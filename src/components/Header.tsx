@@ -102,11 +102,236 @@ export const Header: React.FC<HeaderProps> = ({
       {autoHideOnTopEdge && !isWorkspaceSelectorOpen && (
         <div
           onPointerEnter={() => setIsEdgeRevealed(true)}
-          className="fixed top-0 inset-x-0 h-3 z-[210] pointer-events-auto"
+          className="hidden md:block fixed top-0 inset-x-0 h-3 z-[210] pointer-events-auto"
           aria-hidden="true"
         />
       )}
 
+      {/* ================= ANDROID / MOBILE TOP BAR (< 768px ONLY) ================= */}
+      {!isWorkspaceSelectorOpen && (
+        <header
+          aria-label="Mobile Top Bar"
+          className={`md:hidden fixed top-0 inset-x-0 z-40 pt-[env(safe-area-inset-top,0px)] border-b backdrop-blur-2xl transition-colors duration-300 ${
+            darkMode
+              ? 'bg-slate-950/80 border-white/10 text-slate-100'
+              : 'bg-white/85 border-slate-200/90 text-slate-900 shadow-xs'
+          }`}
+        >
+          <div className="h-12 px-3 flex items-center justify-between gap-2">
+            {/* Left Brand Anchor */}
+            <button
+              type="button"
+              onClick={() => onSelectTab('lander')}
+              className="min-h-[44px] px-2 -ml-1 flex items-center gap-2 rounded-xl active:scale-95 transition-transform"
+              title="Return to Lander & Polygon Mesh"
+            >
+              <div
+                className="w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 shadow-sm"
+                style={{
+                  background: `linear-gradient(135deg, ${activePalette.primary}30, ${activePalette.accent}25)`,
+                  borderColor: `${activePalette.primary}60`,
+                }}
+              >
+                <span
+                  className="text-xs font-black leading-none font-sans"
+                  style={{ color: darkMode ? '#ffffff' : activePalette.primary }}
+                >
+                  A
+                </span>
+              </div>
+              <span className="font-sans text-xs uppercase tracking-wider font-extrabold">
+                AETHER
+              </span>
+            </button>
+
+            {/* Right Actions: Workspaces Drawer & Settings */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={onOpenNotebookLM}
+                style={{
+                  backgroundColor: `${activePalette.primary}18`,
+                  borderColor: `${activePalette.primary}45`,
+                  color: darkMode ? '#ffffff' : activePalette.primary,
+                }}
+                className="min-h-[38px] px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 active:scale-95 transition-transform"
+                title="Switch Workspaces"
+              >
+                <Layers className="w-3.5 h-3.5 shrink-0" style={{ color: activePalette.primary }} />
+                <span>Workspaces</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onSelectTab('settings')}
+                style={activeTab === 'settings' ? getTabStyle('settings') : undefined}
+                className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl border border-transparent transition active:scale-95 ${
+                  activeTab === 'settings'
+                    ? 'font-bold'
+                    : darkMode
+                    ? 'text-slate-300 hover:bg-white/10'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+                aria-label="Settings"
+                title="Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </header>
+      )}
+
+      {/* ================= ANDROID / MOBILE BOTTOM NAVIGATION DOCK (< 768px ONLY) ================= */}
+      {!isWorkspaceSelectorOpen && (
+        <nav
+          aria-label="Mobile Bottom Navigation"
+          className={`md:hidden fixed bottom-0 inset-x-0 z-40 pb-[env(safe-area-inset-bottom,0px)] border-t backdrop-blur-2xl shadow-2xl transition-colors duration-300 ${
+            darkMode
+              ? 'bg-slate-950/90 border-white/10 text-slate-300 shadow-black/60'
+              : 'bg-white/92 border-slate-200/90 text-slate-600 shadow-slate-400/25'
+          }`}
+        >
+          <div className="h-16 px-1.5 grid grid-cols-5 items-center max-w-lg mx-auto">
+            {/* 1. Home / Dashboard */}
+            <button
+              type="button"
+              onClick={() => onSelectTab('dashboard')}
+              className="min-h-[48px] flex flex-col items-center justify-center gap-1 rounded-xl active:scale-95 transition-transform"
+              style={
+                activeTab === 'dashboard'
+                  ? { color: darkMode ? '#ffffff' : activePalette.primary }
+                  : undefined
+              }
+            >
+              <div
+                className="px-3 py-1 rounded-full transition-colors"
+                style={
+                  activeTab === 'dashboard'
+                    ? { backgroundColor: `${activePalette.primary}25` }
+                    : undefined
+                }
+              >
+                <LayoutDashboard
+                  className="w-4 h-4"
+                  style={activeTab === 'dashboard' ? { color: activePalette.primary } : undefined}
+                />
+              </div>
+              <span className={`text-[10px] leading-none ${activeTab === 'dashboard' ? 'font-bold' : 'font-medium'}`}>
+                Home
+              </span>
+            </button>
+
+            {/* 2. Library */}
+            <button
+              type="button"
+              onClick={() => onSelectTab('library')}
+              className="min-h-[48px] flex flex-col items-center justify-center gap-1 rounded-xl active:scale-95 transition-transform"
+              style={
+                activeTab === 'library'
+                  ? { color: darkMode ? '#ffffff' : activePalette.primary }
+                  : undefined
+              }
+            >
+              <div
+                className="px-3 py-1 rounded-full transition-colors"
+                style={
+                  activeTab === 'library'
+                    ? { backgroundColor: `${activePalette.primary}25` }
+                    : undefined
+                }
+              >
+                <Library
+                  className="w-4 h-4"
+                  style={activeTab === 'library' ? { color: activePalette.primary } : undefined}
+                />
+              </div>
+              <span className={`text-[10px] leading-none ${activeTab === 'library' ? 'font-bold' : 'font-medium'}`}>
+                Library
+              </span>
+            </button>
+
+            {/* 3. Center '+' Creation FAB */}
+            <div className="flex items-center justify-center">
+              <button
+                type="button"
+                onClick={onOpenCreate}
+                style={{
+                  background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                  boxShadow: `0 6px 18px -2px ${activePalette.primary}60`,
+                }}
+                className={`w-12 h-11 rounded-2xl text-slate-950 flex items-center justify-center border-2 active:scale-92 transition-transform ${
+                  darkMode ? 'border-slate-950' : 'border-white'
+                }`}
+                aria-label="Create New Item"
+                title="Create New"
+              >
+                <Plus className="w-6 h-6 stroke-[3] text-slate-950" />
+              </button>
+            </div>
+
+            {/* 4. Studio (NotebookLM / Active Workspace) */}
+            <button
+              type="button"
+              onClick={() => onSelectTab('notebooklm')}
+              className="min-h-[48px] flex flex-col items-center justify-center gap-1 rounded-xl active:scale-95 transition-transform"
+              style={
+                activeTab === 'notebooklm'
+                  ? { color: darkMode ? '#ffffff' : activePalette.primary }
+                  : undefined
+              }
+            >
+              <div
+                className="px-3 py-1 rounded-full transition-colors"
+                style={
+                  activeTab === 'notebooklm'
+                    ? { backgroundColor: `${activePalette.primary}25` }
+                    : undefined
+                }
+              >
+                <Sparkles
+                  className="w-4 h-4"
+                  style={activeTab === 'notebooklm' ? { color: activePalette.primary } : undefined}
+                />
+              </div>
+              <span className={`text-[10px] leading-none ${activeTab === 'notebooklm' ? 'font-bold' : 'font-medium'}`}>
+                Studio
+              </span>
+            </button>
+
+            {/* 5. Analytics */}
+            <button
+              type="button"
+              onClick={() => onSelectTab('analytics')}
+              className="min-h-[48px] flex flex-col items-center justify-center gap-1 rounded-xl active:scale-95 transition-transform"
+              style={
+                activeTab === 'analytics'
+                  ? { color: darkMode ? '#ffffff' : activePalette.primary }
+                  : undefined
+              }
+            >
+              <div
+                className="px-3 py-1 rounded-full transition-colors"
+                style={
+                  activeTab === 'analytics'
+                    ? { backgroundColor: `${activePalette.primary}25` }
+                    : undefined
+                }
+              >
+                <BarChart3
+                  className="w-4 h-4"
+                  style={activeTab === 'analytics' ? { color: activePalette.primary } : undefined}
+                />
+              </div>
+              <span className={`text-[10px] leading-none ${activeTab === 'analytics' ? 'font-bold' : 'font-medium'}`}>
+                Stats
+              </span>
+            </button>
+          </div>
+        </nav>
+      )}
+
+      {/* ================= DESKTOP FLOATING PILL HEADER (>= 768px IDENTICAL) ================= */}
       <motion.header
         initial={{ y: -90, opacity: 0, scale: 0.95 }}
         animate={{
@@ -120,7 +345,7 @@ export const Header: React.FC<HeaderProps> = ({
           damping: 30,
           mass: 0.65,
         }}
-        className="fixed top-4 inset-x-0 z-[200] flex justify-center items-center pointer-events-none px-4"
+        className="fixed top-4 inset-x-0 z-[200] hidden md:flex justify-center items-center pointer-events-none px-4"
       >
         {/* Floating Pill Container with Liquid Glass - seamless smooth edges with zero gap */}
         <nav

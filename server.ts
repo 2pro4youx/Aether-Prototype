@@ -53,19 +53,23 @@ function isAuthErrorStatus(status: number | undefined, message: string): boolean
 function mapServerModel(model?: string): string {
   if (
     !model ||
-    model === 'gemini-3.8-flash' ||
-    model === 'gemini-3.5-flash' ||
-    model === 'gemini-3.5-flash-lite' ||
-    model === 'gemini-2.5-pro' ||
+    model === 'gemini-2.5-flash-lite' ||
     model === 'gemini-2.5-flash' ||
+    model === 'gemini-2.0-flash' ||
     model === 'gemini-1.5-flash' ||
+    model === 'gemini-flash-latest'
+  ) {
+    return 'gemini-3.5-flash-lite';
+  }
+  if (
+    model === 'gemini-2.5-pro' ||
+    model === 'gemini-2.0-pro' ||
     model === 'gemini-1.5-pro' ||
-    model === 'gemini-flash-latest' ||
+    model === 'gemini-pro' ||
     model === 'gemini-pro-latest'
   ) {
-    return model === 'gemini-3.5-flash-lite' ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash';
+    return 'gemini-4-argon';
   }
-  if (model === 'gemini-4-argon') return 'gemini-2.5-pro';
   return model;
 }
 
@@ -92,12 +96,17 @@ async function verifyKeyFast(apiKey: string): Promise<{ valid: boolean; model?: 
     if (glResp.ok) {
       vertexKeyCache.set(cleanKey, 'generativelanguage');
       const data = await glResp.json().catch(() => ({}));
-      const firstModel = Array.isArray(data?.models)
-        ? data.models.find((m: any) => String(m?.name || '').includes('flash'))?.name?.replace(/^models\//, '')
-        : undefined;
+      const modelNames: string[] = Array.isArray(data?.models)
+        ? data.models.map((m: any) => String(m?.name || '').replace(/^models\//, ''))
+        : [];
+      const preferred =
+        modelNames.find((name) => name === 'gemini-3.5-flash-lite') ||
+        modelNames.find((name) => name.includes('3.5-flash')) ||
+        modelNames.find((name) => name.includes('flash-lite') && !name.includes('2.5')) ||
+        'gemini-3.5-flash-lite';
       return {
         valid: true,
-        model: firstModel || 'gemini-2.5-flash',
+        model: preferred,
         mode: 'ai-studio',
       };
     }
@@ -108,7 +117,7 @@ async function verifyKeyFast(apiKey: string): Promise<{ valid: boolean; model?: 
     // 2. If this is an `AQ.` key and Generative Language API rejected it, check Vertex AI Express once.
     if (cleanKey.startsWith('AQ.')) {
       const vxResp = await fetch(
-        `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(cleanKey)}`,
+        `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash-lite:generateContent?key=${encodeURIComponent(cleanKey)}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -117,7 +126,6 @@ async function verifyKeyFast(apiKey: string): Promise<{ valid: boolean; model?: 
             contents: [{ role: 'user', parts: [{ text: 'OK' }] }],
             generationConfig: {
               maxOutputTokens: 2,
-              thinkingConfig: { thinkingBudget: 0 },
             },
           }),
         }
@@ -125,7 +133,7 @@ async function verifyKeyFast(apiKey: string): Promise<{ valid: boolean; model?: 
 
       if (vxResp.ok) {
         vertexKeyCache.set(cleanKey, 'aiplatform');
-        return { valid: true, model: 'gemini-2.5-flash', mode: 'vertex-express' };
+        return { valid: true, model: 'gemini-3.5-flash-lite', mode: 'vertex-express' };
       }
       const vxErr = await vxResp.json().catch(() => null);
       const vxMsg = String(vxErr?.error?.message || '');
@@ -162,7 +170,9 @@ async function callVertexExpressRest(
   contents: any,
   config?: Record<string, any>
 ): Promise<{ text: string; modelUsed: string }> {
-  const models = Array.from(new Set([mapServerModel(model), 'gemini-2.5-flash', 'gemini-2.5-flash-lite']));
+  const models = Array.from(
+    new Set([mapServerModel(model), 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-4-hydrogen'])
+  );
   let lastError: any = null;
 
   for (const m of models) {
@@ -247,7 +257,7 @@ app.get('/api/gemini/status', async (req, res) => {
   if (check.valid) {
     return res.json({
       connected: true,
-      model: check.model || 'gemini-2.5-flash',
+      model: check.model || 'gemini-3.5-flash-lite',
       reply: 'PONG',
       keyPreview: `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}`,
     });
@@ -373,7 +383,7 @@ app.post('/api/gemini/chat', async (req, res) => {
   try {
     const {
       message,
-      model = 'gemini-3.8-flash',
+      model = 'gemini-3.5-flash-lite',
       enableThinking = false,
       sources = [],
       attachments = [],
@@ -420,7 +430,7 @@ app.post('/api/gemini/chat', async (req, res) => {
     // Normalize requested model to valid fast multimodal models
     const requestedModel = mapServerModel(model);
 
-    const targetModel = enableThinking ? 'gemini-2.5-flash' : requestedModel;
+    const targetModel = enableThinking ? 'gemini-4-hydrogen' : requestedModel;
     const isExtendedModel =
       enableThinking ||
       model === 'gemini-4-argon';
@@ -524,9 +534,9 @@ app.post('/api/gemini/chat', async (req, res) => {
     // Candidate fallback models in priority order (strictly valid active models)
     const candidateModels = [
       targetModel,
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
+      'gemini-3.5-flash-lite',
       'gemini-3.1-flash-lite',
+      'gemini-4-hydrogen',
     ].filter((v, i, a) => a.indexOf(v) === i);
 
     let response: any = null;
@@ -618,7 +628,7 @@ app.post('/api/gemini/stream', async (req, res) => {
   try {
     const {
       message,
-      model = 'gemini-3.8-flash',
+      model = 'gemini-3.5-flash-lite',
       enableThinking = false,
       sources = [],
       attachments = [],
@@ -660,7 +670,7 @@ app.post('/api/gemini/stream', async (req, res) => {
           .join('\n---\n');
     }
 
-    const targetModel = mapServerModel(enableThinking ? 'gemini-2.5-flash' : model);
+    const targetModel = mapServerModel(enableThinking ? 'gemini-4-hydrogen' : model);
     const isExtendedModel = enableThinking || model === 'gemini-4-argon';
 
     const systemInstruction = hasImages
@@ -747,9 +757,9 @@ async function generateWithModelFallback(
 ) {
   const candidateModels = [
     preferredModel,
-    'gemini-2.5-flash',
+    'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
-    'gemini-2.5-flash-lite',
+    'gemini-4-hydrogen',
   ];
   const uniqueModels = Array.from(new Set(candidateModels.filter(Boolean)));
   let lastError: any = null;
@@ -822,7 +832,7 @@ app.post('/api/gemini/synthesize', async (req, res) => {
     if (vertexKeyCache.get(apiKey) === 'aiplatform') {
       const vertexResult = await callVertexExpressRest(
         apiKey,
-        requestedModel || 'gemini-2.5-flash',
+        requestedModel || 'gemini-3.5-flash-lite',
         `${synthesisPrompt}\n\n${combinedSources}`,
         { systemInstruction: 'You are an elite academic synthesizer. Produce beautifully formatted, insightful markdown documents.' }
       );
@@ -838,8 +848,8 @@ app.post('/api/gemini/synthesize', async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    // Use fallback-enabled generator starting with gemini-2.5-flash or requested model
-    const primaryModel = mapServerModel(requestedModel || 'gemini-2.5-flash');
+    // Use fallback-enabled generator starting with gemini-3.5-flash-lite or requested model
+    const primaryModel = mapServerModel(requestedModel || 'gemini-3.5-flash-lite');
     const { response, modelUsed } = await generateWithModelFallback(
       ai,
       primaryModel,
@@ -941,7 +951,7 @@ app.post('/api/gemini/decode-exam-schedule', async (req, res) => {
     };
 
     if (vertexKeyCache.get(apiKey) === 'aiplatform') {
-      const vertexResult = await callVertexExpressRest(apiKey, 'gemini-2.5-flash', contents, config);
+      const vertexResult = await callVertexExpressRest(apiKey, 'gemini-3.5-flash-lite', contents, config);
       const rawVertex = vertexResult.text.trim();
       let parsedVertex: { exams?: Array<Record<string, string>> } = { exams: [] };
       try {
@@ -958,7 +968,7 @@ app.post('/api/gemini/decode-exam-schedule', async (req, res) => {
       });
     }
 
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'];
+    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-4-hydrogen'];
     let response: any = null;
     let modelUsed = candidateModels[0];
     let lastError: any = null;

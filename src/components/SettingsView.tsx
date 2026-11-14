@@ -649,7 +649,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const activeModelObj = AVAILABLE_GEMINI_MODELS.find((m) => m.id === selectedModel) || AVAILABLE_GEMINI_MODELS[0];
 
   return (
-    <div className="relative min-h-screen pt-28 pb-16 px-4 sm:px-8 lg:px-12 max-w-[1560px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
+    <div className="relative min-h-[100dvh] md:min-h-screen pt-16 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1560px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
       {/* Title */}
       <div>
         <div
@@ -1551,7 +1551,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <p className="text-[11px] text-slate-400">
               Loaded automatically from <code className="text-white font-mono">.env</code> or customizable below.
             </p>
-            <div className="flex items-center gap-2 pt-1">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 pt-1">
               <input
                 type="password"
                 value={apiKeyInput}
@@ -1722,7 +1722,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Reset & Storage info */}
-      <div className="p-4 rounded-2xl liquid-glass flex items-center justify-between">
+      <div className="p-4 rounded-2xl liquid-glass flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div className={`text-xs space-y-0.5 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
           <p className={`font-semibold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
             Local State Management

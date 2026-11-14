@@ -913,7 +913,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [studyDays]);
 
   return (
-    <div className="relative min-h-screen pt-28 pb-16 px-4 sm:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 transition-colors duration-300">
+    <div className="relative min-h-[100dvh] md:min-h-screen pt-16 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 transition-colors duration-300">
       {/* Dark Spatial Metaverse Depth Scrim (dims entire background, header & heatmap cleanly) */}
       <AnimatePresence>
         {isMetaverseEdit && (
@@ -1331,8 +1331,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 className={
                   isMetaverseEdit
                     ? activeFreeDragId === card.id || isResizing
-                      ? 'cursor-grabbing'
-                      : 'cursor-grab'
+                      ? 'cursor-grabbing touch-none'
+                      : 'cursor-grab touch-none'
                     : rect
                     ? isAnyResizing
                       ? ''
@@ -1350,7 +1350,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div
                     data-resize-corner="true"
                     onPointerDown={(e) => startResize(e, card, 'nw')}
-                    className="group/corner absolute top-0 left-0 w-4 h-4 z-30 cursor-nwse-resize flex items-start justify-start p-1"
+                    className="group/corner absolute top-0 left-0 w-7 h-7 md:w-4 md:h-4 z-30 cursor-nwse-resize touch-none flex items-start justify-start p-1"
                     title="Drag corner to resize"
                   >
                     <span
@@ -1365,7 +1365,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div
                     data-resize-corner="true"
                     onPointerDown={(e) => startResize(e, card, 'ne')}
-                    className="group/corner absolute top-0 right-0 w-4 h-4 z-30 cursor-nesw-resize flex items-start justify-end p-1"
+                    className="group/corner absolute top-0 right-0 w-7 h-7 md:w-4 md:h-4 z-30 cursor-nesw-resize touch-none flex items-start justify-end p-1"
                     title="Drag corner to resize"
                   >
                     <span
@@ -1380,7 +1380,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div
                     data-resize-corner="true"
                     onPointerDown={(e) => startResize(e, card, 'sw')}
-                    className="group/corner absolute bottom-0 left-0 w-4 h-4 z-30 cursor-nesw-resize flex items-end justify-start p-1"
+                    className="group/corner absolute bottom-0 left-0 w-7 h-7 md:w-4 md:h-4 z-30 cursor-nesw-resize touch-none flex items-end justify-start p-1"
                     title="Drag corner to resize"
                   >
                     <span
@@ -1395,7 +1395,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div
                     data-resize-corner="true"
                     onPointerDown={(e) => startResize(e, card, 'se')}
-                    className="group/corner absolute bottom-0 right-0 w-4 h-4 z-30 cursor-nwse-resize flex items-end justify-end p-1"
+                    className="group/corner absolute bottom-0 right-0 w-7 h-7 md:w-4 md:h-4 z-30 cursor-nwse-resize touch-none flex items-end justify-end p-1"
                     title="Drag corner to resize"
                   >
                     <span
@@ -1414,7 +1414,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <div
                         data-resize-edge="true"
                         onPointerDown={(e) => startResize(e, card, 'n')}
-                        className="group/edge absolute top-0 left-5 right-5 h-2.5 z-30 cursor-ns-resize flex items-start justify-center"
+                        className="group/edge absolute top-0 left-7 right-7 md:left-5 md:right-5 h-4 md:h-2.5 z-30 cursor-ns-resize touch-none flex items-start justify-center"
                         title="Drag top edge vertically"
                       >
                         <span
@@ -1425,7 +1425,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <div
                         data-resize-edge="true"
                         onPointerDown={(e) => startResize(e, card, 's')}
-                        className="group/edge absolute bottom-0 left-5 right-5 h-2.5 z-30 cursor-ns-resize flex items-end justify-center"
+                        className="group/edge absolute bottom-0 left-7 right-7 md:left-5 md:right-5 h-4 md:h-2.5 z-30 cursor-ns-resize touch-none flex items-end justify-center"
                         title="Drag bottom edge vertically"
                       >
                         <span
@@ -1436,7 +1436,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <div
                         data-resize-edge="true"
                         onPointerDown={(e) => startResize(e, card, 'w')}
-                        className="group/edge absolute left-0 top-5 bottom-5 w-2.5 z-30 cursor-ew-resize flex items-center justify-start"
+                        className="group/edge absolute left-0 top-7 bottom-7 md:top-5 md:bottom-5 w-4 md:w-2.5 z-30 cursor-ew-resize touch-none flex items-center justify-start"
                         title="Drag left edge horizontally"
                       >
                         <span
@@ -1447,7 +1447,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <div
                         data-resize-edge="true"
                         onPointerDown={(e) => startResize(e, card, 'e')}
-                        className="group/edge absolute right-0 top-5 bottom-5 w-2.5 z-30 cursor-ew-resize flex items-center justify-end"
+                        className="group/edge absolute right-0 top-7 bottom-7 md:top-5 md:bottom-5 w-4 md:w-2.5 z-30 cursor-ew-resize touch-none flex items-center justify-end"
                         title="Drag right edge horizontally"
                       >
                         <span
@@ -1560,7 +1560,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 borderColor: `${activePalette.primary}45`,
               }
         }
-        className={`relative w-full rounded-2xl border-2 border-dashed p-6 transition-[transform,box-shadow,border-color,background-color] duration-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-left cursor-pointer group backdrop-blur-md hover:scale-[1.004] active:scale-[0.996] ${
+        className={`relative w-full rounded-2xl border-2 border-dashed p-4 md:p-6 transition-[transform,box-shadow,border-color,background-color] duration-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-left cursor-pointer group backdrop-blur-md hover:scale-[1.004] active:scale-[0.996] ${
           isMetaverseEdit ? 'z-[220]' : ''
         } ${
           darkMode

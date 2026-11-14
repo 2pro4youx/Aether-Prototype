@@ -93,7 +93,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [inputMessage, setInputMessage] = useState('');
-  const [selectedModel, setSelectedModel] = useState(propSelectedModel || 'gemini-3.5-flash');
+  const [selectedModel, setSelectedModel] = useState(propSelectedModel || 'gemini-3.5-flash-lite');
 
   useEffect(() => {
     if (propSelectedModel && propSelectedModel !== selectedModel) {
@@ -105,6 +105,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [deletingConvId, setDeletingConvId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -714,7 +715,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
   return (
     <div
       aria-hidden={!isOpen}
-      className={`fixed inset-0 z-50 flex hyprland-slide ${
+      className={`fixed inset-0 z-50 h-[100dvh] md:h-auto pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] md:pt-0 md:pb-0 flex hyprland-slide ${
         isOpen
           ? 'translate-x-0 opacity-100 pointer-events-auto visible frost-edge'
           : '-translate-x-[100%] opacity-0 pointer-events-none invisible'
@@ -724,8 +725,119 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
       {/* SVG Chromatic Aberration & Liquid Glass Displacement Shader Filter Definition */}
       <LiquidGlassSvgFilter />
 
+      {/* ================= ANDROID / MOBILE CHATS SLIDE-OVER DRAWER (< 768px ONLY) ================= */}
+      <AnimatePresence>
+        {isMobileDrawerOpen && (
+          <div className="fixed inset-0 z-[90] md:hidden flex">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileDrawerOpen(false)}
+              className="fixed inset-0 bg-black/65 backdrop-blur-sm"
+            />
+            <motion.aside
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', stiffness: 360, damping: 32 }}
+              className={`relative z-10 w-[85vw] max-w-[320px] h-full flex flex-col p-3.5 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] border-r shadow-2xl ${
+                darkMode
+                  ? 'bg-slate-950/95 border-white/15 text-slate-100'
+                  : 'bg-white/95 border-slate-200 text-slate-900'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" style={{ color: activePalette.primary }} />
+                  <h2 className="text-sm font-bold">Gemini Chats ({conversations.length})</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileDrawerOpen(false)}
+                  className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white"
+                  aria-label="Close chats drawer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleCreateNewChat();
+                  setIsMobileDrawerOpen(false);
+                }}
+                style={{ borderColor: `${activePalette.primary}60` }}
+                className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border mb-3 ${
+                  darkMode ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-900'
+                }`}
+              >
+                <Plus className="w-4 h-4" style={{ color: activePalette.primary }} />
+                <span>New Conversation</span>
+              </button>
+
+              <div className="relative mb-3 shrink-0">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search chats..."
+                  className={`w-full pl-8 pr-7 py-2 text-xs rounded-xl border focus:outline-none ${
+                    darkMode
+                      ? 'bg-slate-900 border-white/10 text-slate-100'
+                      : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-0.5">
+                {filteredConversations.map((conv) => {
+                  const isSelected = selectedConvId === conv.id;
+                  return (
+                    <div
+                      key={conv.id}
+                      onClick={() => {
+                        setSelectedConvId(conv.id);
+                        setIsMobileDrawerOpen(false);
+                      }}
+                      className={`p-3 rounded-2xl border flex items-center justify-between gap-2 transition ${
+                        isSelected
+                          ? darkMode
+                            ? 'bg-white/12 text-white font-semibold'
+                            : 'bg-slate-100 text-slate-950 font-semibold'
+                          : darkMode
+                          ? 'bg-slate-900/60 text-slate-300 border-white/10'
+                          : 'bg-white text-slate-700 border-slate-200'
+                      }`}
+                      style={isSelected ? { borderColor: activePalette.primary } : undefined}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold truncate">{conv.title}</p>
+                        <p className="text-[10px] font-mono opacity-70 mt-0.5">
+                          {conv.updatedAt || 'Just now'} · {conv.messages.length} msgs
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => handleRequestDelete(e, conv)}
+                        className="p-2 rounded-lg text-slate-400 hover:text-rose-400 shrink-0"
+                        aria-label={`Delete ${conv.title}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.aside>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ================= MAIN LIQUID FROST GLASS BUBBLE CONTAINER ================= */}
-      <div className="flex-1 h-full p-2 sm:p-4 md:p-6 flex flex-col min-w-0 overflow-hidden relative">
+      <div className="flex-1 h-full p-2 md:p-6 flex flex-col min-w-0 overflow-hidden relative">
         {/* Ambient atmospheric liquid frost aura radiating around the workspace bubble */}
         <div
           aria-hidden="true"
@@ -748,9 +860,9 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
           {/* Liquid Glass Frosted Layer — Layered strictly BELOW the left conversation list (z-0) */}
           <div className="liquidglass pointer-events-none z-0" aria-hidden="true" />
 
-          {/* ================= LEFT SIDEBAR (CHATS, SEARCH, ACTIONS) ================= */}
+          {/* ================= LEFT SIDEBAR (CHATS, SEARCH, ACTIONS - Desktop >= 768px) ================= */}
           <aside
-            className={`relative z-20 flex flex-col shrink-0 transition-[width] duration-300 border-r liquid-glass-frost-sidebar ${
+            className={`relative z-20 hidden md:flex flex-col shrink-0 transition-[width] duration-300 border-r liquid-glass-frost-sidebar ${
               isSidebarCollapsed
                 ? 'w-14 sm:w-16 items-center p-2.5 justify-between h-full'
                 : 'w-full md:w-80 lg:w-96 p-3 sm:p-4'
@@ -1194,9 +1306,20 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                 darkMode ? 'border-white/10 bg-slate-950/40' : 'border-slate-200/80 bg-white/60'
               }`}
             >
-              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <div className="flex items-center gap-2 md:gap-2.5 min-w-0 flex-1">
+                <button
+                  type="button"
+                  onClick={() => setIsMobileDrawerOpen(true)}
+                  className={`md:hidden p-2 rounded-xl border shrink-0 ${
+                    darkMode ? 'border-white/15 bg-white/5 text-slate-200' : 'border-slate-300 bg-white text-slate-800'
+                  }`}
+                  aria-label="Open conversations drawer"
+                  title="Conversations"
+                >
+                  <PanelLeftOpen className="w-4 h-4" style={{ color: activePalette.primary }} />
+                </button>
                 <div
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  className="hidden md:block w-2.5 h-2.5 rounded-full shrink-0"
                   style={{ backgroundColor: activePalette.primary }}
                 />
                 <h1 className="text-sm sm:text-base font-bold truncate">
@@ -1500,7 +1623,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                             }`}
                           >
                             <span>{msg.timestamp}</span>
-                            <div className="flex items-center gap-1.5 opacity-0 group-hover/msg:opacity-100 transition">
+                            <div className="flex items-center gap-1.5 opacity-80 md:opacity-0 md:group-hover/msg:opacity-100 transition">
                               <button
                                 type="button"
                                 onClick={() => handleCopy(msg.id, msg.content)}
@@ -1812,8 +1935,8 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* ================= FAINTED ARROW ON THE RIGHT (HYPRLAND BACK TRIGGER) ================= */}
-      <div className="relative group shrink-0 z-50">
+      {/* ================= FAINTED ARROW ON THE RIGHT (HYPRLAND BACK TRIGGER - Desktop >= 768px) ================= */}
+      <div className="hidden md:block relative group shrink-0 z-50">
         <button
           onClick={onCloseBack}
           aria-label="Return to Primary Workspace"

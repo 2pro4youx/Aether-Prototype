@@ -182,7 +182,7 @@ export const CreateModal: React.FC<CreateModalProps> = ({
             }}
             exit={{ opacity: 0, scale: 0.94, y: 12 }}
             transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-            className={`creation-frost-panel relative z-10 rounded-3xl p-6 sm:p-8 w-full max-w-4xl my-auto overflow-hidden ${
+            className={`creation-frost-panel relative z-10 rounded-3xl p-4 md:p-8 w-full max-w-4xl my-auto max-h-[90dvh] overflow-y-auto md:max-h-none md:overflow-hidden ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
             style={{

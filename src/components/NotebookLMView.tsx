@@ -194,6 +194,19 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
   // Deck minimization states to prevent clipping and give full widescreen focus
   const [isSourcesMinimized, setIsSourcesMinimized] = useState(false);
   const [isStudioMinimized, setIsStudioMinimized] = useState(false);
+  const [mobileActivePane, setMobileActivePane] = useState<'chat' | 'sources' | 'studio'>('chat');
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const sync = () => setIsMobileViewport(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   // Add source form state (Upload vs Write tabs)
   const [showAddSourceModal, setShowAddSourceModal] = useState(false);
@@ -622,33 +635,33 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
   };
 
   return (
-    <div className="relative h-full flex-1 min-h-0 pt-20 pb-6 px-4 sm:px-6 lg:px-8 max-w-[1720px] w-full mx-auto flex flex-col gap-3.5 select-none">
+    <div className="relative h-full flex-1 min-h-0 pt-14 pb-20 md:pt-20 md:pb-6 px-3 md:px-6 lg:px-8 max-w-[1720px] w-full mx-auto flex flex-col gap-2.5 md:gap-3.5 select-none">
       {/* Notebook Top Title Bar */}
       <div
-        className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b shrink-0 ${
+        className={`flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 md:gap-3 pb-2.5 md:pb-3 border-b shrink-0 ${
           darkMode ? 'border-white/10' : 'border-slate-200/90'
         }`}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 md:gap-3 min-w-0 w-full md:w-auto">
           <div
-            className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg text-slate-950 font-bold shrink-0"
+            className="w-9 h-9 md:w-10 md:h-10 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg text-slate-950 font-bold shrink-0"
             style={{
               background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
             }}
           >
-            <BookOpen className="w-5 h-5 font-bold" />
+            <BookOpen className="w-4 h-4 md:w-5 md:h-5 font-bold" />
           </div>
-          <div>
-            <div className="flex items-center gap-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1
-                className={`text-xl sm:text-2xl font-extrabold tracking-tight ${
+                className={`text-base md:text-2xl font-extrabold tracking-tight truncate ${
                   darkMode ? 'text-slate-100' : 'text-slate-900'
                 }`}
               >
                 Frontier AI & Quantum Systems Research
               </h1>
               <span
-                className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
+                className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0"
                 style={{
                   backgroundColor: `${activePalette.primary}20`,
                   borderColor: `${activePalette.primary}50`,
@@ -658,14 +671,85 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
                 Grounded
               </span>
             </div>
-            <p className={`text-xs mt-0.5 ${darkMode ? 'text-slate-400' : 'text-slate-600 font-medium'}`}>
+            <p className={`text-[11px] md:text-xs mt-0.5 truncate ${darkMode ? 'text-slate-400' : 'text-slate-600 font-medium'}`}>
               {sources.length} sources indexed ({selectedSources.length} selected for AI grounding) · 16:9 Studio Canvas
             </p>
           </div>
         </div>
 
-        {/* Top Deck Quick Toggles */}
-        <div className="flex items-center gap-2">
+        {/* Android / Mobile Segmented Switcher & Quick Window Launchers (< 768px ONLY) */}
+        <div className="md:hidden w-full flex items-center justify-between gap-2 pt-0.5">
+          <div
+            className={`flex items-center p-1 rounded-xl border flex-1 min-w-0 ${
+              darkMode ? 'bg-slate-900/60 border-white/10' : 'bg-white/80 border-slate-200'
+            }`}
+          >
+            {(
+              [
+                { id: 'chat', label: 'Chat' },
+                { id: 'sources', label: `Sources (${sources.length})` },
+                { id: 'studio', label: 'Studio' },
+              ] as const
+            ).map((pane) => {
+              const active = mobileActivePane === pane.id;
+              return (
+                <button
+                  key={pane.id}
+                  type="button"
+                  onClick={() => setMobileActivePane(pane.id)}
+                  style={
+                    active
+                      ? {
+                          backgroundColor: `${activePalette.primary}25`,
+                          color: darkMode ? '#ffffff' : activePalette.primary,
+                          borderColor: `${activePalette.primary}55`,
+                        }
+                      : undefined
+                  }
+                  className={`flex-1 min-h-[36px] px-2 py-1 rounded-lg text-[11px] font-bold border border-transparent transition truncate ${
+                    active ? 'shadow-xs' : darkMode ? 'text-slate-400' : 'text-slate-600'
+                  }`}
+                >
+                  {pane.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onOpenGeminiWorkspace && (
+              <button
+                type="button"
+                onClick={onOpenGeminiWorkspace}
+                className={`min-h-[38px] px-2.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition active:scale-95 ${
+                  darkMode
+                    ? 'bg-slate-900/70 border-white/15 text-slate-200'
+                    : 'bg-white/90 border-slate-300 text-slate-800 shadow-xs'
+                }`}
+                title="Open Gemini AI Workspace"
+              >
+                <Sparkles className="w-3.5 h-3.5" style={{ color: activePalette.primary }} />
+                <span>AI</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onOpenOneNoteNotes}
+              className={`min-h-[38px] px-2.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition active:scale-95 ${
+                darkMode
+                  ? 'bg-slate-900/70 border-white/15 text-slate-200'
+                  : 'bg-white/90 border-slate-300 text-slate-800 shadow-xs'
+              }`}
+              title="Open OneNote Canvas"
+            >
+              <FileText className="w-3.5 h-3.5" style={{ color: activePalette.accent }} />
+              <span>Notes</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Top Deck Quick Toggles (Desktop >= 768px) */}
+        <div className="hidden md:flex items-center gap-2">
           {isSourcesMinimized && (
             <button
               onClick={() => setIsSourcesMinimized(false)}
@@ -704,7 +788,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
         <motion.div
           initial={false}
           animate={{
-            width: isSourcesMinimized ? 56 : 352,
+            width: isMobileViewport ? '100%' : isSourcesMinimized ? 56 : 352,
           }}
           transition={{
             type: 'spring',
@@ -712,7 +796,9 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
             damping: 34,
             mass: 0.65,
           }}
-          className={`relative shrink-0 liquid-glass rounded-2xl border shadow-xl flex flex-col overflow-hidden h-full ${
+          className={`relative shrink-0 liquid-glass rounded-2xl border shadow-xl flex-col overflow-hidden h-full ${
+            mobileActivePane === 'sources' ? 'flex' : 'hidden md:flex'
+          } ${
             darkMode ? 'border-white/10' : 'border-slate-200/90'
           }`}
           style={{ contain: 'paint', willChange: 'width' }}
@@ -721,12 +807,12 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           <motion.div
             initial={false}
             animate={{
-              opacity: isSourcesMinimized ? 1 : 0,
-              pointerEvents: isSourcesMinimized ? 'auto' : 'none',
+              opacity: isSourcesMinimized && !isMobileViewport ? 1 : 0,
+              pointerEvents: isSourcesMinimized && !isMobileViewport ? 'auto' : 'none',
             }}
             transition={{ duration: 0.16 }}
             onClick={() => setIsSourcesMinimized(false)}
-            className="absolute inset-0 w-14 p-3 flex flex-col items-center justify-between select-none cursor-pointer group"
+            className="hidden md:flex absolute inset-0 w-14 p-3 flex-col items-center justify-between select-none cursor-pointer group"
             title="Click to expand Sources Deck"
           >
             <button
@@ -772,11 +858,11 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           <motion.div
             initial={false}
             animate={{
-              opacity: isSourcesMinimized ? 0 : 1,
-              pointerEvents: isSourcesMinimized ? 'none' : 'auto',
+              opacity: isSourcesMinimized && !isMobileViewport ? 0 : 1,
+              pointerEvents: isSourcesMinimized && !isMobileViewport ? 'none' : 'auto',
             }}
             transition={{ duration: 0.16 }}
-            className="absolute inset-0 w-[352px] p-4 sm:p-5 flex flex-col min-h-0"
+            className="absolute inset-0 w-full md:w-[352px] p-4 md:p-5 flex flex-col min-h-0"
           >
             <div className="flex items-center justify-between pb-3 shrink-0 border-b border-white/5">
               <div className="space-y-0.5">
@@ -807,11 +893,11 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
                   <span>Add</span>
                 </button>
 
-                {/* Minimize Source Deck Button */}
+                {/* Minimize Source Deck Button (Desktop >= 768px) */}
                 <button
                   type="button"
                   onClick={() => setIsSourcesMinimized(true)}
-                  className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                  className={`hidden md:inline-flex p-1.5 rounded-lg border transition cursor-pointer ${
                     darkMode
                       ? 'border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
                       : 'border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100'
@@ -897,7 +983,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
                       >
                         {source.isGenerated ? 'GEN' : source.isImage ? 'IMG' : source.type}
                       </span>
-                      <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition">
+                      <div className="flex items-center gap-1 opacity-90 md:opacity-60 md:group-hover:opacity-100 transition">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -967,7 +1053,9 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
 
         {/* ================= CENTER PANEL: Grounded Chat & Synthesizer ================= */}
         <div
-          className={`flex-1 min-w-0 w-full liquid-glass rounded-2xl p-4 sm:p-5 border shadow-xl flex flex-col h-full overflow-hidden transition-all duration-300 ${
+          className={`flex-1 min-w-0 w-full liquid-glass rounded-2xl p-3.5 md:p-5 border shadow-xl flex-col h-full overflow-hidden transition-all duration-300 ${
+            mobileActivePane === 'chat' ? 'flex' : 'hidden md:flex'
+          } ${
             darkMode ? 'border-white/10' : 'border-slate-200/90'
           }`}
         >
@@ -1421,7 +1509,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
         <motion.div
           initial={false}
           animate={{
-            width: isStudioMinimized ? 56 : 352,
+            width: isMobileViewport ? '100%' : isStudioMinimized ? 56 : 352,
           }}
           transition={{
             type: 'spring',
@@ -1429,7 +1517,9 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
             damping: 34,
             mass: 0.65,
           }}
-          className={`relative shrink-0 liquid-glass rounded-2xl border shadow-xl flex flex-col overflow-hidden h-full ${
+          className={`relative shrink-0 liquid-glass rounded-2xl border shadow-xl flex-col overflow-hidden h-full ${
+            mobileActivePane === 'studio' ? 'flex' : 'hidden md:flex'
+          } ${
             darkMode ? 'border-white/10' : 'border-slate-200/90'
           }`}
           style={{ contain: 'paint', willChange: 'width' }}
@@ -1438,12 +1528,12 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           <motion.div
             initial={false}
             animate={{
-              opacity: isStudioMinimized ? 1 : 0,
-              pointerEvents: isStudioMinimized ? 'auto' : 'none',
+              opacity: isStudioMinimized && !isMobileViewport ? 1 : 0,
+              pointerEvents: isStudioMinimized && !isMobileViewport ? 'auto' : 'none',
             }}
             transition={{ duration: 0.16 }}
             onClick={() => setIsStudioMinimized(false)}
-            className="absolute inset-0 w-14 p-3 flex flex-col items-center justify-between select-none cursor-pointer group"
+            className="hidden md:flex absolute inset-0 w-14 p-3 flex-col items-center justify-between select-none cursor-pointer group"
             title="Click to expand Studio Generators Deck"
           >
             <button
@@ -1485,11 +1575,11 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
           <motion.div
             initial={false}
             animate={{
-              opacity: isStudioMinimized ? 0 : 1,
-              pointerEvents: isStudioMinimized ? 'none' : 'auto',
+              opacity: isStudioMinimized && !isMobileViewport ? 0 : 1,
+              pointerEvents: isStudioMinimized && !isMobileViewport ? 'none' : 'auto',
             }}
             transition={{ duration: 0.16 }}
-            className="absolute inset-0 w-[352px] p-4 sm:p-5 flex flex-col min-h-0"
+            className="absolute inset-0 w-full md:w-[352px] p-4 md:p-5 flex flex-col min-h-0"
           >
             <div className="flex items-center justify-between pb-3 shrink-0 border-b border-white/5">
               <div className="space-y-0.5">
@@ -1505,11 +1595,11 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
                 </p>
               </div>
 
-              {/* Minimize Studio Deck Button */}
+              {/* Minimize Studio Deck Button (Desktop >= 768px) */}
               <button
                 type="button"
                 onClick={() => setIsStudioMinimized(true)}
-                className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                className={`hidden md:inline-flex p-1.5 rounded-lg border transition cursor-pointer ${
                   darkMode
                     ? 'border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
                     : 'border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100'
@@ -1654,7 +1744,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
       {/* Symmetrical counterpart to OneNote's right trigger: slides Gemini Workspace in horizontally from left */}
       <aside
         aria-label="Gemini Workspace Launcher"
-        className="fixed left-0 top-1/2 -translate-y-1/2 z-40 group pointer-events-auto"
+        className="hidden md:block fixed left-0 top-1/2 -translate-y-1/2 z-40 group pointer-events-auto"
       >
         <button
           onClick={onOpenGeminiWorkspace}
@@ -1697,7 +1787,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
       {/* Symmetrical counterpart to OneNote's left back-arrow: slides OneNote in horizontally from right */}
       <aside
         aria-label="OneNote Canvas Launcher"
-        className="fixed right-0 top-1/2 -translate-y-1/2 z-40 group pointer-events-auto"
+        className="hidden md:block fixed right-0 top-1/2 -translate-y-1/2 z-40 group pointer-events-auto"
       >
         <button
           onClick={onOpenOneNoteNotes}

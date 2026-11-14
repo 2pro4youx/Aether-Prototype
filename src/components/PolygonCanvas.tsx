@@ -675,7 +675,7 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
 
   return (
     <div
-      className="relative w-full h-screen overflow-hidden select-none transition-colors duration-300"
+      className="relative w-full h-[100dvh] md:h-screen overflow-hidden select-none transition-colors duration-300"
       style={{ backgroundColor: displayPalette?.bgDark || '#06090e' }}
     >
       {/* Hardware-scaled Canvas */}
@@ -689,7 +689,7 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
 
       {/* Floating Canvas Resolution / Performance Switcher */}
       <div
-        className={`absolute bottom-8 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-2 hero-text-blur-wrapper ${
+        className={`absolute bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-2 max-w-[calc(100vw-1.5rem)] hero-text-blur-wrapper ${
           isTextBlurred ? 'hero-text-blurred' : 'hero-text-focused'
         }`}
       >
@@ -709,7 +709,7 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
                 <button
                   key={tier}
                   onClick={() => handleQualityChange(tier)}
-                  className={`px-3 py-1 rounded-full transition text-[11px] font-medium flex items-center gap-1 ${
+                  className={`px-2 md:px-3 py-1 rounded-full transition text-[11px] font-medium flex items-center gap-1 ${
                     active
                       ? 'shadow-sm font-semibold text-white'
                       : 'text-slate-300 hover:text-white hover:bg-white/10'
@@ -747,7 +747,7 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
       </div>
 
       {/* Hero Overlay */}
-      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none px-6">
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none px-4 md:px-6 pb-16 md:pb-0">
         <div
           className={`max-w-3xl text-center space-y-6 hero-text-blur-wrapper ${
             isTextBlurred ? 'hero-text-blurred' : 'hero-text-focused'
