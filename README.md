@@ -1,4 +1,5 @@
 > ⚠️ **Update Notice:** This update has desynced workflows, please persist logging out of the app, putting your data to risk, also the gemini and ui has got an upgrade, check it out!
+
 > No data is collected! Enojoy
 
 # 🌌 Aether
