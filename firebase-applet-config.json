@@ -3,6 +3,7 @@
   "appId": "1:24401002805:web:b422cc22c9b64b46e04c7c",
   "apiKey": "AIzaSyDrVXzokOME8Z0pgcWfve0dZFDv481Kw0M",
   "authDomain": "daw-9be97.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-aetherapp-f1c32f42-b539-4fab-b5a4-f7d942ef90cf",
   "storageBucket": "daw-9be97.firebasestorage.app",
   "messagingSenderId": "24401002805",
   "measurementId": "",

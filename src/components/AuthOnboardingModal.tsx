@@ -15,13 +15,16 @@ import {
   ShieldCheck,
   Check,
 } from 'lucide-react';
+import { signInWithPopup, User } from 'firebase/auth';
+import { auth, googleProvider } from '../firebase';
 import { ColorPalette } from '../types';
 import { setActiveGeminiApiKey, verifyGeminiApiKey } from '../utils/geminiClient';
 
 interface AuthOnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (authData?: { email: string; apiKey: string }) => void;
+  onComplete: (authData?: { email: string; apiKey: string; uid?: string; displayName?: string; photoURL?: string; isGuest?: boolean }) => void;
+  onGoogleAuthenticated?: (user: User) => Promise<{ syncedGeminiKey?: string } | void>;
   activePalette: ColorPalette;
   darkMode: boolean;
 }
@@ -52,12 +55,20 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
   isOpen,
   onClose,
   onComplete,
+  onGoogleAuthenticated,
   activePalette,
   darkMode,
 }) => {
   const [step, setStep] = useState<'google-auth' | 'gemini-key'>('google-auth');
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
-  const [signedInAccount, setSignedInAccount] = useState<string | null>(null);
+  const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
+  const [signedInUser, setSignedInUser] = useState<{
+    uid: string;
+    email: string;
+    displayName: string;
+    photoURL?: string;
+  } | null>(null);
+  const [cloudRestoredKey, setCloudRestoredKey] = useState<string | null>(null);
 
   // Gemini API Key state
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -70,9 +81,22 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
   } | null>(null);
   const [isCopiedSuccess, setIsCopiedSuccess] = useState(false);
 
-  // Initialize key ONLY from user manual storage (never autofill default/mock key)
+  // Initialize key ONLY from active Firebase user or user manual storage
   useEffect(() => {
     if (isOpen) {
+      setGoogleAuthError(null);
+      const currentFbUser = auth.currentUser;
+      if (currentFbUser && currentFbUser.email) {
+        setSignedInUser({
+          uid: currentFbUser.uid,
+          email: currentFbUser.email,
+          displayName: currentFbUser.displayName || currentFbUser.email.split('@')[0],
+          photoURL: currentFbUser.photoURL || undefined,
+        });
+      } else {
+        setSignedInUser(null);
+      }
+
       const stored = typeof window !== 'undefined' ? localStorage.getItem('aether_gemini_api_key') : null;
       if (stored && stored.trim()) {
         setApiKeyInput(stored.trim());
@@ -85,21 +109,80 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
         setApiKeyInput('');
         setKeyStatus(null);
       }
+      setCloudRestoredKey(null);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  // Handle Google Sign-in flow
-  const handleGoogleSignIn = () => {
+  // Handle Real Firebase Google Sign-In flow
+  const handleGoogleSignIn = async () => {
     setIsGoogleSigningIn(true);
-    // Smooth micro-auth simulation connecting to standard Google Auth
-    setTimeout(() => {
-      const account = 'alex.learner@gmail.com';
-      setSignedInAccount(account);
-      setIsGoogleSigningIn(false);
+    setGoogleAuthError(null);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      const email = user.email || `${user.uid}@gmail.com`;
+      const displayName = user.displayName || email.split('@')[0] || 'Aether Learner';
+
+      setSignedInUser({
+        uid: user.uid,
+        email,
+        displayName,
+        photoURL: user.photoURL || undefined,
+      });
+
+      localStorage.setItem(
+        'aether_auth_user',
+        JSON.stringify({
+          uid: user.uid,
+          email,
+          name: displayName,
+          photoURL: user.photoURL || undefined,
+        })
+      );
+
+      let syncedKey = '';
+      if (onGoogleAuthenticated) {
+        const hydration = await onGoogleAuthenticated(user);
+        syncedKey = hydration?.syncedGeminiKey?.trim() || '';
+      }
+
+      if (syncedKey) {
+        setActiveGeminiApiKey(syncedKey);
+        localStorage.setItem('aether_gemini_api_key', syncedKey);
+        setApiKeyInput(syncedKey);
+        setCloudRestoredKey(syncedKey);
+        setKeyStatus({
+          tested: true,
+          success: true,
+          message: 'Cloud account & saved Gemini API key restored',
+        });
+      }
+
       setStep('gemini-key');
-    }, 650);
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code || '';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setGoogleAuthError('Google sign-in popup was closed before completing.');
+      } else if (code === 'auth/popup-blocked') {
+        setGoogleAuthError('Pop-up was blocked by your browser. Please allow pop-ups and try again.');
+      } else if (code === 'auth/unauthorized-domain') {
+        setGoogleAuthError(
+          'This domain is not yet authorized in Firebase Console (Authentication → Settings → Authorized domains).'
+        );
+      } else if (code === 'auth/operation-not-allowed') {
+        setGoogleAuthError(
+          'Google Sign-In provider is disabled in Firebase Console (Authentication → Sign-in method).'
+        );
+      } else {
+        setGoogleAuthError(
+          error instanceof Error ? error.message : 'Unable to sign in with Google. Please try again.'
+        );
+      }
+    } finally {
+      setIsGoogleSigningIn(false);
+    }
   };
 
   // Paste from clipboard
@@ -128,6 +211,21 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
       return;
     }
 
+    // If this exact key was already restored from the user's Firestore account, launch immediately
+    if (cloudRestoredKey && keyToTest === cloudRestoredKey && signedInUser) {
+      setActiveGeminiApiKey(keyToTest);
+      localStorage.setItem('aether_gemini_api_key', keyToTest);
+      onComplete({
+        email: signedInUser.email,
+        apiKey: keyToTest,
+        uid: signedInUser.uid,
+        displayName: signedInUser.displayName,
+        photoURL: signedInUser.photoURL,
+        isGuest: false,
+      });
+      return;
+    }
+
     setIsTestingKey(true);
     setKeyStatus(null);
     setActiveGeminiApiKey(keyToTest);
@@ -143,9 +241,26 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
         });
         setTimeout(() => {
           localStorage.setItem('aether_gemini_api_key', keyToTest);
-          const email = signedInAccount || 'alex.learner@gmail.com';
-          localStorage.setItem('aether_auth_user', JSON.stringify({ email, name: 'Alex Learner' }));
-          onComplete({ email, apiKey: keyToTest });
+          const email = signedInUser?.email || 'guest@local.aether';
+          const displayName = signedInUser?.displayName || 'Guest Learner';
+          localStorage.setItem(
+            'aether_auth_user',
+            JSON.stringify({
+              uid: signedInUser?.uid,
+              email,
+              name: displayName,
+              photoURL: signedInUser?.photoURL,
+              isGuest: !signedInUser,
+            })
+          );
+          onComplete({
+            email,
+            apiKey: keyToTest,
+            uid: signedInUser?.uid,
+            displayName,
+            photoURL: signedInUser?.photoURL,
+            isGuest: !signedInUser,
+          });
         }, 450);
       } else {
         setKeyStatus({
@@ -164,18 +279,6 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
     } finally {
       setIsTestingKey(false);
     }
-  };
-
-  // Proceed directly to app
-  const handleProceedDirect = () => {
-    const key = apiKeyInput.trim();
-    if (key) {
-      setActiveGeminiApiKey(key);
-      localStorage.setItem('aether_gemini_api_key', key);
-    }
-    const email = signedInAccount || 'alex.learner@gmail.com';
-    localStorage.setItem('aether_auth_user', JSON.stringify({ email, name: 'Alex Learner' }));
-    onComplete({ email, apiKey: key });
   };
 
   return (
@@ -264,6 +367,13 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
                 )}
               </button>
 
+              {googleAuthError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs font-mono text-rose-300 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                  <span>{googleAuthError}</span>
+                </div>
+              )}
+
               <div className="flex items-center gap-3 my-2">
                 <div className={`flex-1 border-t ${darkMode ? 'border-white/10' : 'border-slate-200'}`} />
                 <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">or</span>
@@ -287,7 +397,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
 
             {/* Privacy footnote */}
             <p className="text-[11px] text-center text-slate-500 font-mono">
-              Your data stays local on your machine. API calls run securely through official Google GenAI endpoints.
+              Google Sign-In securely syncs your notes, workspaces &amp; chats across devices. Guest mode stays local on this browser.
             </p>
           </div>
         ) : (
@@ -304,10 +414,10 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
                 <span>Back</span>
               </button>
 
-              {signedInAccount && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-mono text-emerald-300">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  <span>{signedInAccount}</span>
+              {signedInUser && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-mono text-emerald-300 max-w-[70%] truncate">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span className="truncate">{signedInUser.email}</span>
                 </div>
               )}
             </div>
@@ -479,7 +589,11 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
                   </>
                 ) : (
                   <>
-                    <span>Verify &amp; Launch Aether Studio</span>
+                    <span>
+                      {cloudRestoredKey && apiKeyInput.trim() === cloudRestoredKey && signedInUser
+                        ? 'Launch Aether Studio'
+                        : 'Verify & Launch Aether Studio'}
+                    </span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}

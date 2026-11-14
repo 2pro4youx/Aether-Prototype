@@ -1,0 +1,258 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable Security Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function parentUserExists(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.uid == userId;
+    }
+
+    // Entity Blueprints
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.uid == request.auth.uid &&
+        data.uid == userId &&
+        data.email is string &&
+        data.email.size() >= 3 &&
+        data.email.size() <= 320 &&
+        data.displayName is string &&
+        data.displayName.size() <= 160 &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1000)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserWorkspace(data, userId, workspaceId) {
+      return data.keys().hasAll([
+          'uid',
+          'id',
+          'name',
+          'folder',
+          'mode',
+          'isClosed',
+          'sources',
+          'notebooks',
+          'conversations',
+          'chatMessages',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'id',
+          'name',
+          'description',
+          'folder',
+          'mode',
+          'color',
+          'isClosed',
+          'lastOpenedAt',
+          'createdAtLabel',
+          'updatedAtLabel',
+          'sources',
+          'notebooks',
+          'conversations',
+          'chatMessages',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        isValidId(data.uid) &&
+        data.uid == request.auth.uid &&
+        data.uid == userId &&
+        isValidId(data.id) &&
+        data.id == workspaceId &&
+        data.name is string &&
+        data.name.size() >= 1 &&
+        data.name.size() <= 200 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 1000)) &&
+        data.folder is string &&
+        data.folder.size() >= 1 &&
+        data.folder.size() <= 160 &&
+        data.mode is string &&
+        data.mode in ['full', 'onenote-only'] &&
+        (!('color' in data) || (data.color is string && data.color.size() <= 64)) &&
+        data.isClosed is bool &&
+        (!('lastOpenedAt' in data) || (data.lastOpenedAt is string && data.lastOpenedAt.size() <= 64)) &&
+        (!('createdAtLabel' in data) || (data.createdAtLabel is string && data.createdAtLabel.size() <= 64)) &&
+        (!('updatedAtLabel' in data) || (data.updatedAtLabel is string && data.updatedAtLabel.size() <= 64)) &&
+        data.sources is list &&
+        data.sources.size() <= 200 &&
+        (data.sources.size() == 0 || data.sources[0] is map) &&
+        data.notebooks is list &&
+        data.notebooks.size() <= 50 &&
+        (data.notebooks.size() == 0 || data.notebooks[0] is map) &&
+        data.conversations is list &&
+        data.conversations.size() <= 100 &&
+        (data.conversations.size() == 0 || data.conversations[0] is map) &&
+        data.chatMessages is list &&
+        data.chatMessages.size() <= 300 &&
+        (data.chatMessages.size() == 0 || data.chatMessages[0] is map) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserAppState(data, userId, stateId) {
+      return data.keys().hasAll(['uid', 'stateKey', 'payload', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'stateKey', 'payload', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.uid == request.auth.uid &&
+        data.uid == userId &&
+        data.stateKey is string &&
+        data.stateKey == stateId &&
+        data.stateKey in ['dashboard', 'analytics', 'preferences', 'floatingChat'] &&
+        data.payload is map &&
+        data.payload.keys().size() <= 40 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // Update Action Helpers
+    function isProfileSyncAction() {
+      return incoming().diff(existing()).affectedKeys().hasOnly(['email', 'displayName', 'photoURL', 'updatedAt']);
+    }
+
+    function isWorkspaceSyncAction() {
+      return incoming().diff(existing()).affectedKeys().hasOnly([
+        'name',
+        'description',
+        'folder',
+        'mode',
+        'color',
+        'isClosed',
+        'lastOpenedAt',
+        'createdAtLabel',
+        'updatedAtLabel',
+        'sources',
+        'notebooks',
+        'conversations',
+        'chatMessages',
+        'updatedAt'
+      ]);
+    }
+
+    function isAppStateSyncAction() {
+      return incoming().diff(existing()).affectedKeys().hasOnly(['payload', 'updatedAt']);
+    }
+
+    // Private User Root Document (PII strictly restricted to verified owner)
+    match /users/{userId} {
+      allow get: if isVerifiedUser() && isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isVerifiedUser() &&
+        isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser() &&
+        isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        isProfileSyncAction();
+      allow delete: if false;
+
+      // Synced User Workspaces
+      match /workspaces/{workspaceId} {
+        allow get: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(workspaceId) &&
+          parentUserExists(userId) &&
+          existing().uid == request.auth.uid;
+        allow list: if isVerifiedUser() &&
+          isOwner(userId) &&
+          resource.data.uid == request.auth.uid;
+        allow create: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(workspaceId) &&
+          isValidUserWorkspace(incoming(), userId, workspaceId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          parentUserExists(userId);
+        allow update: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(workspaceId) &&
+          isValidUserWorkspace(incoming(), userId, workspaceId) &&
+          incoming().uid == existing().uid &&
+          incoming().id == existing().id &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          isWorkspaceSyncAction() &&
+          parentUserExists(userId);
+        allow delete: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(workspaceId) &&
+          parentUserExists(userId) &&
+          existing().uid == request.auth.uid;
+      }
+
+      // Synced Application State Shards (dashboard, analytics, preferences, floatingChat)
+      match /appState/{stateId} {
+        allow get: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(stateId) &&
+          parentUserExists(userId) &&
+          existing().uid == request.auth.uid;
+        allow list: if isVerifiedUser() &&
+          isOwner(userId) &&
+          resource.data.uid == request.auth.uid;
+        allow create: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(stateId) &&
+          isValidUserAppState(incoming(), userId, stateId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          parentUserExists(userId);
+        allow update: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(stateId) &&
+          isValidUserAppState(incoming(), userId, stateId) &&
+          incoming().uid == existing().uid &&
+          incoming().stateKey == existing().stateKey &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          isAppStateSyncAction() &&
+          parentUserExists(userId);
+        allow delete: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(stateId) &&
+          parentUserExists(userId) &&
+          existing().uid == request.auth.uid;
+      }
+    }
+  }
+}

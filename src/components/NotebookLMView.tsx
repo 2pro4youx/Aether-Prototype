@@ -635,14 +635,14 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
   };
 
   return (
-    <div className="relative h-full flex-1 min-h-0 pt-14 pb-20 md:pt-20 md:pb-6 px-3 md:px-6 lg:px-8 max-w-[1720px] w-full mx-auto flex flex-col gap-2.5 md:gap-3.5 select-none">
+    <div className="relative h-full flex-1 min-h-0 pt-3.5 pb-20 md:pt-20 md:pb-6 px-3 md:px-6 lg:px-8 max-w-[1720px] w-full mx-auto flex flex-col gap-2.5 md:gap-3.5 select-none">
       {/* Notebook Top Title Bar */}
       <div
         className={`flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 md:gap-3 pb-2.5 md:pb-3 border-b shrink-0 ${
           darkMode ? 'border-white/10' : 'border-slate-200/90'
         }`}
       >
-        <div className="flex items-center gap-2.5 md:gap-3 min-w-0 w-full md:w-auto">
+        <div className="flex items-center gap-2.5 md:gap-3 min-w-0 w-full md:w-auto pr-14 md:pr-0">
           <div
             className="w-9 h-9 md:w-10 md:h-10 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg text-slate-950 font-bold shrink-0"
             style={{

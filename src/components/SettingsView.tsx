@@ -649,9 +649,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const activeModelObj = AVAILABLE_GEMINI_MODELS.find((m) => m.id === selectedModel) || AVAILABLE_GEMINI_MODELS[0];
 
   return (
-    <div className="relative min-h-[100dvh] md:min-h-screen pt-16 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1560px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
+    <div className="relative min-h-[100dvh] md:min-h-screen pt-5 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1560px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
       {/* Title */}
-      <div>
+      <div className="pr-14 md:pr-0">
         <div
           className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
           style={{ color: activePalette.primary }}
@@ -1703,7 +1703,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </p>
           </div>
           <p>
-            Connected as <span className="font-mono text-white font-semibold">{authenticatedEmail || 'alex.learner@gmail.com'}</span>
+            Connected as{' '}
+            <span className="font-mono text-white font-semibold">
+              {authenticatedEmail || 'Guest Session'}
+            </span>
           </p>
         </div>
         {onSignOut && (
@@ -1725,9 +1728,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div className="p-4 rounded-2xl liquid-glass flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div className={`text-xs space-y-0.5 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
           <p className={`font-semibold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
-            Local State Management
+            Cloud &amp; Local State Management
           </p>
-          <p>Your notes, study activities, themes, and sources are stored reactively in browser storage.</p>
+          <p>
+            Your notes, chats, workspaces, themes, and study logs sync automatically to your Google account across devices.
+          </p>
         </div>
         <button
           onClick={onResetData}

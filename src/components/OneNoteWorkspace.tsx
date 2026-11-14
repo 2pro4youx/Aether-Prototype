@@ -4682,7 +4682,7 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
       aria-hidden={!isOpen}
       className={`${
         standalone
-          ? 'relative flex-1 min-h-0 w-full h-full flex overflow-hidden pt-12 pb-16 md:pt-0 md:pb-0'
+          ? 'relative flex-1 min-h-0 w-full h-full flex overflow-hidden pt-[env(safe-area-inset-top,0px)] pb-16 md:pt-0 md:pb-0'
           : `fixed inset-0 z-50 h-[100dvh] md:h-auto pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] md:pt-0 md:pb-0 flex hyprland-slide ${
               isOpen
                 ? 'translate-x-0 opacity-100 pointer-events-auto visible frost-edge'
@@ -4740,7 +4740,9 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
       >
         {/* Top OneNote App Bar & Section Tabs (Distinct Floating Liquid Glass Tile) */}
         <div
-          className="mx-2 md:mx-3 mt-2 md:mt-3 mb-0 rounded-2xl liquid-glass no-lift border border-white/10 px-2.5 md:px-4 py-2 flex items-center justify-between gap-2 md:gap-3 shrink-0 min-h-[48px] md:min-h-[50px] shadow-xl relative z-[150]"
+          className={`mx-2 md:mx-3 mt-2 md:mt-3 mb-0 rounded-2xl liquid-glass no-lift border border-white/10 px-2.5 md:px-4 py-2 flex items-center justify-between gap-2 md:gap-3 shrink-0 min-h-[48px] md:min-h-[50px] shadow-xl relative z-[150] ${
+            standalone ? 'mr-16 md:mr-3' : ''
+          }`}
           style={{ isolation: 'auto' }}
         >
           <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">

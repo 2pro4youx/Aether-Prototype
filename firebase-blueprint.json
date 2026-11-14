@@ -1,0 +1,177 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Private authenticated user profile document owned strictly by the Firebase Auth user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 320
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "photoURL": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "displayName", "createdAt", "updatedAt"]
+    },
+    "UserWorkspace": {
+      "title": "User Workspace",
+      "description": "Synchronized research workspace containing NotebookLM sources, OneNote notebooks, and Gemini conversations.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "folder": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["full", "onenote-only"]
+        },
+        "color": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "isClosed": {
+          "type": "boolean"
+        },
+        "lastOpenedAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "createdAtLabel": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedAtLabel": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "sources": {
+          "type": "array",
+          "description": "Up to 200 notebook sources."
+        },
+        "notebooks": {
+          "type": "array",
+          "description": "Up to 50 OneNote notebooks."
+        },
+        "conversations": {
+          "type": "array",
+          "description": "Up to 100 Gemini conversations."
+        },
+        "chatMessages": {
+          "type": "array",
+          "description": "Up to 300 NotebookLM grounded chat messages."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "id",
+        "name",
+        "folder",
+        "mode",
+        "isClosed",
+        "sources",
+        "notebooks",
+        "conversations",
+        "chatMessages",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserAppState": {
+      "title": "User Application State Shard",
+      "description": "Cross-device cloud state shard for dashboard, analytics, preferences, and floating assistant chat.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "stateKey": {
+          "type": "string",
+          "enum": ["dashboard", "analytics", "preferences", "floatingChat"]
+        },
+        "payload": {
+          "type": "object",
+          "description": "Structured key-value state map for the shard."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "stateKey", "payload", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account root document keyed by Firebase Auth UID."
+    },
+    "/users/{userId}/workspaces/{workspaceId}": {
+      "schema": { "$ref": "#/entities/UserWorkspace" },
+      "description": "Per-user synced research workspaces, OneNote notebooks, sources, and Gemini chat threads."
+    },
+    "/users/{userId}/appState/{stateId}": {
+      "schema": { "$ref": "#/entities/UserAppState" },
+      "description": "Per-user synced state shards: dashboard, analytics, preferences, and floatingChat."
+    }
+  }
+}

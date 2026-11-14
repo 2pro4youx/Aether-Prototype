@@ -82,12 +82,14 @@ export function getActiveGeminiApiKey(): string {
 
 export function setActiveGeminiApiKey(key: string): void {
   if (typeof window !== 'undefined') {
-    if (key.trim()) {
-      localStorage.setItem('aether_gemini_api_key', key.trim());
+    const trimmed = key.trim();
+    if (trimmed) {
+      localStorage.setItem('aether_gemini_api_key', trimmed);
     } else {
       localStorage.removeItem('aether_gemini_api_key');
       localStorage.removeItem('aether_gemini_api_mode');
     }
+    window.dispatchEvent(new CustomEvent('aether-gemini-key-updated', { detail: trimmed }));
   }
 }
 

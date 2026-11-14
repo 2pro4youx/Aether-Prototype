@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Sparkles,
   Send,
@@ -18,6 +19,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { LiquidGlassSvgFilter } from './LiquidGlassFilter';
 import { callGeminiChat, AVAILABLE_GEMINI_MODELS } from '../utils/geminiClient';
 import { useChatSmoothScroll } from '../hooks/useSmoothScroll';
+import type { FloatingChatMessage } from '../utils/firebaseSync';
 
 interface FloatingGeminiChatProps {
   selectedModel: string;
@@ -27,14 +29,11 @@ interface FloatingGeminiChatProps {
   darkMode: boolean;
   hidden?: boolean;
   smoothScroll?: boolean;
+  messages?: FloatingChatMessage[];
+  onUpdateMessages?: (messages: FloatingChatMessage[]) => void;
 }
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-  timestamp: string;
-}
+type Message = FloatingChatMessage;
 
 export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
   selectedModel,
@@ -44,6 +43,8 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
   darkMode,
   hidden = false,
   smoothScroll = true,
+  messages: controlledMessages,
+  onUpdateMessages,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
@@ -58,7 +59,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-  const [messages, setMessages] = useState<Message[]>([
+  const [internalMessages, setInternalMessages] = useState<Message[]>([
     {
       id: 'm-0',
       role: 'assistant',
@@ -66,6 +67,17 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
       timestamp: 'Just now',
     },
   ]);
+  const messages = controlledMessages && controlledMessages.length > 0 ? controlledMessages : internalMessages;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const setMessages = (updater: Message[] | ((prev: Message[]) => Message[])) => {
+    const next = typeof updater === 'function' ? updater(messagesRef.current) : updater;
+    if (onUpdateMessages) {
+      onUpdateMessages(next);
+    } else {
+      setInternalMessages(next);
+    }
+  };
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -221,11 +233,11 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
     }
   };
 
-  return (
+  const widget = (
     <aside
       aria-label="Floating Gemini Assistant"
-      className={`fixed right-3 md:right-6 bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-6 z-[60] flex flex-col items-end pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-        hidden ? 'translate-y-28 opacity-0 pointer-events-none select-none invisible' : 'translate-y-0 opacity-100'
+      className={`fixed right-3 md:right-6 bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-6 z-[60] flex flex-col items-end pointer-events-none transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        hidden ? 'translate-y-28 opacity-0 pointer-events-none select-none invisible' : 'opacity-100'
       }`}
     >
       {/* SVG Chromatic Aberration & Liquid Glass Displacement Shader Filter Definition */}
@@ -572,5 +584,8 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
           )}
         </AnimatePresence>
       </aside>
-    );
-  };
+  );
+
+  if (typeof document === 'undefined') return widget;
+  return createPortal(widget, document.body);
+};

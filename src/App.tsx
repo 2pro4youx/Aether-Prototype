@@ -5,6 +5,26 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Sliders, Sparkles, MoveVertical } from 'lucide-react';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { auth } from './firebase';
+import {
+  setActiveGeminiApiKey,
+  getActiveGeminiApiKey,
+} from './utils/geminiClient';
+import {
+  AppStateKey,
+  AnalyticsStatePayload,
+  DashboardStatePayload,
+  FloatingChatMessage,
+  FloatingChatStatePayload,
+  LoadedCloudState,
+  PreferencesStatePayload,
+  deleteWorkspaceDoc,
+  loadUserCloudData,
+  subscribeToUserCloudData,
+  upsertAppStateDoc,
+  upsertWorkspaceDoc,
+} from './utils/firebaseSync';
 import {
   ActiveTab,
   TaskItem,
@@ -19,6 +39,11 @@ import {
   ColorPalette,
   CustomPaletteConfig,
   CursorStyleId,
+  DashboardCardInstance,
+  SyllabusCourse,
+  ExamScheduleEntry,
+  TimetableSlot,
+  CalendarEventEntry,
 } from './types';
 import { getCursorCss, getCursorGradient } from './utils/cursorUtils';
 import {
@@ -39,7 +64,7 @@ import {
 import { PolygonCanvas } from './components/PolygonCanvas';
 import { Header } from './components/Header';
 import { WorkspaceSelectorBar } from './components/WorkspaceSelectorBar';
-import { Dashboard } from './components/Dashboard';
+import { Dashboard, DEFAULT_DASHBOARD_CARDS } from './components/Dashboard';
 import { NotebookLMView } from './components/NotebookLMView';
 import { OneNoteWorkspace } from './components/OneNoteWorkspace';
 import { GeminiWorkspace } from './components/GeminiWorkspace';
@@ -52,7 +77,30 @@ import { AuthOnboardingModal } from './components/AuthOnboardingModal';
 import { SmoothCursor } from './components/SmoothCursor';
 import { useSmoothScroll, getLenis, resizeLenis } from './hooks/useSmoothScroll';
 
+const DEFAULT_FLOATING_MESSAGES: FloatingChatMessage[] = [
+  {
+    id: 'm-0',
+    role: 'assistant',
+    text: 'Hey! How can I help you today?',
+    timestamp: 'Just now',
+  },
+];
+
+function getSavedAuthUserEmail(): string | undefined {
+  try {
+    const raw = localStorage.getItem('aether_auth_user');
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.email === 'string' ? parsed.email : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export default function App() {
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(() => auth.currentUser);
+  const [isCloudSyncReady, setIsCloudSyncReady] = useState(false);
+
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     const savedUser = localStorage.getItem('aether_auth_user');
     const savedKey = localStorage.getItem('aether_gemini_api_key');
@@ -70,10 +118,76 @@ export default function App() {
   const [isMetaverseEdit, setIsMetaverseEdit] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const isAuthModalOpenRef = useRef(isAuthModalOpen);
+  isAuthModalOpenRef.current = isAuthModalOpen;
+
+  const cloudUnsubRef = useRef<(() => void) | null>(null);
+  const knownWorkspaceIdsRef = useRef<Set<string>>(new Set());
+  const knownStateKeysRef = useRef<Set<AppStateKey>>(new Set());
+  const writtenHashesRef = useRef<Map<string, string>>(new Map());
+  const hydratingUidRef = useRef<string | null>(null);
+  const hydratingPromiseRef = useRef<Promise<{ syncedGeminiKey?: string } | void> | null>(null);
+  const isApplyingRemoteRef = useRef(false);
+  const prevSyncedWorkspaceIdsRef = useRef<Set<string>>(new Set());
 
   const handleSignOut = useCallback(() => {
-    localStorage.removeItem('aether_auth_user');
-    localStorage.removeItem('aether_gemini_api_key');
+    if (cloudUnsubRef.current) {
+      cloudUnsubRef.current();
+      cloudUnsubRef.current = null;
+    }
+    hydratingUidRef.current = null;
+    hydratingPromiseRef.current = null;
+    knownWorkspaceIdsRef.current.clear();
+    knownStateKeysRef.current.clear();
+    writtenHashesRef.current.clear();
+    prevSyncedWorkspaceIdsRef.current.clear();
+    setIsCloudSyncReady(false);
+    setFirebaseUser(null);
+
+    void signOut(auth).catch(() => {});
+
+    // Clear only local browser cache on sign-out so cloud Firestore data remains untouched across devices
+    [
+      'aether_auth_user',
+      'aether_gemini_api_key',
+      'aether_gemini_api_mode',
+      'aether_workspaces_v2',
+      'aether_active_workspace_v2',
+      'aether_tasks',
+      'aether_planners_v1',
+      'aether_dashboard_cards_v1',
+      'aether_syllabus_v1',
+      'aether_exam_schedule_v1',
+      'aether_timetable_v1',
+      'aether_local_calendar_v1',
+      'aether_daily_study_seconds_v1',
+      'aether_workspace_seconds_v1',
+      'aether_workspace_interactions_v1',
+      'aether_audit_logs_v2',
+      'aether_folders_v3',
+      'aether_library_v2',
+      'aether_floating_chat_v1',
+    ].forEach((k) => localStorage.removeItem(k));
+
+    setActiveGeminiApiKey('');
+    setSyncedGeminiKey('');
+    setTasks([]);
+    setPlanners([]);
+    setDashboardCards(DEFAULT_DASHBOARD_CARDS);
+    setSyllabusCourses([]);
+    setExamSchedules([]);
+    setTimetableSlots([]);
+    setLocalCalendarEvents([]);
+    setDailyStudySeconds({});
+    setWorkspaces([]);
+    setActiveWorkspaceId('');
+    setLibraryItems([]);
+    setFolders(['Assorted Workspaces']);
+    setWorkspaceSeconds({});
+    setWorkspaceInteractions({});
+    setAuditLogs([]);
+    setFloatingChatMessages(DEFAULT_FLOATING_MESSAGES);
+
     setIsAuthenticated(false);
     setActiveTab('lander');
     setIsWorkspaceSelectorOpen(false);
@@ -174,6 +288,107 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('aether_planners_v1', JSON.stringify(planners));
   }, [planners]);
+
+  // Lifted Dashboard Card Layout, Curriculum & Calendar states for unified cross-device cloud sync
+  const [dashboardCards, setDashboardCards] = useState<DashboardCardInstance[]>(() => {
+    try {
+      const saved = localStorage.getItem('aether_dashboard_cards_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // fallback
+    }
+    return DEFAULT_DASHBOARD_CARDS;
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('aether_dashboard_cards_v1', JSON.stringify(dashboardCards));
+    } catch {
+      // ignore quota issues
+    }
+  }, [dashboardCards]);
+
+  const [syllabusCourses, setSyllabusCourses] = useState<SyllabusCourse[]>(() => {
+    try {
+      const saved = localStorage.getItem('aether_syllabus_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem('aether_syllabus_v1', JSON.stringify(syllabusCourses));
+  }, [syllabusCourses]);
+
+  const [examSchedules, setExamSchedules] = useState<ExamScheduleEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('aether_exam_schedule_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem('aether_exam_schedule_v1', JSON.stringify(examSchedules));
+  }, [examSchedules]);
+
+  const [timetableSlots, setTimetableSlots] = useState<TimetableSlot[]>(() => {
+    try {
+      const saved = localStorage.getItem('aether_timetable_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem('aether_timetable_v1', JSON.stringify(timetableSlots));
+  }, [timetableSlots]);
+
+  const [localCalendarEvents, setLocalCalendarEvents] = useState<CalendarEventEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('aether_local_calendar_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem('aether_local_calendar_v1', JSON.stringify(localCalendarEvents));
+  }, [localCalendarEvents]);
+
+  // Lifted Floating Gemini Neural Assistant conversation history
+  const [floatingChatMessages, setFloatingChatMessages] = useState<FloatingChatMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem('aether_floating_chat_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // fallback
+    }
+    return DEFAULT_FLOATING_MESSAGES;
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('aether_floating_chat_v1', JSON.stringify(floatingChatMessages));
+    } catch {
+      // ignore quota issues
+    }
+  }, [floatingChatMessages]);
+
+  // Reactive Gemini API key tracker so Settings or Onboarding key updates sync to cloud preferences
+  const [syncedGeminiKey, setSyncedGeminiKey] = useState<string>(() => getActiveGeminiApiKey());
+  useEffect(() => {
+    const handleKeyUpdate = (e: Event) => {
+      const custom = e as CustomEvent<string>;
+      setSyncedGeminiKey(typeof custom.detail === 'string' ? custom.detail : getActiveGeminiApiKey());
+    };
+    window.addEventListener('aether-gemini-key-updated', handleKeyUpdate);
+    return () => window.removeEventListener('aether-gemini-key-updated', handleKeyUpdate);
+  }, []);
 
   // One-time reset of legacy seeded dummy dashboard tasks
   useEffect(() => {
@@ -1305,6 +1520,472 @@ export default function App() {
   const isGeminiOpenRef = useRef(isGeminiWorkspaceOpen);
   isGeminiOpenRef.current = isGeminiWorkspaceOpen;
 
+  // Refs holding latest state slices for initial seeding upon first-ever Google sign-in
+  const latestSlicesRef = useRef({
+    dashboard: {
+      cards: dashboardCards,
+      tasks,
+      planners,
+      syllabusCourses,
+      examSchedules,
+      timetableSlots,
+      localCalendarEvents,
+    } as DashboardStatePayload,
+    analytics: {
+      dailyStudySeconds,
+      workspaceSeconds,
+      workspaceInteractions,
+      auditLogs: auditLogs.slice(0, 150),
+      folders,
+      libraryItems,
+      activeWorkspaceId,
+    } as AnalyticsStatePayload,
+    preferences: {
+      darkMode,
+      activePaletteId,
+      customPaletteConfig,
+      selectedModel,
+      enableThinking,
+      cursorStyle,
+      cursorColorAdapter,
+      smoothScroll,
+      glowMultiplier,
+      geminiApiKey: syncedGeminiKey,
+    } as PreferencesStatePayload,
+    floatingChat: {
+      messages: floatingChatMessages,
+    } as FloatingChatStatePayload,
+  });
+  latestSlicesRef.current = {
+    dashboard: {
+      cards: dashboardCards,
+      tasks,
+      planners,
+      syllabusCourses,
+      examSchedules,
+      timetableSlots,
+      localCalendarEvents,
+    },
+    analytics: {
+      dailyStudySeconds,
+      workspaceSeconds,
+      workspaceInteractions,
+      auditLogs: auditLogs.slice(0, 150),
+      folders,
+      libraryItems,
+      activeWorkspaceId,
+    },
+    preferences: {
+      darkMode,
+      activePaletteId,
+      customPaletteConfig,
+      selectedModel,
+      enableThinking,
+      cursorStyle,
+      cursorColorAdapter,
+      smoothScroll,
+      glowMultiplier,
+      geminiApiKey: syncedGeminiKey,
+    },
+    floatingChat: {
+      messages: floatingChatMessages,
+    },
+  };
+
+  const applyDashboardRemote = useCallback((d: DashboardStatePayload) => {
+    isApplyingRemoteRef.current = true;
+    if (Array.isArray(d.cards) && d.cards.length > 0) setDashboardCards(d.cards);
+    if (Array.isArray(d.tasks)) setTasks(d.tasks);
+    if (Array.isArray(d.planners)) setPlanners(d.planners);
+    if (Array.isArray(d.syllabusCourses)) setSyllabusCourses(d.syllabusCourses);
+    if (Array.isArray(d.examSchedules)) setExamSchedules(d.examSchedules);
+    if (Array.isArray(d.timetableSlots)) setTimetableSlots(d.timetableSlots);
+    if (Array.isArray(d.localCalendarEvents)) setLocalCalendarEvents(d.localCalendarEvents);
+    queueMicrotask(() => {
+      isApplyingRemoteRef.current = false;
+    });
+  }, []);
+
+  const applyAnalyticsRemote = useCallback((a: AnalyticsStatePayload) => {
+    isApplyingRemoteRef.current = true;
+    if (a.dailyStudySeconds && typeof a.dailyStudySeconds === 'object') setDailyStudySeconds(a.dailyStudySeconds);
+    if (a.workspaceSeconds && typeof a.workspaceSeconds === 'object') setWorkspaceSeconds(a.workspaceSeconds);
+    if (a.workspaceInteractions && typeof a.workspaceInteractions === 'object') {
+      setWorkspaceInteractions(a.workspaceInteractions);
+    }
+    if (Array.isArray(a.auditLogs)) setAuditLogs(a.auditLogs);
+    if (Array.isArray(a.folders) && a.folders.length > 0) setFolders(a.folders);
+    if (Array.isArray(a.libraryItems)) setLibraryItems(a.libraryItems);
+    if (typeof a.activeWorkspaceId === 'string' && a.activeWorkspaceId) {
+      setActiveWorkspaceId(a.activeWorkspaceId);
+    }
+    queueMicrotask(() => {
+      isApplyingRemoteRef.current = false;
+    });
+  }, []);
+
+  const applyPreferencesRemote = useCallback((p: PreferencesStatePayload) => {
+    isApplyingRemoteRef.current = true;
+    if (typeof p.darkMode === 'boolean') setDarkMode(p.darkMode);
+    if (typeof p.activePaletteId === 'string') setActivePaletteId(p.activePaletteId);
+    if (p.customPaletteConfig && typeof p.customPaletteConfig.primary === 'string') {
+      setCustomPaletteConfig(p.customPaletteConfig);
+    }
+    if (typeof p.selectedModel === 'string' && p.selectedModel) setSelectedModel(p.selectedModel);
+    if (typeof p.enableThinking === 'boolean') setEnableThinking(p.enableThinking);
+    if (typeof p.cursorStyle === 'string') setCursorStyle(p.cursorStyle);
+    if (typeof p.cursorColorAdapter === 'number') setCursorColorAdapter(p.cursorColorAdapter);
+    if (typeof p.smoothScroll === 'boolean') setSmoothScroll(p.smoothScroll);
+    if (typeof p.glowMultiplier === 'number') {
+      setGlowMultiplier(p.glowMultiplier);
+      updateGlowMultiplier(p.glowMultiplier);
+    }
+    if (typeof p.geminiApiKey === 'string' && p.geminiApiKey.trim()) {
+      setActiveGeminiApiKey(p.geminiApiKey.trim());
+    }
+    queueMicrotask(() => {
+      isApplyingRemoteRef.current = false;
+    });
+  }, []);
+
+  const applyFloatingChatRemote = useCallback((f: FloatingChatStatePayload) => {
+    isApplyingRemoteRef.current = true;
+    if (Array.isArray(f.messages) && f.messages.length > 0) {
+      setFloatingChatMessages(f.messages);
+    }
+    queueMicrotask(() => {
+      isApplyingRemoteRef.current = false;
+    });
+  }, []);
+
+  const applyLoadedCloudState = useCallback(
+    (loaded: LoadedCloudState) => {
+      isApplyingRemoteRef.current = true;
+      setWorkspaces(loaded.workspaces);
+      prevSyncedWorkspaceIdsRef.current = new Set(loaded.workspaces.map((w) => w.id));
+      if (loaded.analytics) {
+        applyAnalyticsRemote(loaded.analytics);
+      } else if (loaded.workspaces.length > 0) {
+        setActiveWorkspaceId((prev) =>
+          loaded.workspaces.some((w) => w.id === prev) ? prev : loaded.workspaces[0].id
+        );
+      }
+      if (loaded.dashboard) applyDashboardRemote(loaded.dashboard);
+      if (loaded.preferences) applyPreferencesRemote(loaded.preferences);
+      if (loaded.floatingChat) applyFloatingChatRemote(loaded.floatingChat);
+      queueMicrotask(() => {
+        isApplyingRemoteRef.current = false;
+      });
+    },
+    [applyAnalyticsRemote, applyDashboardRemote, applyPreferencesRemote, applyFloatingChatRemote]
+  );
+
+  const hydrateAndSubscribeUser = useCallback(
+    async (user: User): Promise<{ syncedGeminiKey?: string } | void> => {
+      if (hydratingUidRef.current === user.uid && hydratingPromiseRef.current) {
+        return hydratingPromiseRef.current;
+      }
+
+      hydratingUidRef.current = user.uid;
+      const run = async () => {
+        try {
+          setIsCloudSyncReady(false);
+          if (cloudUnsubRef.current) {
+            cloudUnsubRef.current();
+            cloudUnsubRef.current = null;
+          }
+          writtenHashesRef.current.clear();
+
+          const loaded = await loadUserCloudData(user, writtenHashesRef.current);
+          knownWorkspaceIdsRef.current = loaded.knownWorkspaceIds;
+          knownStateKeysRef.current = loaded.knownStateKeys;
+
+          if (loaded.hasCloudData) {
+            applyLoadedCloudState(loaded);
+          } else {
+            // First-ever cloud login for this Google user: upload local workspaces/notes/settings
+            for (const ws of workspacesRef.current) {
+              await upsertWorkspaceDoc(
+                user.uid,
+                ws,
+                knownWorkspaceIdsRef.current,
+                writtenHashesRef.current
+              );
+            }
+            prevSyncedWorkspaceIdsRef.current = new Set(workspacesRef.current.map((w) => w.id));
+            await upsertAppStateDoc(
+              user.uid,
+              'dashboard',
+              latestSlicesRef.current.dashboard,
+              knownStateKeysRef.current,
+              writtenHashesRef.current
+            );
+            await upsertAppStateDoc(
+              user.uid,
+              'analytics',
+              latestSlicesRef.current.analytics,
+              knownStateKeysRef.current,
+              writtenHashesRef.current
+            );
+            await upsertAppStateDoc(
+              user.uid,
+              'preferences',
+              latestSlicesRef.current.preferences,
+              knownStateKeysRef.current,
+              writtenHashesRef.current
+            );
+            await upsertAppStateDoc(
+              user.uid,
+              'floatingChat',
+              latestSlicesRef.current.floatingChat,
+              knownStateKeysRef.current,
+              writtenHashesRef.current
+            );
+          }
+
+          setIsCloudSyncReady(true);
+
+          // Real-time cross-device listener
+          cloudUnsubRef.current = subscribeToUserCloudData(
+            user.uid,
+            knownWorkspaceIdsRef.current,
+            knownStateKeysRef.current,
+            writtenHashesRef.current,
+            {
+              onWorkspacesRemoteChange: (remoteWorkspaces) => {
+                isApplyingRemoteRef.current = true;
+                setWorkspaces(remoteWorkspaces);
+                prevSyncedWorkspaceIdsRef.current = new Set(remoteWorkspaces.map((w) => w.id));
+                queueMicrotask(() => {
+                  isApplyingRemoteRef.current = false;
+                });
+              },
+              onDashboardRemoteChange: applyDashboardRemote,
+              onAnalyticsRemoteChange: applyAnalyticsRemote,
+              onPreferencesRemoteChange: applyPreferencesRemote,
+              onFloatingChatRemoteChange: applyFloatingChatRemote,
+            }
+          );
+
+          return {
+            syncedGeminiKey: loaded.preferences?.geminiApiKey,
+          };
+        } catch (err) {
+          console.error('Firebase cloud sync hydration error:', err);
+          setIsCloudSyncReady(false);
+        }
+      };
+
+      const promise = run();
+      hydratingPromiseRef.current = promise;
+      return promise;
+    },
+    [
+      applyLoadedCloudState,
+      applyDashboardRemote,
+      applyAnalyticsRemote,
+      applyPreferencesRemote,
+      applyFloatingChatRemote,
+    ]
+  );
+
+  // Firebase Auth listener: restores Google session & cloud data across refreshes/devices
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      setFirebaseUser(user);
+      if (user) {
+        const email = user.email || `${user.uid}@gmail.com`;
+        const displayName = user.displayName || email.split('@')[0] || 'Aether Learner';
+        localStorage.setItem(
+          'aether_auth_user',
+          JSON.stringify({
+            uid: user.uid,
+            email,
+            name: displayName,
+            photoURL: user.photoURL || undefined,
+          })
+        );
+
+        const result = await hydrateAndSubscribeUser(user);
+        const restoredKey = result?.syncedGeminiKey?.trim() || getActiveGeminiApiKey();
+
+        if (!isAuthModalOpenRef.current && restoredKey) {
+          setActiveGeminiApiKey(restoredKey);
+          setIsAuthenticated(true);
+          if (activeTabRef.current === 'lander') {
+            setActiveTab('dashboard');
+          }
+        }
+      } else {
+        if (cloudUnsubRef.current) {
+          cloudUnsubRef.current();
+          cloudUnsubRef.current = null;
+        }
+        hydratingUidRef.current = null;
+        hydratingPromiseRef.current = null;
+        setIsCloudSyncReady(false);
+      }
+    });
+
+    return () => {
+      unsub();
+      if (cloudUnsubRef.current) {
+        cloudUnsubRef.current();
+        cloudUnsubRef.current = null;
+      }
+    };
+  }, [hydrateAndSubscribeUser]);
+
+  // Continuous debounced Cloud Sync: Workspaces (notes, sources, NotebookLM chats, Gemini conversations)
+  useEffect(() => {
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    const uid = firebaseUser.uid;
+    const timer = setTimeout(() => {
+      const currentIds = new Set(workspaces.map((w) => w.id));
+      for (const prevId of prevSyncedWorkspaceIdsRef.current) {
+        if (!currentIds.has(prevId)) {
+          void deleteWorkspaceDoc(uid, prevId, knownWorkspaceIdsRef.current, writtenHashesRef.current);
+        }
+      }
+      prevSyncedWorkspaceIdsRef.current = currentIds;
+
+      for (const ws of workspaces) {
+        void upsertWorkspaceDoc(uid, ws, knownWorkspaceIdsRef.current, writtenHashesRef.current);
+      }
+    }, 850);
+    return () => clearTimeout(timer);
+  }, [workspaces, firebaseUser, isCloudSyncReady]);
+
+  // Continuous debounced Cloud Sync: Dashboard cards, tasks, planners, syllabus, exams, timetable, calendar
+  useEffect(() => {
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    const uid = firebaseUser.uid;
+    const timer = setTimeout(() => {
+      void upsertAppStateDoc(
+        uid,
+        'dashboard',
+        {
+          cards: dashboardCards,
+          tasks,
+          planners,
+          syllabusCourses,
+          examSchedules,
+          timetableSlots,
+          localCalendarEvents,
+        } satisfies DashboardStatePayload,
+        knownStateKeysRef.current,
+        writtenHashesRef.current
+      );
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [
+    dashboardCards,
+    tasks,
+    planners,
+    syllabusCourses,
+    examSchedules,
+    timetableSlots,
+    localCalendarEvents,
+    firebaseUser,
+    isCloudSyncReady,
+  ]);
+
+  // Continuous debounced Cloud Sync: Folders, Library, Active Workspace & Study Analytics
+  useEffect(() => {
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    const uid = firebaseUser.uid;
+    const timer = setTimeout(() => {
+      void upsertAppStateDoc(
+        uid,
+        'analytics',
+        {
+          dailyStudySeconds,
+          workspaceSeconds,
+          workspaceInteractions,
+          auditLogs: auditLogs.slice(0, 150),
+          folders,
+          libraryItems,
+          activeWorkspaceId,
+        } satisfies AnalyticsStatePayload,
+        knownStateKeysRef.current,
+        writtenHashesRef.current
+      );
+    }, 1800);
+    return () => clearTimeout(timer);
+  }, [folders, libraryItems, auditLogs, activeWorkspaceId, firebaseUser, isCloudSyncReady]);
+
+  // Study timer metrics synced at a lower cadence (10s) to conserve Firestore write quota
+  useEffect(() => {
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    const uid = firebaseUser.uid;
+    const timer = setTimeout(() => {
+      void upsertAppStateDoc(
+        uid,
+        'analytics',
+        latestSlicesRef.current.analytics,
+        knownStateKeysRef.current,
+        writtenHashesRef.current
+      );
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [dailyStudySeconds, workspaceSeconds, workspaceInteractions, firebaseUser, isCloudSyncReady]);
+
+  // Continuous debounced Cloud Sync: Theme, Palette, Cursor, Model & API Key Preferences
+  useEffect(() => {
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    const uid = firebaseUser.uid;
+    const timer = setTimeout(() => {
+      void upsertAppStateDoc(
+        uid,
+        'preferences',
+        {
+          darkMode,
+          activePaletteId,
+          customPaletteConfig,
+          selectedModel,
+          enableThinking,
+          cursorStyle,
+          cursorColorAdapter,
+          smoothScroll,
+          glowMultiplier,
+          geminiApiKey: syncedGeminiKey,
+        } satisfies PreferencesStatePayload,
+        knownStateKeysRef.current,
+        writtenHashesRef.current
+      );
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [
+    darkMode,
+    activePaletteId,
+    customPaletteConfig,
+    selectedModel,
+    enableThinking,
+    cursorStyle,
+    cursorColorAdapter,
+    smoothScroll,
+    glowMultiplier,
+    syncedGeminiKey,
+    firebaseUser,
+    isCloudSyncReady,
+  ]);
+
+  // Continuous debounced Cloud Sync: Floating Gemini Neural Assistant chats
+  useEffect(() => {
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    const uid = firebaseUser.uid;
+    const timer = setTimeout(() => {
+      void upsertAppStateDoc(
+        uid,
+        'floatingChat',
+        { messages: floatingChatMessages } satisfies FloatingChatStatePayload,
+        knownStateKeysRef.current,
+        writtenHashesRef.current
+      );
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [floatingChatMessages, firebaseUser, isCloudSyncReady]);
+
   // Live 1-second active workspace study time ticker (real-time updates)
   useEffect(() => {
     if (!isAuthenticated || activeTab === 'lander') return;
@@ -1899,11 +2580,20 @@ export default function App() {
 
   // Reset data handler
   const handleResetData = () => {
+    const preservedAuth = localStorage.getItem('aether_auth_user');
+    const preservedKey = localStorage.getItem('aether_gemini_api_key');
     localStorage.clear();
+    if (preservedAuth) localStorage.setItem('aether_auth_user', preservedAuth);
+    if (preservedKey) localStorage.setItem('aether_gemini_api_key', preservedKey);
     localStorage.setItem('aether_analytics_reset_v1', 'true');
     localStorage.setItem('aether_dashboard_reset_v1', 'true');
     setTasks([]);
     setPlanners([]);
+    setDashboardCards(DEFAULT_DASHBOARD_CARDS);
+    setSyllabusCourses([]);
+    setExamSchedules([]);
+    setTimetableSlots([]);
+    setLocalCalendarEvents([]);
     setDailyStudySeconds({});
     setWorkspaces([]);
     setActiveWorkspaceId('');
@@ -1912,11 +2602,14 @@ export default function App() {
     setWorkspaceSeconds({});
     setWorkspaceInteractions({});
     setAuditLogs([]);
+    setFloatingChatMessages(DEFAULT_FLOATING_MESSAGES);
     setActivePaletteId('gold-obsidian');
     setDarkMode(true);
     setCursorStyle('circle');
     setCursorColorAdapter(70);
-    setActiveTab('lander');
+    if (!preservedAuth) {
+      setActiveTab('lander');
+    }
   };
 
   return (
@@ -2039,6 +2732,7 @@ export default function App() {
           darkMode={darkMode}
           activePalette={activePalette}
           isWorkspaceSelectorOpen={isWorkspaceSelectorOpen}
+          isStageHidden={isOneNoteOpen || isGeminiWorkspaceOpen || isMetaverseEdit}
           autoHideOnTopEdge={
             activeTab === 'notebooklm' && activeWorkspace?.mode === 'onenote-only'
           }
@@ -2081,6 +2775,16 @@ export default function App() {
                   onMetaverseEditChange={setIsMetaverseEdit}
                   activePalette={activePalette}
                   darkMode={darkMode}
+                  cards={dashboardCards}
+                  onUpdateCards={setDashboardCards}
+                  syllabusCourses={syllabusCourses}
+                  onUpdateSyllabusCourses={setSyllabusCourses}
+                  examSchedules={examSchedules}
+                  onUpdateExamSchedules={setExamSchedules}
+                  timetableSlots={timetableSlots}
+                  onUpdateTimetableSlots={setTimetableSlots}
+                  localCalendarEvents={localCalendarEvents}
+                  onUpdateLocalCalendarEvents={setLocalCalendarEvents}
                 />
               )}
 
@@ -2189,7 +2893,7 @@ export default function App() {
                     logAudit('Smooth Scrolling', `Smooth momentum scrolling set to ${val ? 'ON' : 'OFF'}`, 'system');
                   }}
                   onSignOut={handleSignOut}
-                  authenticatedEmail={localStorage.getItem('aether_auth_user') || undefined}
+                  authenticatedEmail={firebaseUser?.email || getSavedAuthUserEmail()}
                 />
               )}
         </main>
@@ -2260,6 +2964,8 @@ export default function App() {
           activePalette={activePalette}
           darkMode={darkMode}
           hidden={isGeminiWorkspaceOpen || activeTab === 'lander' || isMetaverseEdit}
+          messages={floatingChatMessages}
+          onUpdateMessages={setFloatingChatMessages}
         />
       )}
 
@@ -2276,7 +2982,11 @@ export default function App() {
       <AuthOnboardingModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        onComplete={() => {
+        onGoogleAuthenticated={hydrateAndSubscribeUser}
+        onComplete={(authData) => {
+          if (authData?.apiKey) {
+            setSyncedGeminiKey(authData.apiKey);
+          }
           setIsAuthenticated(true);
           setIsAuthModalOpen(false);
           setActiveTab('dashboard');

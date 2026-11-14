@@ -57,6 +57,16 @@ interface DashboardProps {
   onMetaverseEditChange?: (active: boolean) => void;
   activePalette: ColorPalette;
   darkMode: boolean;
+  cards?: DashboardCardInstance[];
+  onUpdateCards?: (cards: DashboardCardInstance[]) => void;
+  syllabusCourses?: SyllabusCourse[];
+  onUpdateSyllabusCourses?: (courses: SyllabusCourse[]) => void;
+  examSchedules?: ExamScheduleEntry[];
+  onUpdateExamSchedules?: (entries: ExamScheduleEntry[]) => void;
+  timetableSlots?: TimetableSlot[];
+  onUpdateTimetableSlots?: (slots: TimetableSlot[]) => void;
+  localCalendarEvents?: CalendarEventEntry[];
+  onUpdateLocalCalendarEvents?: (events: CalendarEventEntry[]) => void;
 }
 
 const DEFAULT_CARD_TITLES: Record<DashboardCardType, string> = {
@@ -144,7 +154,7 @@ const CARD_CATALOG: Array<{
   },
 ];
 
-const DEFAULT_CARDS: DashboardCardInstance[] = [
+export const DEFAULT_DASHBOARD_CARDS: DashboardCardInstance[] = [
   {
     id: 'card-tasks-default',
     type: 'tasks',
@@ -270,6 +280,8 @@ function computeCornerPackedLayout(
   };
 }
 
+let lastKnownDashboardGridWidth = 0;
+
 export const Dashboard: React.FC<DashboardProps> = ({
   studyDays,
   tasks,
@@ -286,6 +298,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onMetaverseEditChange,
   activePalette,
   darkMode,
+  cards: controlledCards,
+  onUpdateCards,
+  syllabusCourses: controlledSyllabusCourses,
+  onUpdateSyllabusCourses,
+  examSchedules: controlledExamSchedules,
+  onUpdateExamSchedules,
+  timetableSlots: controlledTimetableSlots,
+  onUpdateTimetableSlots,
+  localCalendarEvents: controlledLocalCalendarEvents,
+  onUpdateLocalCalendarEvents,
 }) => {
   const [hoveredDay, setHoveredDay] = useState<StudyDay | null>(null);
   const [showAddCardModal, setShowAddCardModal] = useState(false);
@@ -305,7 +327,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [onMetaverseEditChange]);
 
   // Modular Dashboard Cards layout (default: Daily Study Tasks + Chores)
-  const [cards, setCards] = useState<DashboardCardInstance[]>(() => {
+  const [internalCards, setInternalCards] = useState<DashboardCardInstance[]>(() => {
     try {
       const saved = localStorage.getItem('aether_dashboard_cards_v1');
       if (saved) {
@@ -315,19 +337,33 @@ export const Dashboard: React.FC<DashboardProps> = ({
     } catch {
       // fallback to default
     }
-    return DEFAULT_CARDS;
+    return DEFAULT_DASHBOARD_CARDS;
   });
+  const cards = controlledCards !== undefined ? controlledCards : internalCards;
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
+  const setCards = (
+    updater: DashboardCardInstance[] | ((prev: DashboardCardInstance[]) => DashboardCardInstance[])
+  ) => {
+    const next = typeof updater === 'function' ? updater(cardsRef.current) : updater;
+    if (onUpdateCards) {
+      onUpdateCards(next);
+    } else {
+      setInternalCards(next);
+    }
+  };
 
   useEffect(() => {
+    if (onUpdateCards) return;
     try {
       localStorage.setItem('aether_dashboard_cards_v1', JSON.stringify(cards));
     } catch {
       // ignore quota issues
     }
-  }, [cards]);
+  }, [cards, onUpdateCards]);
 
   // Persistent Card Data Stores (zero dummy data)
-  const [syllabusCourses, setSyllabusCourses] = useState<SyllabusCourse[]>(() => {
+  const [internalSyllabusCourses, setInternalSyllabusCourses] = useState<SyllabusCourse[]>(() => {
     try {
       const saved = localStorage.getItem('aether_syllabus_v1');
       return saved ? JSON.parse(saved) : [];
@@ -335,11 +371,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return [];
     }
   });
+  const syllabusCourses =
+    controlledSyllabusCourses !== undefined ? controlledSyllabusCourses : internalSyllabusCourses;
+  const syllabusRef = useRef(syllabusCourses);
+  syllabusRef.current = syllabusCourses;
+  const setSyllabusCourses = (
+    updater: SyllabusCourse[] | ((prev: SyllabusCourse[]) => SyllabusCourse[])
+  ) => {
+    const next = typeof updater === 'function' ? updater(syllabusRef.current) : updater;
+    if (onUpdateSyllabusCourses) {
+      onUpdateSyllabusCourses(next);
+    } else {
+      setInternalSyllabusCourses(next);
+    }
+  };
   useEffect(() => {
+    if (onUpdateSyllabusCourses) return;
     localStorage.setItem('aether_syllabus_v1', JSON.stringify(syllabusCourses));
-  }, [syllabusCourses]);
+  }, [syllabusCourses, onUpdateSyllabusCourses]);
 
-  const [examSchedules, setExamSchedules] = useState<ExamScheduleEntry[]>(() => {
+  const [internalExamSchedules, setInternalExamSchedules] = useState<ExamScheduleEntry[]>(() => {
     try {
       const saved = localStorage.getItem('aether_exam_schedule_v1');
       return saved ? JSON.parse(saved) : [];
@@ -347,11 +398,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return [];
     }
   });
+  const examSchedules =
+    controlledExamSchedules !== undefined ? controlledExamSchedules : internalExamSchedules;
+  const examSchedulesRef = useRef(examSchedules);
+  examSchedulesRef.current = examSchedules;
+  const setExamSchedules = (
+    updater: ExamScheduleEntry[] | ((prev: ExamScheduleEntry[]) => ExamScheduleEntry[])
+  ) => {
+    const next = typeof updater === 'function' ? updater(examSchedulesRef.current) : updater;
+    if (onUpdateExamSchedules) {
+      onUpdateExamSchedules(next);
+    } else {
+      setInternalExamSchedules(next);
+    }
+  };
   useEffect(() => {
+    if (onUpdateExamSchedules) return;
     localStorage.setItem('aether_exam_schedule_v1', JSON.stringify(examSchedules));
-  }, [examSchedules]);
+  }, [examSchedules, onUpdateExamSchedules]);
 
-  const [timetableSlots, setTimetableSlots] = useState<TimetableSlot[]>(() => {
+  const [internalTimetableSlots, setInternalTimetableSlots] = useState<TimetableSlot[]>(() => {
     try {
       const saved = localStorage.getItem('aether_timetable_v1');
       return saved ? JSON.parse(saved) : [];
@@ -359,11 +425,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return [];
     }
   });
+  const timetableSlots =
+    controlledTimetableSlots !== undefined ? controlledTimetableSlots : internalTimetableSlots;
+  const timetableSlotsRef = useRef(timetableSlots);
+  timetableSlotsRef.current = timetableSlots;
+  const setTimetableSlots = (
+    updater: TimetableSlot[] | ((prev: TimetableSlot[]) => TimetableSlot[])
+  ) => {
+    const next = typeof updater === 'function' ? updater(timetableSlotsRef.current) : updater;
+    if (onUpdateTimetableSlots) {
+      onUpdateTimetableSlots(next);
+    } else {
+      setInternalTimetableSlots(next);
+    }
+  };
   useEffect(() => {
+    if (onUpdateTimetableSlots) return;
     localStorage.setItem('aether_timetable_v1', JSON.stringify(timetableSlots));
-  }, [timetableSlots]);
+  }, [timetableSlots, onUpdateTimetableSlots]);
 
-  const [localCalendarEvents, setLocalCalendarEvents] = useState<CalendarEventEntry[]>(() => {
+  const [internalLocalCalendarEvents, setInternalLocalCalendarEvents] = useState<CalendarEventEntry[]>(() => {
     try {
       const saved = localStorage.getItem('aether_local_calendar_v1');
       return saved ? JSON.parse(saved) : [];
@@ -371,9 +452,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return [];
     }
   });
+  const localCalendarEvents =
+    controlledLocalCalendarEvents !== undefined
+      ? controlledLocalCalendarEvents
+      : internalLocalCalendarEvents;
+  const localCalendarEventsRef = useRef(localCalendarEvents);
+  localCalendarEventsRef.current = localCalendarEvents;
+  const setLocalCalendarEvents = (
+    updater: CalendarEventEntry[] | ((prev: CalendarEventEntry[]) => CalendarEventEntry[])
+  ) => {
+    const next =
+      typeof updater === 'function' ? updater(localCalendarEventsRef.current) : updater;
+    if (onUpdateLocalCalendarEvents) {
+      onUpdateLocalCalendarEvents(next);
+    } else {
+      setInternalLocalCalendarEvents(next);
+    }
+  };
   useEffect(() => {
+    if (onUpdateLocalCalendarEvents) return;
     localStorage.setItem('aether_local_calendar_v1', JSON.stringify(localCalendarEvents));
-  }, [localCalendarEvents]);
+  }, [localCalendarEvents, onUpdateLocalCalendarEvents]);
 
   // Drag-and-drop card reordering (no drag icon)
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
@@ -382,7 +481,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Corner resizing & responsive 2D corner-packing layout measurement
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [resizingCardId, setResizingCardId] = useState<string | null>(null);
-  const [gridWidth, setGridWidth] = useState<number>(0);
+  const [gridWidth, setGridWidth] = useState<number>(() => lastKnownDashboardGridWidth);
+  const [layoutTransitionReady, setLayoutTransitionReady] = useState<boolean>(false);
   const [isDesktopGrid, setIsDesktopGrid] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
   );
@@ -390,17 +490,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
   useLayoutEffect(() => {
     const updateMeasure = () => {
       if (gridRef.current) {
-        setGridWidth(gridRef.current.clientWidth);
+        const w = gridRef.current.clientWidth;
+        if (w > 0) {
+          lastKnownDashboardGridWidth = w;
+          setGridWidth(w);
+        }
       }
       setIsDesktopGrid(window.innerWidth >= 1024);
     };
     updateMeasure();
 
+    let settleRaf2 = 0;
+    const settleRaf1 = window.requestAnimationFrame(() => {
+      settleRaf2 = window.requestAnimationFrame(() => {
+        setLayoutTransitionReady(true);
+      });
+    });
+
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined' && gridRef.current) {
       ro = new ResizeObserver(() => {
         if (gridRef.current) {
-          setGridWidth(gridRef.current.clientWidth);
+          const w = gridRef.current.clientWidth;
+          if (w > 0) {
+            lastKnownDashboardGridWidth = w;
+            setGridWidth(w);
+          }
         }
         setIsDesktopGrid(window.innerWidth >= 1024);
       });
@@ -408,6 +523,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
     window.addEventListener('resize', updateMeasure);
     return () => {
+      window.cancelAnimationFrame(settleRaf1);
+      if (settleRaf2) window.cancelAnimationFrame(settleRaf2);
       ro?.disconnect();
       window.removeEventListener('resize', updateMeasure);
     };
@@ -913,7 +1030,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [studyDays]);
 
   return (
-    <div className="relative min-h-[100dvh] md:min-h-screen pt-16 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 transition-colors duration-300">
+    <div className="relative min-h-[100dvh] md:min-h-screen pt-5 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 transition-colors duration-300">
       {/* Dark Spatial Metaverse Depth Scrim (dims entire background, header & heatmap cleanly) */}
       <AnimatePresence>
         {isMetaverseEdit && (
@@ -952,7 +1069,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Top Welcome & Metaverse Edit Control */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
+        <div className="pr-14 md:pr-0">
           <div
             className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
             style={{ color: activePalette.primary }}
@@ -975,12 +1092,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </p>
         </div>
 
-        {/* Metaverse Edit Button (identical dimensions to prior Search Bar) */}
+        {/* METAVERSE Freeform Edit Button */}
         <button
           type="button"
           onClick={toggleMetaverseEdit}
           aria-pressed={isMetaverseEdit}
-          className={`relative w-full md:w-88 py-2.5 px-4 rounded-xl text-sm font-semibold flex items-center justify-between border transition-all duration-300 cursor-pointer focus:outline-none ${
+          title={isMetaverseEdit ? 'Exit Metaverse mode and fit cards to closest ratio' : 'Enter Metaverse freeform layout mode'}
+          className={`relative px-4 py-2.5 min-h-[42px] rounded-xl text-xs font-extrabold tracking-wider uppercase inline-flex items-center justify-center gap-2 border shrink-0 self-start md:self-auto transition-all duration-300 cursor-pointer focus:outline-none ${
             isMetaverseEdit
               ? 'z-[220] text-white'
               : `liquid-glass shadow-inner ${
@@ -1002,24 +1120,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 }
           }
         >
-          <span className="flex items-center gap-2.5 whitespace-nowrap">
-            <Box
-              className="w-4 h-4 shrink-0 transition-transform duration-300"
-              style={{
-                color: isMetaverseEdit ? '#ffffff' : activePalette.primary,
-                filter: isMetaverseEdit ? `drop-shadow(0 0 8px ${activePalette.primary})` : undefined,
-                transform: isMetaverseEdit ? 'scale(1.1) rotate(12deg)' : 'scale(1)',
-              }}
-            />
-            <span>metaverse edit</span>
-          </span>
-          <span
-            className={`text-xs font-medium whitespace-nowrap transition-opacity ${
-              isMetaverseEdit ? 'text-white/90' : darkMode ? 'text-slate-400' : 'text-slate-500'
-            }`}
-          >
-            {isMetaverseEdit ? 'Exit & Fit Ratios' : 'Freeform Space'}
-          </span>
+          <Box
+            className="w-4 h-4 shrink-0 transition-transform duration-300"
+            style={{
+              color: isMetaverseEdit ? '#ffffff' : activePalette.primary,
+              filter: isMetaverseEdit ? `drop-shadow(0 0 8px ${activePalette.primary})` : undefined,
+              transform: isMetaverseEdit ? 'scale(1.12) rotate(12deg)' : 'scale(1)',
+            }}
+          />
+          <span>METAVERSE</span>
         </button>
       </div>
 
@@ -1188,13 +1297,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
         className={`relative w-full ${
           isMetaverseEdit
-            ? 'z-[220] transition-[height] duration-300 ease-out'
+            ? `z-[220]${layoutTransitionReady ? ' transition-[height] duration-300 ease-out' : ''}`
             : packedLayout
-            ? 'transition-[height] duration-300 ease-out'
+            ? layoutTransitionReady
+              ? 'transition-[height] duration-300 ease-out'
+              : ''
             : 'flex flex-col gap-6'
         }`}
       >
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
           {cards.map((card, idx) => {
             const rect = !isMetaverseEdit ? packedLayout?.rects[idx] : undefined;
             const freeRect = isMetaverseEdit ? freeLayoutMap[card.id] : undefined;
@@ -1334,7 +1445,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       ? 'cursor-grabbing touch-none'
                       : 'cursor-grab touch-none'
                     : rect
-                    ? isAnyResizing
+                    ? isAnyResizing || !layoutTransitionReady
                       ? ''
                       : 'transition-[left,top,width,height] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]'
                     : 'w-full shrink-0'

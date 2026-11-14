@@ -371,10 +371,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   };
 
   return (
-    <div className="relative min-h-[100dvh] md:min-h-screen pt-16 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
+    <div className="relative min-h-[100dvh] md:min-h-screen pt-5 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
       {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
+        <div className="pr-14 md:pr-0">
           <div
             className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
             style={{ color: primaryAccent }}
