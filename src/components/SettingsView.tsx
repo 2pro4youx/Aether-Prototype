@@ -19,12 +19,15 @@ import {
   Bot,
   ChevronDown,
   ExternalLink,
+  Wand2,
+  Shuffle,
+  Copy,
 } from 'lucide-react';
 import { PALETTES } from '../data/mockData';
-import { ColorPaletteId, ColorPalette, CursorStyleId } from '../types';
+import { ColorPaletteId, ColorPalette, CustomPaletteConfig, CursorStyleId } from '../types';
 import { CURSOR_OPTIONS, CursorOption, getCursorGradient, generateCursorSvg, normalizeCursorStyle } from '../utils/cursorUtils';
 import { getLenis } from '../hooks/useSmoothScroll';
-import { getActiveGeminiApiKey, setActiveGeminiApiKey, callGeminiChat, AVAILABLE_GEMINI_MODELS } from '../utils/geminiClient';
+import { getActiveGeminiApiKey, setActiveGeminiApiKey, verifyGeminiApiKey, AVAILABLE_GEMINI_MODELS } from '../utils/geminiClient';
 
 interface SettingsViewProps {
   darkMode: boolean;
@@ -32,6 +35,8 @@ interface SettingsViewProps {
   activePaletteId: ColorPaletteId;
   activePalette: ColorPalette;
   onSelectPalette: (id: ColorPaletteId) => void;
+  customPaletteConfig: CustomPaletteConfig;
+  onUpdateCustomPalette: (updates: Partial<CustomPaletteConfig>, activate?: boolean) => void;
   selectedModel: string;
   onChangeModel: (model: string) => void;
   enableThinking: boolean;
@@ -568,6 +573,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   activePaletteId,
   activePalette,
   onSelectPalette,
+  customPaletteConfig,
+  onUpdateCustomPalette,
   selectedModel,
   onChangeModel,
   enableThinking,
@@ -582,6 +589,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSignOut,
   authenticatedEmail,
 }) => {
+  const [isCustomBuilderOpen, setIsCustomBuilderOpen] = useState(activePaletteId === 'custom');
   const [apiKeyInput, setApiKeyInput] = useState(() => getActiveGeminiApiKey());
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [keyStatus, setKeyStatus] = useState<{
@@ -591,21 +599,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   } | null>(null);
 
   const handleSaveAndTestKey = async () => {
+    const trimmedKey = apiKeyInput.trim();
     setIsTestingKey(true);
     setKeyStatus(null);
-    setActiveGeminiApiKey(apiKeyInput.trim());
+    setActiveGeminiApiKey(trimmedKey);
 
     try {
-      const res = await callGeminiChat({
-        message: 'Ping verification. Respond with "Gemini AI Live" in 3 words.',
-        model: selectedModel,
-      });
+      const res = await verifyGeminiApiKey(trimmedKey);
 
-      if (res.success) {
+      if (res.valid) {
         setKeyStatus({
           tested: true,
           success: true,
-          message: `Live Connection Confirmed · ${res.modelUsed || selectedModel} active`,
+          message: `Live Connection Confirmed · ${res.model || selectedModel} ready`,
         });
       } else {
         setKeyStatus({
@@ -780,20 +786,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* 10 Curated Color Palettes */}
+      {/* Curated Color Palettes + Make Your Own Custom Theme */}
       <div className="liquid-glass rounded-2xl p-6 shadow-xl flex flex-col gap-4 smooth-scroll-contain">
-        <div className="space-y-0.5">
-          <h3
-            className={`text-base font-bold flex items-center gap-2 ${
-              darkMode ? 'text-slate-100' : 'text-slate-900'
-            }`}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="space-y-0.5">
+            <h3
+              className={`text-base font-bold flex items-center gap-2 ${
+                darkMode ? 'text-slate-100' : 'text-slate-900'
+              }`}
+            >
+              <Palette className="w-4 h-4" style={{ color: activePalette.primary }} />
+              <span>Color Themes &amp; Custom Palette</span>
+            </h3>
+            <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Click any curated gradient or design your own custom theme with primary, accent, and canvas base colors.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsCustomBuilderOpen((prev) => !prev);
+              if (activePaletteId !== 'custom') {
+                onSelectPalette('custom');
+              }
+            }}
+            style={{
+              backgroundColor: `${activePalette.primary}18`,
+              borderColor: `${activePalette.primary}45`,
+              color: darkMode ? '#ffffff' : activePalette.primary,
+            }}
+            className="px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition hover:opacity-90 shrink-0 self-start sm:self-auto cursor-pointer"
           >
-            <Palette className="w-4 h-4" style={{ color: activePalette.primary }} />
-            <span>{PALETTES.length} Curated Color Gradients</span>
-          </h3>
-          <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            Click any palette to globally transform headers, buttons, borders, and ambient highlights across the entire app.
-          </p>
+            <Wand2 className="w-3.5 h-3.5" />
+            <span>{isCustomBuilderOpen ? 'Hide Palette Studio' : 'Make Your Own Theme'}</span>
+          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
@@ -813,9 +840,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     : {}
                 }
                 className={`p-3.5 rounded-xl border transition cursor-pointer flex items-center justify-between group liquid-glass-tile ${
-                  isSelected
-                    ? 'ring-1 ring-offset-1 ring-amber-400/50'
-                    : ''
+                  isSelected ? 'ring-1 ring-offset-1 ring-amber-400/50' : ''
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -843,11 +868,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     >
                       {pal.name}
                     </h4>
-                    <p
-                      className={`text-[10px] truncate ${
-                        darkMode ? 'text-slate-400' : 'text-slate-500'
-                      }`}
-                    >
+                    <p className={`text-[10px] truncate ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       {pal.description}
                     </p>
                   </div>
@@ -868,7 +889,382 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             );
           })}
+
+          {/* 12th Card: Make Your Own Theme (Custom Palette Card) */}
+          {(() => {
+            const isCustomSelected = activePaletteId === 'custom';
+            return (
+              <div
+                onClick={() => {
+                  onSelectPalette('custom');
+                  setIsCustomBuilderOpen(true);
+                }}
+                style={
+                  isCustomSelected
+                    ? {
+                        borderColor: customPaletteConfig.primary,
+                        backgroundColor: darkMode
+                          ? `${customPaletteConfig.primary}18`
+                          : `${customPaletteConfig.primary}15`,
+                        boxShadow: `0 0 18px ${customPaletteConfig.primary}35`,
+                      }
+                    : {}
+                }
+                className={`p-3.5 rounded-xl border transition cursor-pointer flex items-center justify-between group liquid-glass-tile ${
+                  isCustomSelected ? 'ring-1 ring-offset-1 ring-white/40' : 'border-dashed'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className="w-10 h-10 rounded-xl shrink-0 shadow-md border border-white/30 flex items-center justify-center text-white"
+                    style={{
+                      background: `linear-gradient(135deg, ${customPaletteConfig.primary}, ${customPaletteConfig.accent})`,
+                    }}
+                  >
+                    {isCustomSelected ? (
+                      <Check className="w-5 h-5 drop-shadow-md stroke-[3]" />
+                    ) : (
+                      <Wand2 className="w-4 h-4 drop-shadow-md" />
+                    )}
+                  </div>
+
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <h4
+                        className={`text-xs font-bold truncate ${
+                          isCustomSelected
+                            ? darkMode
+                              ? 'text-white'
+                              : 'text-slate-900'
+                            : darkMode
+                            ? 'text-slate-200 group-hover:text-white'
+                            : 'text-slate-800 group-hover:text-slate-950'
+                        }`}
+                      >
+                        {customPaletteConfig.name || 'Custom Studio'}
+                      </h4>
+                      <span
+                        className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded-full border shrink-0"
+                        style={{
+                          borderColor: `${customPaletteConfig.primary}50`,
+                          color: darkMode ? '#ffffff' : customPaletteConfig.primary,
+                          backgroundColor: `${customPaletteConfig.primary}18`,
+                        }}
+                      >
+                        Custom
+                      </span>
+                    </div>
+                    <p className={`text-[10px] truncate ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Make your own theme · Click to customize colors
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 pl-2 shrink-0">
+                  <span
+                    className="w-3 h-3 rounded-full border border-white/25"
+                    style={{ backgroundColor: customPaletteConfig.primary }}
+                    title="Custom Primary"
+                  />
+                  <span
+                    className="w-3 h-3 rounded-full border border-white/25"
+                    style={{ backgroundColor: customPaletteConfig.accent }}
+                    title="Custom Accent"
+                  />
+                  <span
+                    className="w-3 h-3 rounded-full border border-white/25"
+                    style={{ backgroundColor: customPaletteConfig.bgDark }}
+                    title="Custom Dark Canvas"
+                  />
+                </div>
+              </div>
+            );
+          })()}
         </div>
+
+        {/* Custom Theme Palette Builder Studio */}
+        {(isCustomBuilderOpen || activePaletteId === 'custom') && (
+          <div
+            className={`mt-2 p-5 rounded-2xl border space-y-4 transition-colors ${
+              darkMode
+                ? 'bg-slate-950/60 border-white/10'
+                : 'bg-white/80 border-slate-200/90 shadow-sm'
+            }`}
+            style={{
+              borderColor: `${customPaletteConfig.primary}45`,
+            }}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-sm"
+                  style={{
+                    background: `linear-gradient(135deg, ${customPaletteConfig.primary}, ${customPaletteConfig.accent})`,
+                  }}
+                >
+                  <Wand2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                    Custom Palette Studio
+                  </h4>
+                  <p className={`text-[11px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Pick primary, accent, and canvas base colors — changes apply live across the workspace.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {activePaletteId !== 'custom' && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateCustomPalette(
+                        {
+                          name: `${activePalette.name.split(' ')[0]} Remix`,
+                          primary: activePalette.primary,
+                          accent: activePalette.accent,
+                          bgDark: activePalette.bgDark,
+                        },
+                        true
+                      )
+                    }
+                    className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                      darkMode
+                        ? 'border-white/15 bg-white/5 text-slate-200 hover:bg-white/10'
+                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                    title="Copy currently active preset colors into your custom palette"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Clone Current</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hue = Math.floor(Math.random() * 360);
+                    const hue2 = (hue + 38 + Math.floor(Math.random() * 45)) % 360;
+                    const hslToHex = (h: number, s: number, l: number) => {
+                      s /= 100;
+                      l /= 100;
+                      const a = s * Math.min(l, 1 - l);
+                      const f = (n: number) => {
+                        const k = (n + h / 30) % 12;
+                        const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+                        return Math.round(255 * color)
+                          .toString(16)
+                          .padStart(2, '0');
+                      };
+                      return `#${f(0)}${f(8)}${f(4)}`;
+                    };
+                    onUpdateCustomPalette(
+                      {
+                        primary: hslToHex(hue, 84, 58),
+                        accent: hslToHex(hue2, 82, 56),
+                        bgDark: hslToHex(hue, 38, 6),
+                      },
+                      true
+                    );
+                  }}
+                  className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                    darkMode
+                      ? 'border-white/15 bg-white/5 text-slate-200 hover:bg-white/10'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                  title="Generate a fresh harmonious color combination"
+                >
+                  <Shuffle className="w-3 h-3" />
+                  <span>Randomize</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Theme Name */}
+              <div className="space-y-1.5">
+                <label className={`block text-[11px] font-semibold ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Theme Name
+                </label>
+                <input
+                  type="text"
+                  maxLength={28}
+                  value={customPaletteConfig.name}
+                  onChange={(e) => onUpdateCustomPalette({ name: e.target.value }, true)}
+                  placeholder="My Custom Theme"
+                  className={`w-full px-3 py-2 rounded-xl border text-xs font-medium focus:outline-none focus:ring-2 ${
+                    darkMode
+                      ? 'bg-slate-900/80 border-white/15 text-white focus:ring-white/20'
+                      : 'bg-white border-slate-300 text-slate-900 focus:ring-slate-300'
+                  }`}
+                />
+              </div>
+
+              {/* Primary Color Picker */}
+              <div className="space-y-1.5">
+                <label className={`block text-[11px] font-semibold ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Primary Color
+                </label>
+                <div
+                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border ${
+                    darkMode ? 'bg-slate-900/80 border-white/15' : 'bg-white border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="color"
+                    value={customPaletteConfig.primary}
+                    onChange={(e) => onUpdateCustomPalette({ primary: e.target.value }, true)}
+                    className="w-7 h-7 rounded-lg border-0 bg-transparent cursor-pointer shrink-0 p-0"
+                    aria-label="Pick primary color"
+                  />
+                  <input
+                    type="text"
+                    value={customPaletteConfig.primary.toUpperCase()}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                        onUpdateCustomPalette({ primary: val }, true);
+                      } else if (/^#[0-9A-Fa-f]{0,6}$/.test(val)) {
+                        onUpdateCustomPalette({ primary: val }, false);
+                      }
+                    }}
+                    className={`w-full bg-transparent text-xs font-mono focus:outline-none ${
+                      darkMode ? 'text-slate-100' : 'text-slate-900'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Accent Color Picker */}
+              <div className="space-y-1.5">
+                <label className={`block text-[11px] font-semibold ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Accent Color
+                </label>
+                <div
+                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border ${
+                    darkMode ? 'bg-slate-900/80 border-white/15' : 'bg-white border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="color"
+                    value={customPaletteConfig.accent}
+                    onChange={(e) => onUpdateCustomPalette({ accent: e.target.value }, true)}
+                    className="w-7 h-7 rounded-lg border-0 bg-transparent cursor-pointer shrink-0 p-0"
+                    aria-label="Pick accent color"
+                  />
+                  <input
+                    type="text"
+                    value={customPaletteConfig.accent.toUpperCase()}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                        onUpdateCustomPalette({ accent: val }, true);
+                      } else if (/^#[0-9A-Fa-f]{0,6}$/.test(val)) {
+                        onUpdateCustomPalette({ accent: val }, false);
+                      }
+                    }}
+                    className={`w-full bg-transparent text-xs font-mono focus:outline-none ${
+                      darkMode ? 'text-slate-100' : 'text-slate-900'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Dark Canvas Base Picker */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className={`text-[11px] font-semibold ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Canvas Dark Base
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {['#090d16', '#050507', '#060b19', '#12081c'].map((bgHex) => (
+                      <button
+                        key={bgHex}
+                        type="button"
+                        onClick={() => onUpdateCustomPalette({ bgDark: bgHex }, true)}
+                        className="w-3.5 h-3.5 rounded-full border border-white/30 cursor-pointer hover:scale-110 transition-transform"
+                        style={{ backgroundColor: bgHex }}
+                        title={`Set base ${bgHex}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div
+                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border ${
+                    darkMode ? 'bg-slate-900/80 border-white/15' : 'bg-white border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="color"
+                    value={customPaletteConfig.bgDark}
+                    onChange={(e) => onUpdateCustomPalette({ bgDark: e.target.value }, true)}
+                    className="w-7 h-7 rounded-lg border-0 bg-transparent cursor-pointer shrink-0 p-0"
+                    aria-label="Pick dark background base color"
+                  />
+                  <input
+                    type="text"
+                    value={customPaletteConfig.bgDark.toUpperCase()}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                        onUpdateCustomPalette({ bgDark: val }, true);
+                      } else if (/^#[0-9A-Fa-f]{0,6}$/.test(val)) {
+                        onUpdateCustomPalette({ bgDark: val }, false);
+                      }
+                    }}
+                    className={`w-full bg-transparent text-xs font-mono focus:outline-none ${
+                      darkMode ? 'text-slate-100' : 'text-slate-900'
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Live Gradient & Surface Preview */}
+            <div
+              className="rounded-xl p-3 border flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+              style={{
+                backgroundColor: darkMode ? customPaletteConfig.bgDark : '#f8fafc',
+                borderColor: `${customPaletteConfig.primary}45`,
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="h-7 w-24 rounded-lg shadow-sm border border-white/25"
+                  style={{
+                    background: `linear-gradient(135deg, ${customPaletteConfig.primary}, ${customPaletteConfig.accent})`,
+                  }}
+                />
+                <span className={`text-xs font-medium ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                  Live preview · Primary glow + Gradient accent
+                </span>
+              </div>
+
+              {activePaletteId === 'custom' ? (
+                <span
+                  className="px-3 py-1 rounded-lg text-[11px] font-bold text-slate-950 shadow-sm self-start sm:self-auto"
+                  style={{
+                    background: `linear-gradient(135deg, ${customPaletteConfig.primary}, ${customPaletteConfig.accent})`,
+                  }}
+                >
+                  Active Custom Theme
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onSelectPalette('custom')}
+                  className="px-3 py-1 rounded-lg text-[11px] font-bold text-slate-950 shadow-sm self-start sm:self-auto hover:opacity-90 transition cursor-pointer"
+                  style={{
+                    background: `linear-gradient(135deg, ${customPaletteConfig.primary}, ${customPaletteConfig.accent})`,
+                  }}
+                >
+                  Apply Custom Theme
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Precision Cursor Selector & Dynamic Color Adapter */}

@@ -170,6 +170,35 @@ export function useChatSmoothScroll<
     }
   }, []);
 
-  return { wrapperRef, contentRef, lenisRef, scrollToBottom };
+  const scrollToElementTop = useCallback(
+    (element: HTMLElement | null, topOffset: number = 14, immediate: boolean = false) => {
+      if (!element || !wrapperRef.current) return;
+      const wrapper = wrapperRef.current;
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const elRect = element.getBoundingClientRect();
+      const currentScroll = lenisRef.current ? lenisRef.current.scroll : wrapper.scrollTop;
+      const maxScroll = lenisRef.current
+        ? lenisRef.current.limit
+        : Math.max(0, wrapper.scrollHeight - wrapper.clientHeight);
+      const targetTop = Math.max(
+        0,
+        Math.min(maxScroll, currentScroll + (elRect.top - wrapperRect.top) - topOffset)
+      );
+
+      if (lenisRef.current) {
+        lenisRef.current.resize();
+        lenisRef.current.scrollTo(targetTop, { immediate });
+      } else {
+        wrapper.scrollTo({
+          top: targetTop,
+          behavior: immediate ? 'instant' : 'smooth',
+        });
+      }
+    },
+    []
+  );
+
+  return { wrapperRef, contentRef, lenisRef, scrollToBottom, scrollToElementTop };
 }
+
 

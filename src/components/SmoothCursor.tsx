@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from 'react';
-import { motion, useMotionValue, useSpring } from 'motion/react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ColorPalette, CursorStyleId } from '../types';
 import { normalizeCursorStyle } from '../utils/cursorUtils';
 
@@ -16,19 +15,10 @@ export const SmoothCursor: React.FC<SmoothCursorProps> = ({
   const norm = normalizeCursorStyle(cursorStyle);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
-  // Pure MotionValues for position, opacity & click scale — zero React re-renders during mouse movement
-  const cursorX = useMotionValue(-100);
-  const cursorY = useMotionValue(-100);
-  const cursorOpacity = useMotionValue(0);
-  const cursorScale = useMotionValue(1);
+  const cursorRef = useRef<HTMLDivElement | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
-  // Ultra-responsive, silky-smooth spring tracking (sub-16ms convergence with zero jitter)
-  const springConfig = { damping: 38, stiffness: 850, mass: 0.18, restDelta: 0.0005 };
-  const smoothX = useSpring(cursorX, springConfig);
-  const smoothY = useSpring(cursorY, springConfig);
-  const smoothScale = useSpring(cursorScale, { damping: 28, stiffness: 650 });
-
-  // Detect touch devices (SmoothCursor disabled on touch)
+  // Detect touch devices (custom overlay disabled on touch)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const isTouch =
@@ -41,72 +31,92 @@ export const SmoothCursor: React.FC<SmoothCursorProps> = ({
 
   const isEnabled = !isTouchDevice && norm === 'chevron';
 
-  // Optimized lightweight event listeners (only active when chevron is selected, 0ms listener overhead)
+  // Direct zero-lag GPU transform updates via pointermove — zero spring solver latency or React re-renders
   useEffect(() => {
     if (!isEnabled) return;
 
-    let isVisible = false;
+    const container = cursorRef.current;
+    const svg = svgRef.current;
+    if (!container || !svg) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
-      cursorX.set(e.clientX);
-      cursorY.set(e.clientY);
-      if (!isVisible) {
-        isVisible = true;
-        cursorOpacity.set(1);
+    let visible = false;
+    let pressed = false;
+    let lastX = -100;
+    let lastY = -100;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      const x = e.clientX;
+      const y = e.clientY;
+      if (x !== lastX || y !== lastY) {
+        lastX = x;
+        lastY = y;
+        container.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      }
+      if (!visible) {
+        visible = true;
+        container.style.opacity = '1';
       }
     };
 
-    const handleMouseDown = () => cursorScale.set(0.92);
-    const handleMouseUp = () => cursorScale.set(1);
-    const handleMouseLeave = () => {
-      isVisible = false;
-      cursorOpacity.set(0);
-    };
-    const handleMouseEnter = () => {
-      isVisible = true;
-      cursorOpacity.set(1);
-    };
-    const handleBlur = () => {
-      isVisible = false;
-      cursorOpacity.set(0);
+    const handlePointerDown = () => {
+      if (!pressed) {
+        pressed = true;
+        svg.style.transform = 'translate3d(-5.5px, -3.21px, 0) scale(0.92)';
+      }
     };
 
-    window.addEventListener('mousemove', handleMouseMove, { passive: true });
-    window.addEventListener('mousedown', handleMouseDown, { passive: true });
-    window.addEventListener('mouseup', handleMouseUp, { passive: true });
-    window.addEventListener('blur', handleBlur);
-    document.addEventListener('mouseleave', handleMouseLeave);
-    document.addEventListener('mouseenter', handleMouseEnter);
+    const handlePointerUp = () => {
+      if (pressed) {
+        pressed = false;
+        svg.style.transform = 'translate3d(-5.5px, -3.21px, 0) scale(1)';
+      }
+    };
+
+    const hideCursor = () => {
+      if (visible) {
+        visible = false;
+        container.style.opacity = '0';
+      }
+      if (pressed) {
+        pressed = false;
+        svg.style.transform = 'translate3d(-5.5px, -3.21px, 0) scale(1)';
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    window.addEventListener('pointerdown', handlePointerDown, { passive: true });
+    window.addEventListener('pointerup', handlePointerUp, { passive: true });
+    window.addEventListener('blur', hideCursor);
+    document.addEventListener('mouseleave', hideCursor);
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('blur', handleBlur);
-      document.removeEventListener('mouseleave', handleMouseLeave);
-      document.removeEventListener('mouseenter', handleMouseEnter);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('blur', hideCursor);
+      document.removeEventListener('mouseleave', hideCursor);
     };
-  }, [isEnabled, cursorX, cursorY, cursorOpacity, cursorScale]);
+  }, [isEnabled]);
 
   if (!isEnabled) {
     return null;
   }
 
   return (
-    <motion.div
+    <div
+      ref={cursorRef}
       className="fixed top-0 left-0 pointer-events-none z-[99999]"
       style={{
-        x: smoothX,
-        y: smoothY,
-        scale: smoothScale,
-        opacity: cursorOpacity,
+        opacity: 0,
+        transform: 'translate3d(-100px, -100px, 0)',
         willChange: 'transform',
-        transform: 'translate3d(0, 0, 0)',
+        contain: 'layout style',
         backfaceVisibility: 'hidden',
       }}
       aria-hidden="true"
     >
       <svg
+        ref={svgRef}
         xmlns="http://www.w3.org/2000/svg"
         width="26"
         height="26"
@@ -114,8 +124,9 @@ export const SmoothCursor: React.FC<SmoothCursorProps> = ({
         className="pointer-events-none"
         style={{
           overflow: 'visible',
-          transform: 'translate(-5.5px, -3.21px)',
-          filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45))',
+          transform: 'translate3d(-5.5px, -3.21px, 0) scale(1)',
+          transition: 'transform 75ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+          willChange: 'transform',
         }}
       >
         <defs>
@@ -124,6 +135,14 @@ export const SmoothCursor: React.FC<SmoothCursorProps> = ({
             <stop id="smoothCursorStop2" offset="100%" stopColor="var(--cursor-color-2, #ffffff)" />
           </linearGradient>
         </defs>
+
+        {/* Vector drop shadow (avoids CSS filter: drop-shadow per-frame re-rasterization lag) */}
+        <path
+          d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L6.35 2.86c-.32-.32-.85-.1-.85.35z"
+          fill="#050811"
+          fillOpacity="0.32"
+          transform="translate(1, 1.5)"
+        />
 
         {/* Stemless Arrow: vertical left edge, solid white / dynamic theme fill, crisp dark border */}
         <path
@@ -135,6 +154,6 @@ export const SmoothCursor: React.FC<SmoothCursorProps> = ({
           strokeLinejoin="round"
         />
       </svg>
-    </motion.div>
+    </div>
   );
 };

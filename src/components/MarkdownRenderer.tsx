@@ -2,7 +2,7 @@ import React, { useMemo, useRef } from 'react';
 import { marked } from 'marked';
 import { getLanguageTheme } from '../utils/languageThemes';
 import { renderHighlightedCodeToHtml } from '../utils/codeHighlighter';
-import { parseAndRenderMath } from '../utils/mathRenderer';
+import { renderKatex, normalizeMathExpression } from '../utils/mathRenderer';
 import { cleanGeminiReply } from '../utils/geminiClient';
 
 interface MarkdownRendererProps {
@@ -25,9 +25,27 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       // Step 0: Pre-process and intercept any raw JSON action or image generation responses
       const sanitizedContent = cleanGeminiReply(content);
 
-      // Step 1: Pre-process and render KaTeX math formulas (equations, inline math, and formulations)
-      const mathResult = parseAndRenderMath(sanitizedContent);
-      const textToParse = mathResult.html || sanitizedContent;
+      // Step 1: Protect math blocks ($$...$$ and $...$) with placeholders so marked parses markdown cleanly
+      const mathBlocks: string[] = [];
+      const mathInlines: string[] = [];
+
+      let textToParse = sanitizedContent;
+
+      // Extract block math: $$...$$
+      textToParse = textToParse.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+        const normalized = normalizeMathExpression(math);
+        const rendered = renderKatex(normalized, true);
+        mathBlocks.push(`<div class="katex-block-wrapper my-2.5 flex justify-center overflow-x-auto py-1 select-text">${rendered}</div>`);
+        return `\n\nKATEXBLOCKPLACEHOLDER${mathBlocks.length - 1}TOKEN\n\n`;
+      });
+
+      // Extract inline math: $...$
+      textToParse = textToParse.replace(/(?<!\\)\$(?!\s)([^\$\n]+?)(?<!\s)\$(?!\$)/g, (_, math) => {
+        const normalized = normalizeMathExpression(math);
+        const rendered = renderKatex(normalized, false);
+        mathInlines.push(`<span class="katex-inline-wrapper mx-0.5 select-text">${rendered}</span>`);
+        return `KATEXINLINEPLACEHOLDER${mathInlines.length - 1}TOKEN`;
+      });
 
       const renderer = new marked.Renderer();
 
@@ -60,12 +78,27 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
         } transition cursor-pointer flex items-center gap-1 font-mono"><span>Copy</span></button></div><pre class="p-3.5 text-xs font-mono overflow-x-auto leading-relaxed m-0" style="tab-size: 4;"><code>${highlightedHtml}</code></pre></div>`;
       };
 
-      const parsed = marked.parse(textToParse, {
+      let parsed = marked.parse(textToParse, {
         gfm: true,
         breaks: true,
         async: false,
         renderer,
       }) as string;
+
+      // Step 2: Restore KaTeX HTML from placeholders
+      parsed = parsed.replace(/<p>\s*KATEXBLOCKPLACEHOLDER(\d+)TOKEN\s*<\/p>/g, (_, idx) => {
+        const i = parseInt(idx, 10);
+        return mathBlocks[i] || '';
+      });
+      parsed = parsed.replace(/KATEXBLOCKPLACEHOLDER(\d+)TOKEN/g, (_, idx) => {
+        const i = parseInt(idx, 10);
+        return mathBlocks[i] || '';
+      });
+      parsed = parsed.replace(/KATEXINLINEPLACEHOLDER(\d+)TOKEN/g, (_, idx) => {
+        const i = parseInt(idx, 10);
+        return mathInlines[i] || '';
+      });
+
       return parsed;
     } catch {
       return content;

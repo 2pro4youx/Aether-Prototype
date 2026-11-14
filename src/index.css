@@ -103,9 +103,7 @@ body {
   --tilt-z: 0px;
   --tilt-scale: 1;
   --tilt-y-offset: 0px;
-  transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(var(--tilt-z, 0px)) translateY(var(--tilt-y-offset, 0px)) scale(var(--tilt-scale, 1));
-  transform-style: preserve-3d;
-  will-change: transform;
+  transform-style: flat;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.45) 50%, rgba(255, 255, 255, 0.60) 100%);
   -webkit-backdrop-filter: blur(20px) saturate(var(--glass-saturation, 1.25));
   backdrop-filter: blur(20px) saturate(var(--glass-saturation, 1.25));
@@ -139,9 +137,7 @@ body {
   --tilt-z: 0px;
   --tilt-scale: 1;
   --tilt-y-offset: 0px;
-  transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(var(--tilt-z, 0px)) translateY(var(--tilt-y-offset, 0px)) scale(var(--tilt-scale, 1));
-  transform-style: preserve-3d;
-  will-change: transform;
+  transform-style: flat;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.30) 100%);
   -webkit-backdrop-filter: blur(14px) saturate(var(--glass-saturation, 1.2));
   backdrop-filter: blur(14px) saturate(var(--glass-saturation, 1.2));
@@ -492,12 +488,14 @@ body.glow-tuning-active .liquid-glass-tile::after {
 .liquid-glass:hover:not(.no-lift):not(.card-pressed):not(:active) {
   --tilt-y-offset: 0px;
   --tilt-z: 0px;
+  transform-style: flat;
   transition: transform 0.1s cubic-bezier(0.1, 0.9, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .liquid-glass-tile:hover:not(.no-lift):not(.card-pressed):not(:active) {
   --tilt-y-offset: 0px;
   --tilt-z: 0px;
+  transform-style: flat;
   transition: transform 0.1s cubic-bezier(0.1, 0.9, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
@@ -529,6 +527,8 @@ body.glow-tuning-active .liquid-glass-tile::after {
   --tilt-scale: 0.9989;
   --tilt-y-offset: 2px;
   --tilt-z: 1px;
+  transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(var(--tilt-z, 0px)) translateY(var(--tilt-y-offset, 0px)) scale(var(--tilt-scale, 1));
+  transform-style: preserve-3d;
   transition: transform 0.08s cubic-bezier(0.1, 0.9, 0.2, 1), box-shadow 0.08s ease, border-color 0.08s ease !important;
   box-shadow: 
     inset 0 1px 2px rgba(0, 0, 0, 0.08),
@@ -1077,52 +1077,67 @@ body.glow-tuning-active .liquid-glass-tile::after {
   color: #ffffff !important;
 }
 
-/* Fullscreen Frost Sweep — window change transition overlay */
-/* The frost blur decreases smoothly (28px down to 0px) as content appears, rather than abruptly snapping off */
+/* Fullscreen Frost Sweep — long, refined window change blur transition overlay */
+/* Static backdrop-filter with hardware-accelerated opacity transition guarantees 60+ FPS without rasterization lag */
 @keyframes fullscreenFrostSweep {
   0% {
     opacity: 0;
-    backdrop-filter: blur(0px) saturate(1.2);
-    -webkit-backdrop-filter: blur(0px) saturate(1.2);
   }
-  25% {
+  12% {
     opacity: 1;
-    backdrop-filter: blur(28px) saturate(1.8) brightness(1.08);
-    -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.08);
   }
-  50% {
-    opacity: 1;
-    backdrop-filter: blur(24px) saturate(1.6);
-    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  32% {
+    opacity: 0.96;
   }
-  75% {
-    opacity: 0.65;
-    backdrop-filter: blur(10px) saturate(1.3);
-    -webkit-backdrop-filter: blur(10px) saturate(1.3);
+  62% {
+    opacity: 0.56;
+  }
+  84% {
+    opacity: 0.2;
   }
   100% {
     opacity: 0;
-    backdrop-filter: blur(0px) saturate(1.0);
-    -webkit-backdrop-filter: blur(0px) saturate(1.0);
   }
 }
 
-/* Tab content reveal — fades in after the frost peak so content emerges as the blur lifts */
+/* Tab content reveal — softly emerges as the long frost blur lifts */
 @keyframes tabContentReveal {
   0%   { opacity: 0; }
   100% { opacity: 1; }
 }
 
 .tab-content-reveal {
-  animation: tabContentReveal 420ms 180ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: tabContentReveal 1050ms 110ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .fullscreen-frost-sweep {
-  background: rgba(125, 125, 125, 0.05);
-  animation: fullscreenFrostSweep 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  will-change: opacity, backdrop-filter;
-  transform: translateZ(0);
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  backdrop-filter: blur(26px) saturate(1.45) brightness(1.03);
+  -webkit-backdrop-filter: blur(26px) saturate(1.45) brightness(1.03);
+  background: radial-gradient(
+    ellipse 90% 70% at 50% 35%,
+    color-mix(in srgb, var(--palette-primary, #f59e0b) 10%, rgba(255, 255, 255, 0.16)) 0%,
+    color-mix(in srgb, var(--palette-accent, #ec4899) 7%, rgba(241, 245, 249, 0.12)) 55%,
+    rgba(248, 250, 252, 0.08) 100%
+  );
+  animation: fullscreenFrostSweep 1250ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: opacity;
+  transform: translate3d(0, 0, 0);
+  contain: strict;
   pointer-events: none;
+}
+
+.dark .fullscreen-frost-sweep {
+  backdrop-filter: blur(26px) saturate(1.5) brightness(0.96);
+  -webkit-backdrop-filter: blur(26px) saturate(1.5) brightness(0.96);
+  background: radial-gradient(
+    ellipse 90% 70% at 50% 35%,
+    color-mix(in srgb, var(--palette-primary, #f59e0b) 14%, rgba(15, 23, 42, 0.28)) 0%,
+    color-mix(in srgb, var(--palette-accent, #ec4899) 10%, rgba(10, 16, 28, 0.34)) 55%,
+    rgba(2, 6, 23, 0.44) 100%
+  );
 }
 
 
@@ -1264,11 +1279,22 @@ body.glow-tuning-active .liquid-glass-tile::after {
 
 /* Slick Hyprland Sliding Physics & Workspace Transitions with Hardware-Accelerated Transforms */
 .hyprland-slide {
-  transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 420ms cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform, opacity;
-  transform: translateZ(0);
+  transition: transform 560ms cubic-bezier(0.16, 1, 0.3, 1),
+              translate 560ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 480ms cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0s linear 0ms;
+  will-change: transform, translate, opacity;
+  transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
+  contain: layout style;
+}
+
+/* Defer visibility: hidden until exit slide finishes so exit slides render all the way offscreen */
+.hyprland-slide[aria-hidden="true"] {
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1),
+              translate 520ms cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 440ms cubic-bezier(0.22, 1, 0.36, 1),
+              visibility 0s linear 520ms;
 }
 
 /* Frosted glass edge diffuser */
@@ -1288,58 +1314,54 @@ body.glow-tuning-active .liquid-glass-tile::after {
 @keyframes onenoteEnterFrostSweep {
   0% {
     opacity: 0;
-    backdrop-filter: blur(0px) saturate(1.2);
-    -webkit-backdrop-filter: blur(0px) saturate(1.2);
-    transform: scale(1.02);
+    transform: translate3d(0, 0, 0);
   }
-  30% {
+  12% {
     opacity: 1;
-    backdrop-filter: blur(48px) saturate(2) brightness(1.06);
-    -webkit-backdrop-filter: blur(48px) saturate(2) brightness(1.06);
-    transform: scale(1);
+    transform: translate3d(0, 0, 0);
   }
-  65% {
-    opacity: 0.9;
-    backdrop-filter: blur(32px) saturate(1.7);
-    -webkit-backdrop-filter: blur(32px) saturate(1.7);
+  32% {
+    opacity: 0.96;
   }
-  85% {
-    opacity: 0.5;
-    backdrop-filter: blur(12px) saturate(1.3);
-    -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  62% {
+    opacity: 0.56;
+  }
+  84% {
+    opacity: 0.2;
   }
   100% {
     opacity: 0;
-    backdrop-filter: blur(0px) saturate(1);
-    -webkit-backdrop-filter: blur(0px) saturate(1);
-    transform: scale(0.99);
+    transform: translate3d(0, 0, 0);
   }
 }
 
 .onenote-enter-frost-sweep {
   position: fixed;
   inset: 0;
-  z-index: 45;
+  z-index: 160;
   pointer-events: none;
-  backdrop-filter: blur(48px) saturate(2) brightness(1.06);
-  -webkit-backdrop-filter: blur(48px) saturate(2) brightness(1.06);
+  backdrop-filter: blur(26px) saturate(1.45) brightness(1.03);
+  -webkit-backdrop-filter: blur(26px) saturate(1.45) brightness(1.03);
   background: radial-gradient(
     circle at 85% 50%,
     rgba(245, 158, 11, 0.14) 0%,
-    rgba(15, 23, 42, 0.38) 45%,
-    rgba(2, 6, 23, 0.6) 100%
+    rgba(15, 23, 42, 0.26) 45%,
+    rgba(2, 6, 23, 0.42) 100%
   );
-  animation: onenoteEnterFrostSweep 660ms cubic-bezier(0.2, 0.85, 0.25, 1) forwards;
-  will-change: opacity, transform;
-  transform: translateZ(0);
+  animation: onenoteEnterFrostSweep 1250ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: opacity;
+  transform: translate3d(0, 0, 0);
+  contain: strict;
 }
 
 .dark .onenote-enter-frost-sweep {
+  backdrop-filter: blur(26px) saturate(1.5) brightness(0.96);
+  -webkit-backdrop-filter: blur(26px) saturate(1.5) brightness(0.96);
   background: radial-gradient(
     circle at 85% 50%,
     color-mix(in srgb, var(--palette-primary, #f59e0b) 18%, transparent) 0%,
-    rgba(10, 16, 28, 0.5) 45%,
-    rgba(2, 6, 23, 0.75) 100%
+    rgba(10, 16, 28, 0.46) 45%,
+    rgba(2, 6, 23, 0.68) 100%
   );
 }
 
@@ -1784,6 +1806,18 @@ html:not(.lenis) {
     0 0 24px -2px color-mix(in srgb, var(--palette-primary, #f59e0b) 30%, transparent) !important;
 }
 
+/* Ensure all text and interactable content inside liquid-glass and floating-gemini-tile always sits crisp above glass/spotlight layers without breaking positioned overlays */
+.floating-gemini-tile > *:not(.liquidglass):not(.absolute):not(.fixed):not(.sticky),
+.liquid-glass > *:not(.liquidglass):not(.absolute):not(.fixed):not(.sticky),
+.liquid-glass-tile > *:not(.liquidglass):not(.absolute):not(.fixed):not(.sticky) {
+  position: relative;
+  z-index: 10;
+}
+
+:where(.floating-gemini-tile > .absolute, .liquid-glass > .absolute, .liquid-glass-tile > .absolute) {
+  z-index: 10;
+}
+
 /* Gemini Workspace Floating Window Bubble - Liquid Glass & Frost Effects */
 .gemini-workspace-bubble {
   position: relative;
@@ -1817,14 +1851,32 @@ html:not(.lenis) {
     0 0 36px -4px color-mix(in srgb, var(--palette-primary, #f59e0b) 25%, transparent) !important;
 }
 
-/* Isolate and accelerate the liquidglass layer inside workspace bubble to prevent CPU SVG filter re-renders */
+/* Isolate and accelerate the liquidglass layer inside workspace bubble & Workspace Studio drawer to prevent CPU SVG filter re-renders and Chromium nested backdrop reflections during slide animations */
 .gemini-workspace-bubble .liquidglass {
-  -webkit-backdrop-filter: blur(24px) saturate(1.25) !important;
-  backdrop-filter: blur(24px) saturate(1.25) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(1.25) !important;
+  backdrop-filter: blur(22px) saturate(1.25) !important;
   contain: strict;
-  transform: translateZ(0);
+  transform: translate3d(0, 0, 0);
   will-change: transform;
   pointer-events: none;
+}
+
+.workspace-studio-panel .liquidglass {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  contain: layout style;
+  pointer-events: none;
+}
+
+.workspace-studio-panel .liquid-glass-tile {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* Gemini Workspace Chat Stage Glow — Strictly bounded to <main>, ends precisely at sidebar border margin */
@@ -1882,41 +1934,31 @@ html:not(.lenis) {
     4px 0 24px rgba(0, 0, 0, 0.25);
 }
 
-/* Conversation list liquid glass tiles in both minimized and maximized views */
+/* Conversation list tiles in both minimized and maximized views */
 .gemini-conv-tile {
-  --tile-glow-opacity: 0.35 !important;
-  --tile-border-glow-opacity: 0.95 !important;
   position: relative;
   isolation: isolate;
   border-radius: 1rem !important; /* 16px */
   backdrop-filter: blur(20px) saturate(1.3);
   -webkit-backdrop-filter: blur(20px) saturate(1.3);
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
-              box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
-              background-color 0.18s ease, 
+  transition: background-color 0.18s ease, 
               border-color 0.18s ease !important;
-  will-change: transform, box-shadow;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
   outline: none;
+  --tile-glow-opacity: 0 !important;
+  --tile-border-glow-opacity: 0 !important;
+  box-shadow: none !important;
 }
 
-/* Suppress overlapping pseudo-element border masks to guarantee silky, unbroken 16px corner contours */
+/* Suppress overlapping pseudo-element border masks and spotlights so unselected items never glow */
+.gemini-conv-tile::before,
 .gemini-conv-tile::after {
   display: none !important;
 }
 
 .gemini-conv-tile:hover {
-  transform: translateY(-1.5px);
   z-index: 10;
-  border-color: rgba(255, 255, 255, 0.38) !important;
-  box-shadow: 
-    0 8px 24px -4px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.22),
-    0 0 18px -2px color-mix(in srgb, var(--palette-primary, #f59e0b) 45%, transparent) !important;
-}
-
-.gemini-conv-tile:active {
-  transform: translateY(0px) scale(0.99);
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  box-shadow: none !important;
 }
 
 .gemini-conv-tile-minimized {
@@ -1936,15 +1978,26 @@ html:not(.lenis) {
 }
 
 .dark .gemini-conv-tile {
-  --tile-glow-opacity: 0.4 !important;
-  --tile-border-glow-opacity: 0.98 !important;
+  --tile-glow-opacity: 0 !important;
+  --tile-border-glow-opacity: 0 !important;
   background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  box-shadow: none !important;
 }
 
 .dark .gemini-conv-tile:hover {
   background: rgba(24, 34, 53, 0.75);
-  border-color: rgba(255, 255, 255, 0.38) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  box-shadow: none !important;
+}
+
+/* Glow border appears exclusively on the opened / active conversation with unclipped soft halo */
+.gemini-conv-tile.active-conv,
+.dark .gemini-conv-tile.active-conv {
+  border-color: var(--palette-primary, #f59e0b) !important;
+  box-shadow: 
+    0 0 10px 0px color-mix(in srgb, var(--palette-primary, #f59e0b) 50%, transparent),
+    inset 0 0 8px -1px color-mix(in srgb, var(--palette-primary, #f59e0b) 25%, transparent) !important;
 }
 
 /* Reference-inspired illuminated prompt dock for Gemini Workspace - dynamically synced to active palette */
@@ -1962,10 +2015,5 @@ html:not(.lenis) {
     0 0 24px 1px color-mix(in srgb, var(--palette-primary, #f59e0b) 40%, transparent),
     inset 0 0 16px color-mix(in srgb, var(--palette-primary, #f59e0b) 12%, transparent) !important;
 }
-
-
-
-
-
 
 

@@ -13,11 +13,19 @@ export interface CursorOption {
 
 export const CURSOR_OPTIONS: CursorOption[] = [
   {
+    id: 'circle',
+    name: 'Circle',
+    subtitle: 'Precision Ring',
+    description: 'Minimalist hollow circular ring offering clean, unobstructed focus.',
+    badge: 'Default · Hollow Ring',
+    hotspot: [16, 16],
+  },
+  {
     id: 'chevron',
     name: 'Chevron Arrow',
-    subtitle: 'Smooth Precision',
-    description: 'Crisp custom stemless arrow pointer with dynamic theme gradient adaptation and smooth physics.',
-    badge: 'Smooth Precision',
+    subtitle: 'Crisp Precision',
+    description: 'Crisp custom stemless arrow pointer with dynamic theme gradient adaptation and zero-lag tracking.',
+    badge: 'Crisp Pointer',
     hotspot: [5, 3],
   },
   {
@@ -27,14 +35,6 @@ export const CURSOR_OPTIONS: CursorOption[] = [
     description: 'Standard operating system hardware pointer with native browser hover states.',
     badge: 'System Default',
     hotspot: [0, 0],
-  },
-  {
-    id: 'circle',
-    name: 'Circle',
-    subtitle: 'Precision Ring',
-    description: 'Minimalist hollow circular ring offering clean, unobstructed focus.',
-    badge: 'Hollow Ring',
-    hotspot: [16, 16],
   },
   {
     id: 'crosshair',
@@ -70,7 +70,7 @@ export function normalizeCursorStyle(style: CursorStyleId): 'arrow' | 'chevron' 
   if (style === 'white-plus' || style === 'white-crosshair' || style === 'crosshair') return 'crosshair';
   if (style === 'white-cross' || style === 'cross') return 'cross';
   if (style === 'white-pen' || style === 'pen') return 'pen';
-  return 'chevron';
+  return 'circle';
 }
 
 export function hexToRgb(hex: string): [number, number, number] {

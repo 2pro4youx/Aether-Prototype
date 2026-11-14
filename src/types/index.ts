@@ -44,6 +44,7 @@ export interface TaskItem {
   priority: 'low' | 'medium' | 'high';
   completed: boolean;
   dueDate: string;
+  dueAt?: string | null; // ISO timestamp; null/undefined = No time until completion
 }
 
 export interface PlannerEntry {
@@ -56,6 +57,70 @@ export interface PlannerEntry {
   progress: number; // 0-100
 }
 
+export type DashboardCardType =
+  | 'tasks'
+  | 'planner'
+  | 'syllabus'
+  | 'exam_schedule'
+  | 'timetable'
+  | 'calendar';
+
+export interface DashboardCardInstance {
+  id: string;
+  type: DashboardCardType;
+  title?: string; // optional custom card display name
+  colSpan: number; // legacy 4 to 12 fallback in 12-col desktop grid
+  widthPct?: number; // continuous percentage width (25 to 100) for smooth horizontal resize
+  height: number; // card height in px
+}
+
+export interface SyllabusTopic {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export interface SyllabusCourse {
+  id: string;
+  name: string;
+  code?: string;
+  topics: SyllabusTopic[];
+}
+
+export interface ExamScheduleEntry {
+  id: string;
+  course: string;
+  title: string;
+  date: string; // YYYY-MM-DD or descriptive date
+  time: string;
+  venue: string;
+  notes?: string;
+}
+
+export type WeekdayShort = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
+
+export interface TimetableSlot {
+  id: string;
+  day: WeekdayShort;
+  subject: string;
+  startTime: string; // HH:MM (24h)
+  endTime: string; // HH:MM (24h)
+  room?: string;
+  kind: 'Lecture' | 'Lab' | 'Tutorial' | 'Study';
+}
+
+export interface CalendarEventEntry {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  startTime?: string; // HH:MM
+  endTime?: string; // HH:MM
+  allDay?: boolean;
+  location?: string;
+  description?: string;
+  source?: 'local';
+}
+
 export interface NotebookSource {
   id: string;
   title: string;
@@ -65,6 +130,10 @@ export interface NotebookSource {
   words: number;
   selected: boolean;
   dateAdded: string;
+  dataUrl?: string;
+  mimeType?: string;
+  isImage?: boolean;
+  isGenerated?: boolean;
 }
 
 export type BlockType = 'h1' | 'h2' | 'h3' | 'paragraph' | 'todo' | 'bullet' | 'numbered' | 'code' | 'callout' | 'quote' | 'image' | 'table' | 'math';
@@ -84,7 +153,11 @@ export interface NoteBlock {
   tableHeaders?: string[];
   tableRows?: string[][];
   tableCellColors?: Record<string, string>; // cell key (e.g. '0-1' or 'th-0') mapped to color theme ID
-  // Image & Parallel side-by-side properties
+  todoItems?: Array<{ id: string; text: string; checked: boolean }>;
+  bulletItems?: Array<{ id: string; text: string; indent: number }>;
+  numberedItems?: Array<{ id: string; text: string }>;
+  textColor?: string;
+  fontFamily?: 'default' | 'mono' | 'serif' | 'display';
   imageUrl?: string;
   caption?: string;
   width?: number; // width percentage (20 to 100)
@@ -141,6 +214,7 @@ export interface Workspace {
   name: string;
   description?: string;
   folder: string; // e.g. 'Assorted Workspaces', 'NotebookLM Research', etc.
+  mode?: 'full' | 'onenote-only';
   createdAt: string;
   updatedAt: string;
   color?: string;
@@ -162,9 +236,14 @@ export interface SubjectAnalytics {
 export interface AuditLog {
   id: string;
   timestamp: string;
+  fullTimestamp?: string;
   action: string;
   detail: string;
   category: 'system' | 'note' | 'source' | 'ai' | 'task';
+  workspaceId?: string;
+  workspaceName?: string;
+  folderName?: string;
+  targetContext?: 'notebooklm' | 'onenote' | 'gemini' | 'library' | 'dashboard' | 'settings';
 }
 
 export type ColorPaletteId =
@@ -179,8 +258,15 @@ export type ColorPaletteId =
   | 'tokyo-neon'
   | 'titanium-mono'
   | 'autumn'
-  | 'atom'
-  | 'black-night';
+  | 'black-night'
+  | 'custom';
+
+export interface CustomPaletteConfig {
+  name: string;
+  primary: string;
+  accent: string;
+  bgDark: string;
+}
 
 export interface ColorPalette {
   id: ColorPaletteId;

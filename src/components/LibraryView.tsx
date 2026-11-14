@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Folder,
   FolderPlus,
@@ -30,12 +30,14 @@ interface LibraryViewProps {
   onOpenItem: (item: LibraryItem) => void;
   onAddFolder: (name: string) => void;
   onDeleteFolder?: (folderName: string) => void;
+  onReorderFolders?: (newFolders: string[]) => void;
   onToggleStar: (id: string) => void;
   onSelectWorkspace?: (workspaceId: string) => void;
   onAssignWorkspaceToFolder?: (workspaceId: string, folder: string) => void;
   onRemoveWorkspaceFromFolder?: (workspaceId: string) => void;
   onDeleteWorkspacePermanently?: (workspaceId: string) => void;
   onCreateWorkspaceInFolder?: (folder: string) => void;
+  folderSignal?: { folder: string; nonce: number } | null;
   activePalette: ColorPalette;
   darkMode: boolean;
 }
@@ -49,12 +51,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onOpenItem,
   onAddFolder,
   onDeleteFolder,
+  onReorderFolders,
   onToggleStar,
   onSelectWorkspace,
   onAssignWorkspaceToFolder,
   onRemoveWorkspaceFromFolder,
   onDeleteWorkspacePermanently,
   onCreateWorkspaceInFolder,
+  folderSignal,
   activePalette,
   darkMode,
 }) => {
@@ -66,6 +70,18 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [showAddWorkspaceModal, setShowAddWorkspaceModal] = useState(false);
   const [folderSortMode, setFolderSortMode] = useState<FolderSortMode>('name-asc');
   const [folderTransitionCount, setFolderTransitionCount] = useState(0);
+
+  useEffect(() => {
+    if (!folderSignal) return;
+    const target = folderSignal.folder;
+    const resolved = target === 'all' || folders.includes(target) ? target : 'all';
+    setFolderTransitionCount((c) => c + 1);
+    setActiveFolder(resolved);
+    setActiveType('all');
+    setSearchFilter('');
+  }, [folderSignal, folders]);
+  const [draggedFolder, setDraggedFolder] = useState<string | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
   // Deletion Confirmation Modals
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
@@ -105,21 +121,22 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     setFolderSortMode(mode);
   };
 
-  // Sorted folders list
+  // Sorted folders list — "Assorted Workspaces" is strictly pinned right after "All Folders" per Req 7 & Image 3
   const sortedFolders = useMemo(() => {
-    const list = [...folders];
+    const customFolders = folders.filter((f) => f !== 'Assorted Workspaces');
     if (folderSortMode === 'name-asc') {
-      list.sort((a, b) => a.localeCompare(b));
+      customFolders.sort((a, b) => a.localeCompare(b));
     } else if (folderSortMode === 'name-desc') {
-      list.sort((a, b) => b.localeCompare(a));
+      customFolders.sort((a, b) => b.localeCompare(a));
     } else if (folderSortMode === 'count-desc') {
-      list.sort((a, b) => {
+      customFolders.sort((a, b) => {
         const countA = allDisplayItems.filter((i) => i.folder === a).length;
         const countB = allDisplayItems.filter((i) => i.folder === b).length;
         return countB - countA;
       });
     }
-    return list;
+    // Always pin 'Assorted Workspaces' immediately after 'All Folders'
+    return ['Assorted Workspaces', ...customFolders];
   }, [folders, folderSortMode, allDisplayItems]);
 
   const filteredItems = useMemo(() => {
@@ -256,8 +273,49 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           {sortedFolders.map((f) => {
             const count = allDisplayItems.filter((i) => i.folder === f).length;
             const isCurrent = activeFolder === f;
+            const isDragged = draggedFolder === f;
+            const isOver = dragOverFolder === f;
+
             return (
-              <div key={f} className="relative group shrink-0 flex items-center">
+              <div
+                key={f}
+                draggable={true}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', f);
+                  setDraggedFolder(f);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (draggedFolder && draggedFolder !== f) {
+                    setDragOverFolder(f);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverFolder === f) setDragOverFolder(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (!draggedFolder || draggedFolder === f) return;
+                  const currentList = [...folders];
+                  const fromIdx = currentList.indexOf(draggedFolder);
+                  const toIdx = currentList.indexOf(f);
+                  if (fromIdx !== -1 && toIdx !== -1) {
+                    currentList.splice(fromIdx, 1);
+                    currentList.splice(toIdx, 0, draggedFolder);
+                    onReorderFolders?.(currentList);
+                  }
+                  setDraggedFolder(null);
+                  setDragOverFolder(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedFolder(null);
+                  setDragOverFolder(null);
+                }}
+                className={`relative group shrink-0 flex items-center transition-transform ${
+                  isDragged ? 'opacity-40 scale-95' : isOver ? 'scale-105 ring-2 ring-amber-400 rounded-full' : ''
+                }`}
+                title="Left click and drag to rearrange folders"
+              >
                 <button
                   onClick={() => handleSelectFolder(f)}
                   style={
@@ -269,7 +327,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                         }
                       : {}
                   }
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition whitespace-nowrap border flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition whitespace-nowrap border flex items-center gap-1.5 cursor-grab active:cursor-grabbing select-none ${
                     isCurrent
                       ? 'shadow-sm font-bold'
                       : darkMode
@@ -281,20 +339,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   <span>{f}</span>
                   <span className="text-[10px] font-mono opacity-60">({count})</span>
                 </button>
-
-                {/* Folder Deletion icon on hover (protected default folders cannot be deleted) */}
-                {f !== 'Assorted Workspaces' && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFolderToDelete(f);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 transition -ml-2 mr-1 p-1 rounded-full text-slate-400 hover:text-rose-400 hover:bg-rose-500/15"
-                    title={`Delete folder "${f}"`}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                )}
               </div>
             );
           })}
@@ -386,7 +430,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               <div
                 onClick={() => setShowNewFolderModal(true)}
                 style={{ borderColor: `${activePalette.primary}70` }}
-                className={`border-2 border-dashed rounded-3xl p-6 flex flex-col items-center justify-center text-center gap-3 transition-all duration-300 cursor-pointer group min-h-[200px] hover:scale-[1.02] shadow-sm select-none ${
+                className={`border-2 border-dashed rounded-3xl p-6 flex flex-col items-center justify-center text-center gap-3 transition-[translate,box-shadow,border-color,background-color] duration-200 cursor-pointer group min-h-[200px] hover:-translate-y-0.5 shadow-sm select-none ${
                   darkMode ? 'hover:bg-white/5 bg-slate-950/20' : 'hover:bg-slate-50 bg-white/40'
                 }`}
               >
@@ -402,7 +446,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <div>
                   <h3
                     className="text-sm font-bold tracking-tight"
-                    style={{ color: activePalette.id === 'black-night' || activePalette.id === 'atom' ? '#ffffff' : activePalette.primary }}
+                    style={{ color: activePalette.id === 'black-night' ? '#ffffff' : activePalette.primary }}
                   >
                     + Create New Folder
                   </h3>
@@ -421,12 +465,12 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   <div
                     key={folderName}
                     onClick={() => handleSelectFolder(folderName)}
-                    className="liquid-glass rounded-3xl p-6 border shadow-xl flex flex-col justify-between group cursor-pointer transition-all duration-200 hover:scale-[1.015]"
+                    className="liquid-glass no-tilt rounded-3xl p-6 border shadow-xl flex flex-col justify-between group cursor-pointer transition-[translate,box-shadow,border-color,background-color] duration-200 hover:-translate-y-0.5"
                     style={{
                       borderColor: 'rgba(255, 255, 255, 0.12)',
                     }}
                   >
-                    <div className="space-y-3">
+                    <div className="space-y-3 relative z-20">
                       <div className="flex items-center justify-between">
                         <div
                           className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-md"
@@ -463,7 +507,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
+                    <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between text-xs text-slate-400 relative z-20">
                       <span className="font-mono text-[11px]">Click to view contents</span>
                       <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </div>
@@ -480,7 +524,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 style={{
                   borderColor: `${activePalette.primary}80`,
                 }}
-                className={`border-2 border-dashed rounded-3xl p-6 flex flex-col items-center justify-center text-center gap-3 transition-all duration-300 cursor-pointer group min-h-[220px] hover:scale-[1.02] shadow-sm select-none relative overflow-hidden ${
+                className={`border-2 border-dashed rounded-3xl p-6 flex flex-col items-center justify-center text-center gap-3 transition-[translate,box-shadow,border-color,background-color] duration-200 cursor-pointer group min-h-[220px] hover:-translate-y-0.5 shadow-sm select-none relative overflow-hidden ${
                   darkMode ? 'hover:bg-white/5 bg-slate-950/20' : 'hover:bg-slate-50 bg-white/40'
                 }`}
                 title={`Add or link a workspace to ${currentFolderTarget}`}
@@ -505,7 +549,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <div>
                   <h3
                     className="text-sm font-bold tracking-tight"
-                    style={{ color: activePalette.id === 'black-night' || activePalette.id === 'atom' ? '#ffffff' : activePalette.primary }}
+                    style={{ color: activePalette.id === 'black-night' ? '#ffffff' : activePalette.primary }}
                   >
                     + Add Workspace
                   </h3>
@@ -540,7 +584,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                           onOpenItem(item);
                         }
                       }}
-                      className={`liquid-glass rounded-3xl p-5 shadow-xl gap-4 transition-all duration-200 cursor-pointer flex flex-col justify-between group overflow-hidden ${
+                      className={`liquid-glass no-tilt rounded-3xl p-5 shadow-xl gap-4 transition-[box-shadow,border-color,background-color] duration-200 cursor-pointer flex flex-col justify-between group overflow-hidden hover:-translate-y-0.5 ${
                         isWorkspace ? 'border-2' : ''
                       }`}
                       style={
@@ -551,7 +595,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                           : undefined
                       }
                     >
-                      <div className="space-y-3">
+                      <div className="space-y-3 relative z-20">
                         {/* Type Badge, Star & Workspace Actions */}
                         <div className="flex items-center justify-between">
                           <span
@@ -652,7 +696,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       </div>
 
                       {/* Footer Row */}
-                      <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
+                      <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs text-slate-400 relative z-20">
                         <span className="font-mono text-[11px]">{item.updatedAt}</span>
                         <span className="flex items-center gap-1 text-[11px] font-bold group-hover:translate-x-0.5 transition-transform">
                           <span>Open</span>

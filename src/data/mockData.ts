@@ -1,5 +1,6 @@
 import {
   ColorPalette,
+  CustomPaletteConfig,
   StudyDay,
   TaskItem,
   PlannerEntry,
@@ -123,56 +124,48 @@ export const PALETTES: ColorPalette[] = [
     bgDark: '#130804',
     textAccent: 'text-orange-400',
   },
-  {
-    id: 'atom',
-    name: 'Atom',
-    description: 'Pure minimalist obsidian carbon void — strictly deep black with crisp white icons and text',
-    primary: '#27272a',
-    accent: '#09090b',
-    gradient: 'from-zinc-800 via-zinc-900 to-black',
-    bgDark: '#000000',
-    textAccent: 'text-white',
-  },
 ];
 
-// Generate 365 days of study activity (52 weeks x 7 days)
-export function generateYearStudyData(): StudyDay[] {
+export const DEFAULT_CUSTOM_PALETTE_CONFIG: CustomPaletteConfig = {
+  name: 'Custom Studio',
+  primary: '#6366f1',
+  accent: '#ec4899',
+  bgDark: '#0a0914',
+};
+
+export function buildCustomPalette(config: CustomPaletteConfig): ColorPalette {
+  return {
+    id: 'custom',
+    name: config.name.trim() || 'Custom Theme',
+    description: `Custom ${config.primary.toUpperCase()} & ${config.accent.toUpperCase()} studio palette`,
+    primary: config.primary,
+    accent: config.accent,
+    gradient: '',
+    bgDark: config.bgDark,
+    textAccent: '',
+  };
+}
+
+// Generate 365 days of clean real-time study activity (52 weeks x 7 days), initialized with 0 dummy hours
+export function generateYearStudyData(dailyHoursMap: Record<string, number> = {}): StudyDay[] {
   const days: StudyDay[] = [];
   const today = new Date();
-  
+
   for (let i = 364; i >= 0; i--) {
-    const d = new Date();
+    const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
 
-    // Seed realistic study pattern: heavier on weekdays, occasional rest days
-    const dayOfWeek = d.getDay();
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    const rand = Math.random();
-
+    const rawHours = dailyHoursMap[dateStr] || 0;
+    const hours = +rawHours.toFixed(2);
     let count = 0;
-    let hours = 0;
-
-    if (rand > 0.22) {
-      if (rand > 0.85) {
-        count = 4;
-        hours = +(4.5 + Math.random() * 3).toFixed(1);
-      } else if (rand > 0.6) {
-        count = 3;
-        hours = +(3 + Math.random() * 1.5).toFixed(1);
-      } else if (rand > 0.35) {
-        count = 2;
-        hours = +(1.5 + Math.random() * 1.5).toFixed(1);
-      } else {
-        count = 1;
-        hours = +(0.5 + Math.random() * 1).toFixed(1);
-      }
-    }
-
-    if (isWeekend && rand < 0.4) {
-      count = 0;
-      hours = 0;
-    }
+    if (hours >= 4.5) count = 4;
+    else if (hours >= 2.5) count = 3;
+    else if (hours >= 1.0) count = 2;
+    else if (hours > 0) count = 1;
 
     days.push({
       date: dateStr,
@@ -183,78 +176,9 @@ export function generateYearStudyData(): StudyDay[] {
   return days;
 }
 
-export const INITIAL_TASKS: TaskItem[] = [
-  {
-    id: 'task-1',
-    title: 'Review Self-Attention Mechanism derivation in Vaswani et al.',
-    category: 'Deep Learning',
-    priority: 'high',
-    completed: true,
-    dueDate: 'Today',
-  },
-  {
-    id: 'task-2',
-    title: 'Complete problem set on Hamiltonian operators and eigenvalues',
-    category: 'Quantum Mechanics',
-    priority: 'high',
-    completed: false,
-    dueDate: 'Tomorrow',
-  },
-  {
-    id: 'task-3',
-    title: 'Synthesize lecture notes on Distributed Consensus & Raft protocol',
-    category: 'Computer Systems',
-    priority: 'medium',
-    completed: false,
-    dueDate: 'Nov 12',
-  },
-  {
-    id: 'task-4',
-    title: 'Draft literature review outline for organic photovoltaics project',
-    category: 'Materials Science',
-    priority: 'medium',
-    completed: false,
-    dueDate: 'Nov 15',
-  },
-  {
-    id: 'task-5',
-    title: 'Re-index NotebookLM sources for Computational Biology exam',
-    category: 'Bioinformatics',
-    priority: 'low',
-    completed: true,
-    dueDate: 'Yesterday',
-  },
-];
+export const INITIAL_TASKS: TaskItem[] = [];
 
-export const INITIAL_PLANNERS: PlannerEntry[] = [
-  {
-    id: 'plan-1',
-    title: 'Transformer Architecture Mastery Sprint',
-    subject: 'Artificial Intelligence',
-    timeSlot: '09:00 - 11:30 AM',
-    date: 'Daily Sprint',
-    milestone: 'Implement FlashAttention kernel in PyTorch/Triton',
-    progress: 75,
-  },
-  {
-    id: 'plan-2',
-    title: 'Quantum Computing Midterm Revision',
-    subject: 'Physics',
-    timeSlot: '02:00 - 04:30 PM',
-    date: 'Nov 09 - Nov 14',
-    milestone: 'Shor algorithm circuit simulation & phase estimation',
-    progress: 40,
-  },
-  {
-    id: 'plan-3',
-    title: 'Distributed Systems Capstone Specification',
-    subject: 'Systems Engineering',
-    timeSlot: '05:00 - 07:00 PM',
-    date: 'Phase 2 Architecture',
-    milestone: 'Formal TLA+ safety proofs for Paxos election logic',
-    progress: 20,
-  },
-];
+export const INITIAL_PLANNERS: PlannerEntry[] = [];
 
 export const INITIAL_SOURCES: NotebookSource[] = [];
 
@@ -262,76 +186,9 @@ export const INITIAL_ONENOTE_NOTEBOOKS: OneNoteNotebook[] = [];
 
 export const INITIAL_LIBRARY: LibraryItem[] = [];
 
-export const INITIAL_SUBJECT_ANALYTICS: SubjectAnalytics[] = [
-  {
-    subject: 'Computer Science & AI',
-    minutes: 940,
-    percentage: 38,
-    color: '#f59e0b',
-  },
-  {
-    subject: 'Quantum Physics',
-    minutes: 620,
-    percentage: 25,
-    color: '#3b82f6',
-  },
-  {
-    subject: 'Neuroscience & Biology',
-    minutes: 410,
-    percentage: 17,
-    color: '#10b981',
-  },
-  {
-    subject: 'Mathematics & Statistics',
-    minutes: 320,
-    percentage: 13,
-    color: '#8b5cf6',
-  },
-  {
-    subject: 'Scientific Writing & Ethics',
-    minutes: 170,
-    percentage: 7,
-    color: '#ec4899',
-  },
-];
+export const INITIAL_SUBJECT_ANALYTICS: SubjectAnalytics[] = [];
 
-export const INITIAL_AUDIT_LOGS: AuditLog[] = [
-  {
-    id: 'aud-1',
-    timestamp: '10:42 AM',
-    action: 'Grounded Query Generated',
-    detail: 'Executed AI chat synthesis referencing 3 sources on Self-Attention Mechanism',
-    category: 'ai',
-  },
-  {
-    id: 'aud-2',
-    timestamp: '09:15 AM',
-    action: 'OneNote Block Edited',
-    detail: 'Added Python implementation snippet to FlashAttention page in section 01',
-    category: 'note',
-  },
-  {
-    id: 'aud-3',
-    timestamp: '08:30 AM',
-    action: 'Task Completed',
-    detail: 'Checked off "Review Self-Attention Mechanism derivation"',
-    category: 'task',
-  },
-  {
-    id: 'aud-4',
-    timestamp: 'Yesterday',
-    action: 'Source Uploaded',
-    detail: 'Extracted and indexed "Principles of Neural Dynamics" (1,105 words)',
-    category: 'source',
-  },
-  {
-    id: 'aud-5',
-    timestamp: '2 days ago',
-    action: 'Study Session Logged',
-    detail: 'Completed 4.2 hours across Computer Science and Quantum Mechanics',
-    category: 'system',
-  },
-];
+export const INITIAL_AUDIT_LOGS: AuditLog[] = [];
 
 export const INITIAL_GEMINI_CONVERSATIONS: GeminiConversation[] = [];
 

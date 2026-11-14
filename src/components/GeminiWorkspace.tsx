@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence, Reorder } from 'motion/react';
 import {
   Sparkles,
   Plus,
@@ -27,11 +29,16 @@ import {
   FileSpreadsheet,
   File,
   Paperclip,
+  Pin,
+  Download,
+  Eye,
 } from 'lucide-react';
 import { GeminiConversation, GeminiChatMessage, ChatAttachment, ColorPalette } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { callGeminiChat, AVAILABLE_GEMINI_MODELS, GeminiModelInfo } from '../utils/geminiClient';
 import { LiquidGlassSvgFilter } from './LiquidGlassFilter';
+import { useChatSmoothScroll } from '../hooks/useSmoothScroll';
+import { dataUrlToBlobUrl, buildImageIframeDoc } from '../utils/iframePreview';
 
 interface GeminiWorkspaceProps {
   isOpen: boolean;
@@ -42,6 +49,7 @@ interface GeminiWorkspaceProps {
   onUpdateConversations: (conversations: GeminiConversation[]) => void;
   selectedModel?: string;
   onChangeModel?: (model: string) => void;
+  smoothScroll?: boolean;
 }
 
 const SUPPORTED_MODELS: GeminiModelInfo[] = AVAILABLE_GEMINI_MODELS;
@@ -78,6 +86,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
   onUpdateConversations,
   selectedModel: propSelectedModel,
   onChangeModel,
+  smoothScroll = true,
 }) => {
   const [selectedConvId, setSelectedConvId] = useState<string>(() => {
     return conversations[0]?.id || '';
@@ -97,12 +106,38 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [deletingConvId, setDeletingConvId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Attached files state (images, pdfs, txt, md, csv, code)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [viewingAttachment, setViewingAttachment] = useState<ChatAttachment | null>(null);
+  const [attachmentIframeUrl, setAttachmentIframeUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!viewingAttachment?.dataUrl || viewingAttachment.isImage) {
+      setAttachmentIframeUrl(null);
+      return;
+    }
+    const blobUrl = dataUrlToBlobUrl(viewingAttachment.dataUrl);
+    setAttachmentIframeUrl(blobUrl);
+    return () => {
+      if (blobUrl && blobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
+  }, [viewingAttachment]);
+
+  const pendingPromptIdRef = useRef<string | null>(null);
+  const wasLoadingRef = useRef(false);
+
+  // Smooth Lenis / RAF Momentum Scrolling for Chat Stage
+  const { wrapperRef: chatScrollContainerRef, scrollToBottom, scrollToElementTop } = useChatSmoothScroll<HTMLDivElement>({
+    enabled: smoothScroll && isOpen,
+    deps: [selectedConvId, isLoading],
+  });
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -216,6 +251,10 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (viewingAttachment) {
+          setViewingAttachment(null);
+          return;
+        }
         if (deleteConfirmation.isOpen) {
           setDeleteConfirmation({ isOpen: false, convId: '', convTitle: '' });
           return;
@@ -229,7 +268,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onCloseBack, deleteConfirmation.isOpen, isModelDropdownOpen]);
+  }, [isOpen, onCloseBack, deleteConfirmation.isOpen, isModelDropdownOpen, viewingAttachment]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -335,12 +374,38 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     }
   }, [selectedConvId]);
 
-  // Auto scroll to bottom when messages change
+  // Smooth auto-scroll: glide to bottom while waiting, then align top of answered prompt when response completes
   useEffect(() => {
-    if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!isOpen) return;
+    if (isLoading) {
+      wasLoadingRef.current = true;
+      const timer = setTimeout(() => {
+        scrollToBottom();
+      }, 50);
+      return () => clearTimeout(timer);
+    } else if (wasLoadingRef.current) {
+      wasLoadingRef.current = false;
+      const targetId = pendingPromptIdRef.current;
+      pendingPromptIdRef.current = null;
+      const timer = setTimeout(() => {
+        const container = chatScrollContainerRef.current;
+        if (!container) return;
+        let promptEl = targetId
+          ? (container.querySelector(`[data-msg-id="${targetId}"]`) as HTMLElement | null)
+          : null;
+        if (!promptEl) {
+          const allUserMsgs = container.querySelectorAll<HTMLElement>('[data-msg-role="user"]');
+          promptEl = allUserMsgs.length > 0 ? allUserMsgs[allUserMsgs.length - 1] : null;
+        }
+        if (promptEl) {
+          scrollToElementTop(promptEl, 16);
+        } else {
+          scrollToBottom();
+        }
+      }, 75);
+      return () => clearTimeout(timer);
     }
-  }, [currentConversation?.messages.length, isLoading, isOpen]);
+  }, [isLoading, isOpen, scrollToBottom, scrollToElementTop]);
 
   // Global search filtering across titles and message contents
   const filteredConversations = useMemo(() => {
@@ -354,6 +419,18 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
       return titleMatch || messageMatch;
     });
   }, [conversations, searchQuery]);
+
+  // Pin / Unpin conversation handler - moves pinned items to top in authoritative state
+  const handleTogglePin = (e: React.MouseEvent, convId: string) => {
+    e.stopPropagation();
+    const updated = conversations.map((c) => (c.id === convId ? { ...c, pinned: !c.pinned } : c));
+    const sorted = [...updated].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return 0;
+    });
+    onUpdateConversations(sorted);
+  };
 
   // Create new conversation
   const handleCreateNewChat = useCallback(() => {
@@ -384,30 +461,35 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     });
   };
 
-  // Confirm permanent delete
+  // Confirm permanent delete with smooth animated exit
   const handleConfirmPermanentDelete = () => {
     const { convId } = deleteConfirmation;
-    const nextList = conversations.filter((c) => c.id !== convId);
-    onUpdateConversations(nextList);
+    setDeletingConvId(convId);
     setDeleteConfirmation({ isOpen: false, convId: '', convTitle: '' });
 
-    if (selectedConvId === convId) {
-      if (nextList.length > 0) {
-        setSelectedConvId(nextList[0].id);
-      } else {
-        const brandNewId = `conv-${Date.now()}`;
-        const brandNew: GeminiConversation = {
-          id: brandNewId,
-          title: 'New Conversation',
-          createdAt: 'Just now',
-          updatedAt: 'Just now',
-          model: selectedModel,
-          messages: [],
-        };
-        onUpdateConversations([brandNew]);
-        setSelectedConvId(brandNewId);
+    setTimeout(() => {
+      const nextList = conversations.filter((c) => c.id !== convId);
+      onUpdateConversations(nextList);
+      setDeletingConvId(null);
+
+      if (selectedConvId === convId) {
+        if (nextList.length > 0) {
+          setSelectedConvId(nextList[0].id);
+        } else {
+          const brandNewId = `conv-${Date.now()}`;
+          const brandNew: GeminiConversation = {
+            id: brandNewId,
+            title: 'New Conversation',
+            createdAt: 'Just now',
+            updatedAt: 'Just now',
+            model: selectedModel,
+            messages: [],
+          };
+          onUpdateConversations([brandNew]);
+          setSelectedConvId(brandNewId);
+        }
       }
-    }
+    }, 220);
   };
 
   // Save renamed title
@@ -538,6 +620,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
       );
     }
 
+    pendingPromptIdRef.current = userMessageId;
     setIsLoading(true);
 
     const ac = new AbortController();
@@ -714,60 +797,77 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                 {/* Subtle Divider */}
                 <div className="w-6 h-px bg-white/10 my-2 shrink-0" />
 
-                {/* Scrollable Indexed Conversation Bubbles (OneNote Rail Style) */}
+                {/* Scrollable Indexed Conversation Bubbles (OneNote Rail Style with Reorder) */}
                 <div className="flex-1 w-full overflow-y-auto no-scrollbar flex flex-col items-center gap-2 py-2 px-1">
-                  {conversations.map((conv, index) => {
-                    const isSelected = selectedConvId === conv.id;
-                    return (
-                      <div key={conv.id} className="relative group/bubble">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedConvId(conv.id)}
-                          className={`w-9 h-9 rounded-xl text-xs font-mono font-bold flex items-center justify-center transition border cursor-pointer select-none ${
-                            isSelected
-                              ? 'shadow-md scale-105'
-                              : darkMode
-                              ? 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
-                              : 'border-slate-300 bg-white/60 text-slate-600 hover:bg-white'
-                          }`}
-                          style={
-                            isSelected
-                              ? {
-                                  backgroundColor: `${activePalette.primary}25`,
-                                  borderColor: `${activePalette.primary}80`,
-                                  color: darkMode ? '#ffffff' : activePalette.primary,
-                                  boxShadow: `0 0 14px ${activePalette.primary}40`,
-                                }
-                              : undefined
-                          }
-                          title={conv.title}
+                  <Reorder.Group
+                    axis="y"
+                    values={conversations}
+                    onReorder={onUpdateConversations}
+                    layoutScroll
+                    className="flex flex-col items-center gap-2 w-full"
+                  >
+                    {conversations.map((conv, index) => {
+                      const isSelected = selectedConvId === conv.id;
+                      return (
+                        <Reorder.Item
+                          key={conv.id}
+                          value={conv}
+                          dragElastic={0.1}
+                          dragTransition={{ bounceStiffness: 600, bounceDamping: 30 }}
+                          whileDrag={{ scale: 1.08, zIndex: 60 }}
+                          className="relative group/bubble cursor-grab active:cursor-grabbing select-none"
                         >
-                          <MessageSquare
-                            className={`w-4 h-4 ${isSelected ? (activePalette.id === 'black-night' ? 'text-slate-100' : '') : 'text-slate-300'}`}
-                            style={{ color: isSelected && activePalette.id !== 'black-night' ? activePalette.primary : undefined }}
-                          />
-                        </button>
-
-                        {/* Hover Tooltip displaying Chat Title & Index */}
-                        <div
-                          className={`absolute left-full ml-2.5 px-2.5 py-1.5 rounded-xl text-xs whitespace-nowrap pointer-events-none opacity-0 group-hover/bubble:opacity-100 transition-all duration-150 z-50 shadow-xl border backdrop-blur-2xl ${
-                            darkMode
-                              ? 'bg-slate-900/95 border-white/15 text-slate-200 shadow-black/80'
-                              : 'bg-white/95 border-slate-300 text-slate-800 shadow-slate-300/60'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full"
-                              style={{ backgroundColor: activePalette.primary }}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedConvId(conv.id)}
+                            className={`w-9 h-9 rounded-xl text-xs font-mono font-bold flex items-center justify-center transition-colors duration-150 border cursor-pointer select-none ${
+                              isSelected
+                                ? 'shadow-md scale-105 active-conv'
+                                : darkMode
+                                ? 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
+                                : 'border-slate-300 bg-white/60 text-slate-600 hover:bg-white'
+                            }`}
+                            style={
+                              isSelected
+                                ? {
+                                    backgroundColor: `${activePalette.primary}25`,
+                                    borderColor: `${activePalette.primary}80`,
+                                    color: darkMode ? '#ffffff' : activePalette.primary,
+                                    boxShadow: `0 0 14px ${activePalette.primary}40`,
+                                  }
+                                : {
+                                    boxShadow: 'none',
+                                  }
+                            }
+                            title={conv.title}
+                          >
+                            <MessageSquare
+                              className={`w-4 h-4 ${isSelected ? (activePalette.id === 'black-night' ? 'text-slate-100' : '') : 'text-slate-300'}`}
+                              style={{ color: isSelected && activePalette.id !== 'black-night' ? activePalette.primary : undefined }}
                             />
-                            <span className="font-bold font-mono text-[11px]">#{index + 1}</span>
-                            <span className="max-w-[200px] truncate font-medium">{conv.title}</span>
+                          </button>
+
+                          {/* Hover Tooltip displaying Chat Title & Index */}
+                          <div
+                            className={`absolute left-full ml-2.5 px-2.5 py-1.5 rounded-xl text-xs whitespace-nowrap pointer-events-none opacity-0 group-hover/bubble:opacity-100 transition-all duration-150 z-50 shadow-xl border backdrop-blur-2xl ${
+                              darkMode
+                                ? 'bg-slate-900/95 border-white/15 text-slate-200 shadow-black/80'
+                                : 'bg-white/95 border-slate-300 text-slate-800 shadow-slate-300/60'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className="w-1.5 h-1.5 rounded-full"
+                                style={{ backgroundColor: activePalette.primary }}
+                              />
+                              <span className="font-bold font-mono text-[11px]">#{index + 1}</span>
+                              <span className="max-w-[200px] truncate font-medium">{conv.title}</span>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        </Reorder.Item>
+                      );
+                    })}
+                  </Reorder.Group>
                 </div>
 
                 {/* Subtle Divider */}
@@ -883,144 +983,191 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                 </div>
 
                 {/* Conversation List Tiles with generous breathing padding to prevent clipping */}
-                <div className="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar min-h-0 p-2">
+                <div className="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar min-h-0 -mx-1 px-4 py-3">
                   {filteredConversations.length === 0 ? (
                     <div className="text-center py-8 text-xs text-slate-500 font-mono">
                       No conversations match "{searchQuery}"
                     </div>
                   ) : (
-                    filteredConversations.map((conv) => {
-                      const isSelected = selectedConvId === conv.id;
-                      const isEditing = editingTitleId === conv.id;
+                    <Reorder.Group
+                      axis="y"
+                      values={conversations}
+                      onReorder={onUpdateConversations}
+                      layoutScroll
+                      className="space-y-2.5"
+                    >
+                      {filteredConversations.map((conv) => {
+                        const isSelected = selectedConvId === conv.id;
+                        const isEditing = editingTitleId === conv.id;
 
-                      return (
-                        <div
-                          key={conv.id}
-                          onClick={() => setSelectedConvId(conv.id)}
-                          onPointerMove={handleItemPointerMove}
-                          onPointerLeave={handleItemPointerLeave}
-                          className={`p-3 rounded-2xl cursor-pointer select-none border transition-all duration-200 group relative liquid-glass-tile gemini-conv-tile ${
-                            isSelected
-                              ? darkMode
-                                ? 'bg-white/12 text-white font-semibold shadow-md'
-                                : 'bg-white text-slate-950 font-semibold shadow-md'
-                              : darkMode
-                              ? 'bg-white/[0.04] hover:bg-white/[0.09] text-slate-200 border-white/10 hover:border-white/30'
-                              : 'bg-white/70 hover:bg-white text-slate-800 border-slate-200/90 hover:border-slate-300'
-                          }`}
-                          style={{
-                            ...(isSelected
-                              ? {
-                                  borderColor: `${activePalette.primary}90`,
-                                  boxShadow: `0 0 16px ${activePalette.primary}35`,
-                                }
-                              : undefined),
-                          }}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            {/* Rounded Square Message Icon matching previous look and OneNote style */}
-                            <div
-                              className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border transition-all duration-200 group-hover:scale-105"
-                              style={{
-                                background: isSelected
-                                  ? `linear-gradient(135deg, ${activePalette.primary}30, ${activePalette.accent}20)`
-                                  : darkMode
-                                  ? 'rgba(255, 255, 255, 0.04)'
-                                  : 'rgba(0, 0, 0, 0.04)',
-                                borderColor: isSelected
-                                  ? `${activePalette.primary}70`
-                                  : darkMode
-                                  ? 'rgba(255, 255, 255, 0.08)'
-                                  : 'rgba(0, 0, 0, 0.08)',
-                              }}
-                            >
-                              <MessageSquare
-                                className={`w-4 h-4 shrink-0 transition-colors ${
-                                  isSelected
-                                    ? darkMode
-                                      ? 'text-slate-100'
-                                      : ''
-                                    : 'text-slate-300 group-hover:text-white'
-                                }`}
+                        return (
+                          <Reorder.Item
+                            key={conv.id}
+                            value={conv}
+                            dragListener={!searchQuery.trim()}
+                            dragElastic={0.1}
+                            dragTransition={{ bounceStiffness: 600, bounceDamping: 30 }}
+                            whileDrag={{
+                              scale: 1.02,
+                              zIndex: 60,
+                              boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)',
+                            }}
+                            onClick={() => setSelectedConvId(conv.id)}
+                            className={`p-3 rounded-2xl select-none border transition-all duration-200 group relative gemini-conv-tile ${
+                              conv.id === deletingConvId
+                                ? 'opacity-0 scale-90 -translate-x-4 max-h-0 py-0 my-0 overflow-hidden pointer-events-none'
+                                : ''
+                            } ${
+                              isSelected ? 'active-conv is-opened' : ''
+                            } ${
+                              !searchQuery.trim() ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                            } ${
+                              isSelected
+                                ? darkMode
+                                  ? 'bg-white/12 text-white font-semibold'
+                                  : 'bg-white text-slate-950 font-semibold'
+                                : darkMode
+                                ? 'bg-slate-900/60 hover:bg-slate-900/80 text-slate-200 border-white/10 hover:border-white/25'
+                                : 'bg-white/80 hover:bg-white text-slate-800 border-slate-200/90 hover:border-slate-300'
+                            }`}
+                            style={{
+                              borderColor: isSelected
+                                ? activePalette.primary
+                                : undefined,
+                              boxShadow: isSelected
+                                ? `0 0 10px 0px ${activePalette.primary}45, inset 0 0 8px -1px ${activePalette.primary}25`
+                                : 'none',
+                            }}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {/* Rounded Square Message Icon matching previous look and OneNote style */}
+                              <div
+                                className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border transition-all duration-200 group-hover:scale-105 pointer-events-none"
                                 style={{
-                                  color: isSelected ? (darkMode ? '#f1f5f9' : activePalette.primary) : undefined,
+                                  background: isSelected
+                                    ? `linear-gradient(135deg, ${activePalette.primary}30, ${activePalette.accent}20)`
+                                    : darkMode
+                                    ? 'rgba(255, 255, 255, 0.04)'
+                                    : 'rgba(0, 0, 0, 0.04)',
+                                  borderColor: isSelected
+                                    ? `${activePalette.primary}70`
+                                    : darkMode
+                                    ? 'rgba(255, 255, 255, 0.08)'
+                                    : 'rgba(0, 0, 0, 0.08)',
                                 }}
-                              />
-                            </div>
+                              >
+                                <MessageSquare
+                                  className={`w-4 h-4 shrink-0 transition-colors ${
+                                    isSelected
+                                      ? darkMode
+                                        ? 'text-slate-100'
+                                        : ''
+                                      : 'text-slate-300 group-hover:text-white'
+                                  }`}
+                                  style={{
+                                    color: isSelected ? (darkMode ? '#f1f5f9' : activePalette.primary) : undefined,
+                                  }}
+                                />
+                              </div>
 
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center justify-between gap-1.5">
-                                {isEditing ? (
-                                  <input
-                                    autoFocus
-                                    type="text"
-                                    value={tempTitle}
-                                    onChange={(e) => setTempTitle(e.target.value)}
-                                    onBlur={() => handleSaveTitle(conv.id)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') handleSaveTitle(conv.id);
-                                      if (e.key === 'Escape') setEditingTitleId(null);
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="w-full text-xs font-semibold bg-transparent border-b border-cyan-400 focus:outline-none"
-                                  />
-                                ) : (
-                                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                    <h4
-                                      className={`text-xs font-semibold truncate ${
-                                        isSelected
-                                          ? 'text-white'
-                                          : 'text-slate-200 group-hover:text-white'
-                                      } transition-colors`}
-                                    >
-                                      {conv.title}
-                                    </h4>
-                                    {isSelected && (
-                                      <span
-                                        className="w-1.5 h-1.5 rounded-full shrink-0"
-                                        style={{ backgroundColor: activePalette.primary }}
-                                      />
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Right Action Icons (Edit Title & Trash) */}
-                                {!isEditing && (
-                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setEditingTitleId(conv.id);
-                                        setTempTitle(conv.title);
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-1.5">
+                                  {isEditing ? (
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      value={tempTitle}
+                                      onChange={(e) => setTempTitle(e.target.value)}
+                                      onBlur={() => handleSaveTitle(conv.id)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleSaveTitle(conv.id);
+                                        if (e.key === 'Escape') setEditingTitleId(null);
                                       }}
-                                      className="p-1 rounded hover:bg-white/20 text-slate-400 hover:text-white transition"
-                                      title="Rename chat"
-                                    >
-                                      <Edit2 className="w-3 h-3" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => handleRequestDelete(e, conv)}
-                                      className="p-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition"
-                                      title="Permanently delete conversation"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
+                                      onClick={(e) => e.stopPropagation()}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      className="w-full text-xs font-semibold bg-transparent border-b border-cyan-400 focus:outline-none"
+                                    />
+                                  ) : (
+                                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                      {conv.pinned && (
+                                        <Pin
+                                          className="w-3 h-3 shrink-0 rotate-45"
+                                          style={{ color: activePalette.primary }}
+                                        />
+                                      )}
+                                      <h4
+                                        className={`text-xs font-semibold truncate ${
+                                          isSelected
+                                            ? 'text-white'
+                                            : 'text-slate-200 group-hover:text-white'
+                                        } transition-colors`}
+                                      >
+                                        {conv.title}
+                                      </h4>
+                                      {isSelected && (
+                                        <span
+                                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                                          style={{ backgroundColor: activePalette.primary }}
+                                        />
+                                      )}
+                                    </div>
+                                  )}
 
-                              {/* Bottom Meta Row (Just now / 6 msgs) matching previous look & OneNote PageListItem */}
-                              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-1">
-                                <span>{conv.updatedAt || 'Just now'}</span>
-                                <span>{conv.messages.length} msgs</span>
+                                  {/* Right Action Icons (Pin, Edit Title & Trash) */}
+                                  {!isEditing && (
+                                    <div
+                                      className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0"
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleTogglePin(e, conv.id)}
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        className={`p-1 rounded hover:bg-white/20 transition cursor-pointer ${
+                                          conv.pinned ? 'text-amber-400' : 'text-slate-400 hover:text-white'
+                                        }`}
+                                        title={conv.pinned ? 'Unpin chat' : 'Pin chat to top'}
+                                      >
+                                        <Pin className={`w-3 h-3 ${conv.pinned ? 'fill-current' : ''}`} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingTitleId(conv.id);
+                                          setTempTitle(conv.title);
+                                        }}
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        className="p-1 rounded hover:bg-white/20 text-slate-400 hover:text-white transition cursor-pointer"
+                                        title="Rename chat"
+                                      >
+                                        <Edit2 className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleRequestDelete(e, conv)}
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        className="p-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                                        title="Permanently delete conversation"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Bottom Meta Row (Just now / 6 msgs) matching previous look & OneNote PageListItem */}
+                                <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-1 pointer-events-none">
+                                  <span>{conv.updatedAt || 'Just now'}</span>
+                                  <span>{conv.messages.length} msgs</span>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </div>
-                      );
-                    })
+                          </Reorder.Item>
+                        );
+                      })}
+                    </Reorder.Group>
                   )}
                 </div>
               </>
@@ -1033,6 +1180,14 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
             onPointerLeave={handleStagePointerLeave}
             className="flex-1 flex flex-col min-w-0 overflow-hidden relative z-10 gemini-stage-glow"
           >
+            {/* Conversation Switch Blur Sweep — Covering the entire right stage including the bottom chat input dock */}
+            {convChangeCount > 0 && (
+              <div
+                key={`stage-blur-${convChangeCount}`}
+                className="absolute inset-0 z-40 pointer-events-none onenote-page-blur-sweep"
+                aria-hidden="true"
+              />
+            )}
             {/* Top Workspace Bar — High z-50 stacking context prevents chat bubbles from clipping through dropdown */}
             <header
               className={`px-4 sm:px-6 py-2.5 border-b flex items-center justify-between gap-3 shrink-0 backdrop-blur-md relative z-50 ${
@@ -1172,17 +1327,9 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
 
             {/* Chat Thread Messages Area — Protected with .gemini-chat-canvas for 120 FPS Zero-Lag Scrolling */}
             <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col">
-              {/* OneNote-style blur sweep animation on conversation change */}
-              {convChangeCount > 0 && (
-                <div
-                  key={`conv-blur-${convChangeCount}`}
-                  className="absolute inset-0 z-30 pointer-events-none onenote-page-blur-sweep"
-                  aria-hidden="true"
-                />
-              )}
-
               <div
                 key={currentConversation?.id || 'empty-stage'}
+                ref={chatScrollContainerRef}
                 className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar gemini-chat-canvas relative z-10 onenote-page-content-reveal"
               >
                 {!currentConversation || currentConversation.messages.length === 0 ? (
@@ -1238,132 +1385,127 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                   </div>
                 </div>
               ) : (
-                /* Thread of Messages */
-                currentConversation?.messages.map((msg) => {
-                  const isUser = msg.role === 'user';
+                /* Thread of Messages with Smooth Deletion Animation & Natural Readable Sizing */
+                <AnimatePresence initial={false}>
+                  {currentConversation?.messages.map((msg) => {
+                    const isUser = msg.role === 'user';
 
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex gap-3 max-w-3xl ${
-                        isUser ? 'ml-auto' : 'mr-auto'
-                      }`}
-                    >
-
-                      {/* Bubble dynamically styled to match selected color palette and theme */}
-                      <div
-                        className="rounded-2xl p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed relative group/msg border transition-all duration-200"
-                        style={
-                          isUser
-                            ? darkMode
-                              ? activePalette.id === 'black-night'
-                                ? {
-                                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03))',
-                                    borderColor: 'rgba(255, 255, 255, 0.22)',
-                                    boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.15)',
-                                    color: '#f8fafc',
-                                  }
-                                : {
-                                    background: `linear-gradient(135deg, ${activePalette.primary}35, ${activePalette.accent}25)`,
-                                    borderColor: `${activePalette.primary}75`,
-                                    boxShadow: `0 4px 24px -4px ${activePalette.primary}35, inset 0 1px 1px rgba(255, 255, 255, 0.2)`,
-                                    color: '#ffffff',
-                                  }
-                              : {
-                                  background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
-                                  borderColor: activePalette.primary,
-                                  boxShadow: `0 4px 18px -2px ${activePalette.primary}45`,
-                                  color: '#ffffff',
-                                }
-                            : darkMode
-                            ? activePalette.id === 'black-night'
-                              ? {
-                                  background: 'rgba(12, 12, 16, 0.85)',
-                                  borderColor: 'rgba(255, 255, 255, 0.12)',
-                                  boxShadow: '0 8px 32px -4px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
-                                  color: '#f1f5f9',
-                                }
-                              : {
-                                  background: 'rgba(15, 23, 42, 0.78)',
-                                  borderColor: `${activePalette.primary}35`,
-                                  boxShadow: `0 8px 32px -4px ${activePalette.primary}15, inset 0 1px 0 rgba(255, 255, 255, 0.08)`,
-                                  color: '#f8fafc',
-                                }
-                            : {
-                                background: 'rgba(255, 255, 255, 0.95)',
-                                borderColor: `${activePalette.primary}40`,
-                                boxShadow: `0 8px 24px -4px ${activePalette.primary}15`,
-                                color: '#0f172a',
-                              }
-                        }
+                    return (
+                      <motion.div
+                        key={msg.id}
+                        data-msg-id={msg.id}
+                        data-msg-role={msg.role}
+                        initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.88, height: 0, overflow: 'hidden', marginBottom: 0 }}
+                        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                        className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}
                       >
-                        {/* Attachments preview if present in message */}
-                        {msg.attachments && msg.attachments.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mb-2.5">
-                            {msg.attachments.map((att) => (
-                              <div
-                                key={att.id}
-                                className={`flex items-center gap-2 p-1.5 pr-2.5 rounded-xl border backdrop-blur-md ${
-                                  isUser
-                                    ? 'bg-white/15 border-white/25 text-white'
-                                    : darkMode
-                                    ? 'bg-white/5 border-white/10 text-slate-200'
-                                    : 'bg-black/5 border-black/10 text-slate-800'
-                                }`}
-                              >
-                                {att.isImage && att.dataUrl ? (
-                                  <img
-                                    src={att.dataUrl}
-                                    alt={att.name}
-                                    className="w-10 h-10 rounded-lg object-cover border border-white/30"
-                                  />
-                                ) : (
-                                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 shrink-0">
-                                    {att.name.endsWith('.pdf') ? (
-                                      <FileText className="w-4 h-4 text-rose-300" />
-                                    ) : /\.(py|js|ts|tsx|jsx|html|css|c|cpp|rs|go|java)$/i.test(att.name) ? (
-                                      <FileCode className="w-4 h-4 text-cyan-300" />
-                                    ) : /\.(csv|xlsx|json)$/i.test(att.name) ? (
-                                      <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
-                                    ) : (
-                                      <File className="w-4 h-4 text-amber-300" />
-                                    )}
+                        {/* Message card with natural ergonomic width matching prompt length */}
+                        <div
+                          className={`rounded-2xl transition-all duration-200 relative group/msg border ${
+                            isUser
+                              ? 'max-w-[85%] sm:max-w-xl md:max-w-2xl w-fit ml-auto min-w-[140px] p-3.5 sm:p-4 text-xs sm:text-sm rounded-tr-md shadow-md'
+                              : 'max-w-[88%] sm:max-w-2xl md:max-w-3xl w-fit mr-auto min-w-[180px] p-4 sm:p-5 text-xs sm:text-sm rounded-tl-md shadow-md'
+                          }`}
+                          style={
+                            isUser
+                              ? {
+                                  background: darkMode
+                                    ? activePalette.id === 'black-night'
+                                      ? 'rgba(24, 24, 28, 0.95)'
+                                      : 'rgba(45, 33, 20, 0.85)'
+                                    : 'rgba(254, 243, 199, 0.95)',
+                                  borderColor: `${activePalette.primary}85`,
+                                  boxShadow: `0 4px 18px -2px ${activePalette.primary}30`,
+                                  color: darkMode ? '#f8fafc' : '#451a03',
+                                }
+                              : {
+                                  background: darkMode
+                                    ? activePalette.id === 'black-night'
+                                      ? 'rgba(12, 14, 20, 0.88)'
+                                      : 'rgba(15, 23, 42, 0.75)'
+                                    : 'rgba(255, 255, 255, 0.95)',
+                                  borderColor: darkMode ? 'rgba(255, 255, 255, 0.12)' : 'rgba(226, 232, 240, 0.9)',
+                                  boxShadow: darkMode
+                                    ? '0 8px 32px -4px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06)'
+                                    : '0 8px 24px -4px rgba(0, 0, 0, 0.08)',
+                                  color: darkMode ? '#f1f5f9' : '#0f172a',
+                                }
+                          }
+                        >
+                          {/* Attachments preview if present in message */}
+                          {msg.attachments && msg.attachments.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-2.5">
+                              {msg.attachments.map((att) => (
+                                <div
+                                  key={att.id}
+                                  onClick={() => setViewingAttachment(att)}
+                                  className={`flex items-center gap-2 p-1.5 pr-2.5 rounded-xl border backdrop-blur-md cursor-pointer hover:scale-[1.02] transition ${
+                                    isUser
+                                      ? 'bg-white/15 border-white/25 text-white'
+                                      : darkMode
+                                      ? 'bg-white/5 border-white/10 text-slate-200 hover:border-white/25'
+                                      : 'bg-black/5 border-black/10 text-slate-800 hover:border-black/20'
+                                  }`}
+                                  title="Click to view file contents"
+                                >
+                                  {att.isImage && att.dataUrl ? (
+                                    <img
+                                      src={att.dataUrl}
+                                      alt={att.name}
+                                      className="w-10 h-10 rounded-lg object-cover border border-white/30"
+                                    />
+                                  ) : (
+                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 shrink-0">
+                                      {att.name.endsWith('.pdf') ? (
+                                        <FileText className="w-4 h-4 text-rose-300" />
+                                      ) : /\.(py|js|ts|tsx|jsx|html|css|c|cpp|rs|go|java)$/i.test(att.name) ? (
+                                        <FileCode className="w-4 h-4 text-cyan-300" />
+                                      ) : /\.(csv|xlsx|json)$/i.test(att.name) ? (
+                                        <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
+                                      ) : (
+                                        <File className="w-4 h-4 text-amber-300" />
+                                      )}
+                                    </div>
+                                  )}
+                                  <div className="text-left overflow-hidden max-w-[170px]">
+                                    <p className="text-[11px] font-semibold truncate leading-tight">
+                                      {att.name}
+                                    </p>
+                                    <p className="text-[9px] opacity-80 font-mono">
+                                      {att.sizeFormatted} · Click to View
+                                    </p>
                                   </div>
-                                )}
-                                <div className="text-left overflow-hidden max-w-[170px]">
-                                  <p className="text-[11px] font-semibold truncate leading-tight">
-                                    {att.name}
-                                  </p>
-                                  <p className="text-[9px] opacity-80 font-mono">
-                                    {att.sizeFormatted}
-                                  </p>
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                              ))}
+                            </div>
+                          )}
 
-                        {/* Rich Markdown & KaTeX Math Renderer */}
-                        <MarkdownRenderer
-                          content={msg.content}
-                          darkMode={darkMode}
-                          isUser={isUser}
-                        />
+                          {/* Rich Markdown & KaTeX Math Renderer */}
+                          <MarkdownRenderer
+                            content={msg.content}
+                            darkMode={darkMode}
+                            isUser={isUser}
+                          />
 
+                          {/* Integrated compact meta footer row */}
                           <div
-                            className={`flex items-center justify-between gap-3 mt-2.5 pt-1.5 border-t text-[10px] font-mono ${
+                            className={`flex items-center justify-between gap-3 text-[10px] font-mono mt-2.5 pt-2 border-t ${
                               isUser
-                                ? 'border-white/20 text-white/80'
-                                : 'border-white/5 text-slate-400'
+                                ? 'border-amber-500/25 text-amber-200/80'
+                                : darkMode
+                                ? 'border-white/10 text-slate-400'
+                                : 'border-slate-200 text-slate-500'
                             }`}
                           >
                             <span>{msg.timestamp}</span>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 opacity-0 group-hover/msg:opacity-100 transition">
                               <button
                                 type="button"
                                 onClick={() => handleCopy(msg.id, msg.content)}
-                                className="opacity-0 group-hover/msg:opacity-100 transition flex items-center gap-1 hover:text-white"
-                                title="Copy message"
+                                className="flex items-center gap-1 hover:text-white transition"
+                                title="Copy message text"
                               >
                                 {copiedMsgId === msg.id ? (
                                   <>
@@ -1380,17 +1522,18 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleDeleteMessage(msg.id)}
-                                className="opacity-0 group-hover/msg:opacity-100 transition p-1 rounded hover:text-rose-400 hover:bg-rose-500/10 text-slate-400"
+                                className="p-1 rounded hover:text-rose-400 hover:bg-rose-500/10 text-slate-400 transition"
                                 title="Delete message"
                               >
                                 <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
                           </div>
-                      </div>
-                    </div>
-                  );
-                })
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               )}
 
               {/* Thinking / Streaming Indicator */}
@@ -1754,6 +1897,93 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
           </div>
         </div>
       )}
+
+      {/* Document Viewer Modal for Chat Attachments (Renders PDFs and Images in an <iframe>) */}
+      {viewingAttachment &&
+        createPortal(
+          <div
+            onClick={() => setViewingAttachment(null)}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={`w-full max-w-4xl rounded-3xl p-6 border shadow-2xl flex flex-col max-h-[88vh] space-y-4 acrylic-glass-panel ${
+                darkMode ? 'bg-slate-900/95 border-white/20 text-slate-100' : 'bg-white/95 border-slate-300 text-slate-900'
+              }`}
+              style={{ borderColor: `${activePalette.primary}60` }}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-inherit shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
+                    style={{ backgroundColor: `${activePalette.primary}25`, color: activePalette.primary }}
+                  >
+                    {viewingAttachment.isImage ? <FileText className="w-5 h-5" /> : <FileCode className="w-5 h-5" />}
+                  </div>
+                  <div className="truncate">
+                    <h3 className="text-sm font-bold truncate">{viewingAttachment.name}</h3>
+                    <p className="text-[10px] font-mono opacity-70">
+                      {viewingAttachment.sizeFormatted} · {viewingAttachment.type || 'DOCUMENT'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {viewingAttachment.dataUrl && (
+                    <a
+                      href={viewingAttachment.dataUrl}
+                      download={viewingAttachment.name}
+                      className="p-1.5 rounded-lg border hover:bg-white/10 transition text-xs flex items-center gap-1 cursor-pointer"
+                      title="Download file"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Download</span>
+                    </a>
+                  )}
+                  {viewingAttachment.textContent && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopy('view-att', viewingAttachment.textContent || '')}
+                      className="p-1.5 rounded-lg border hover:bg-white/10 transition text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>{copiedMsgId === 'view-att' ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setViewingAttachment(null)}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 min-h-0 flex flex-col rounded-xl overflow-hidden bg-black/20">
+                {viewingAttachment.isImage && viewingAttachment.dataUrl ? (
+                  <iframe
+                    srcDoc={buildImageIframeDoc(viewingAttachment.dataUrl, viewingAttachment.name, darkMode)}
+                    title={viewingAttachment.name}
+                    className="w-full h-[65vh] border-0 rounded-xl"
+                  />
+                ) : attachmentIframeUrl ? (
+                  <iframe
+                    src={attachmentIframeUrl}
+                    title={viewingAttachment.name}
+                    className="w-full h-[65vh] border-0 rounded-xl bg-white"
+                  />
+                ) : (
+                  <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                    <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap select-text">
+                      {viewingAttachment.textContent || 'No text preview available for this binary file.'}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -29,6 +29,210 @@ function resolveApiKey(req?: express.Request): string {
   return rawKey.replace(/^["']|["']$/g, '').trim();
 }
 
+const vertexKeyCache = new Map<string, 'generativelanguage' | 'aiplatform'>();
+
+function isAuthErrorStatus(status: number | undefined, message: string): boolean {
+  if (status === 400 || status === 401 || status === 403) {
+    const lower = message.toLowerCase();
+    if (
+      lower.includes('api key') ||
+      lower.includes('api_key') ||
+      lower.includes('permission') ||
+      lower.includes('unauthorized') ||
+      lower.includes('unauthenticated') ||
+      lower.includes('invalid authentication') ||
+      status === 401 ||
+      status === 403
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function mapServerModel(model?: string): string {
+  if (
+    !model ||
+    model === 'gemini-3.8-flash' ||
+    model === 'gemini-3.5-flash' ||
+    model === 'gemini-3.5-flash-lite' ||
+    model === 'gemini-2.5-pro' ||
+    model === 'gemini-2.5-flash' ||
+    model === 'gemini-1.5-flash' ||
+    model === 'gemini-1.5-pro' ||
+    model === 'gemini-flash-latest' ||
+    model === 'gemini-pro-latest'
+  ) {
+    return model === 'gemini-3.5-flash-lite' ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash';
+  }
+  if (model === 'gemini-4-argon') return 'gemini-2.5-pro';
+  return model;
+}
+
+async function verifyKeyFast(apiKey: string): Promise<{ valid: boolean; model?: string; mode?: string; error?: string }> {
+  const cleanKey = apiKey.replace(/^["']|["']$/g, '').trim();
+  if (!cleanKey || cleanKey.length < 16 || /\s/.test(cleanKey)) {
+    return { valid: false, error: 'Invalid API key format.' };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    // 1. Always try native Google AI Studio / Generative Language API FIRST (~150ms).
+    // Note: Modern Google AI Studio keys can start with either `AIza...` OR `AQ.Ab8...`.
+    const glResp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?pageSize=8&key=${encodeURIComponent(cleanKey)}`,
+      {
+        method: 'GET',
+        signal: controller.signal,
+      }
+    );
+
+    if (glResp.ok) {
+      vertexKeyCache.set(cleanKey, 'generativelanguage');
+      const data = await glResp.json().catch(() => ({}));
+      const firstModel = Array.isArray(data?.models)
+        ? data.models.find((m: any) => String(m?.name || '').includes('flash'))?.name?.replace(/^models\//, '')
+        : undefined;
+      return {
+        valid: true,
+        model: firstModel || 'gemini-2.5-flash',
+        mode: 'ai-studio',
+      };
+    }
+
+    const glErrJson = await glResp.json().catch(() => null);
+    const glErrMsg = glErrJson?.error?.message || `HTTP ${glResp.status}: Invalid Gemini API key.`;
+
+    // 2. If this is an `AQ.` key and Generative Language API rejected it, check Vertex AI Express once.
+    if (cleanKey.startsWith('AQ.')) {
+      const vxResp = await fetch(
+        `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(cleanKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'OK' }] }],
+            generationConfig: {
+              maxOutputTokens: 2,
+              thinkingConfig: { thinkingBudget: 0 },
+            },
+          }),
+        }
+      );
+
+      if (vxResp.ok) {
+        vertexKeyCache.set(cleanKey, 'aiplatform');
+        return { valid: true, model: 'gemini-2.5-flash', mode: 'vertex-express' };
+      }
+      const vxErr = await vxResp.json().catch(() => null);
+      const vxMsg = String(vxErr?.error?.message || '');
+      if (
+        vxMsg.toLowerCase().includes('aiplatform.googleapis.com') ||
+        vxMsg.toLowerCase().includes('has not been used in project') ||
+        vxMsg.toLowerCase().includes('it is disabled')
+      ) {
+        return {
+          valid: false,
+          error:
+            'This Google Cloud key does not have Gemini / Generative Language API or Vertex AI enabled on its project. Create a standard key at Google AI Studio (aistudio.google.com/apikey) to use your own Gemini credits immediately.',
+        };
+      }
+    }
+
+    return { valid: false, error: glErrMsg };
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return { valid: false, error: 'Verification timed out. Please try again.' };
+    }
+    return {
+      valid: false,
+      error: err instanceof Error ? err.message : 'Verification request failed.',
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function callVertexExpressRest(
+  apiKey: string,
+  model: string,
+  contents: any,
+  config?: Record<string, any>
+): Promise<{ text: string; modelUsed: string }> {
+  const models = Array.from(new Set([mapServerModel(model), 'gemini-2.5-flash', 'gemini-2.5-flash-lite']));
+  let lastError: any = null;
+
+  for (const m of models) {
+    const normalizedContents =
+      typeof contents === 'string'
+        ? [{ role: 'user', parts: [{ text: contents }] }]
+        : contents?.parts
+        ? [{ role: 'user', parts: contents.parts }]
+        : Array.isArray(contents)
+        ? [{ role: 'user', parts: contents }]
+        : [{ role: 'user', parts: [{ text: String(contents || '') }] }];
+
+    const body: Record<string, any> = {
+      contents: normalizedContents,
+    };
+    if (config?.systemInstruction) {
+      body.systemInstruction = { parts: [{ text: String(config.systemInstruction) }] };
+    }
+    const generationConfig: Record<string, any> = {};
+    if (config?.maxOutputTokens) generationConfig.maxOutputTokens = config.maxOutputTokens;
+    if (config?.responseMimeType) generationConfig.responseMimeType = config.responseMimeType;
+    if (config?.responseSchema) generationConfig.responseSchema = config.responseSchema;
+    if (Object.keys(generationConfig).length > 0) {
+      body.generationConfig = generationConfig;
+    }
+
+    const resp = await fetch(
+      `https://aiplatform.googleapis.com/v1/publishers/google/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    );
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const parts = data?.candidates?.[0]?.content?.parts || [];
+      const text = parts
+        .filter((p: any) => !p.thought && typeof p.text === 'string')
+        .map((p: any) => p.text)
+        .join('\n\n')
+        .trim();
+      return { text: text || 'No response generated from the model.', modelUsed: m };
+    }
+
+    const errJson = await resp.json().catch(() => null);
+    const errMessage = errJson?.error?.message || `HTTP ${resp.status}: ${resp.statusText}`;
+    lastError = new Error(errMessage);
+    if (isAuthErrorStatus(resp.status, errMessage)) {
+      throw lastError;
+    }
+  }
+
+  throw lastError || new Error('Vertex AI Express request failed.');
+}
+
+// Instant API Key Verification Endpoint (< 500ms, zero multi-model stalls)
+app.post('/api/gemini/verify', async (req, res) => {
+  const apiKey = resolveApiKey(req);
+  if (!apiKey) {
+    return res.status(400).json({ valid: false, error: 'Please provide a Gemini API key.' });
+  }
+  const result = await verifyKeyFast(apiKey);
+  if (!result.valid) {
+    return res.status(401).json(result);
+  }
+  return res.json(result);
+});
+
 // Health & Connection Check Endpoint
 app.get('/api/gemini/status', async (req, res) => {
   const apiKey = resolveApiKey(req);
@@ -39,35 +243,20 @@ app.get('/api/gemini/status', async (req, res) => {
     });
   }
 
-  try {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
-
-    const ping = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: 'Ping: Reply with "PONG".',
-    });
-
+  const check = await verifyKeyFast(apiKey);
+  if (check.valid) {
     return res.json({
       connected: true,
-      model: 'gemini-3.8-flash',
-      reply: ping.text?.trim() || 'PONG',
+      model: check.model || 'gemini-2.5-flash',
+      reply: 'PONG',
       keyPreview: `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}`,
     });
-  } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : 'API Check failed';
-    return res.json({
-      connected: false,
-      error: errMsg,
-      keyPreview: `${apiKey.substring(0, 6)}...`,
-    });
   }
+  return res.json({
+    connected: false,
+    error: check.error || 'API Check failed',
+    keyPreview: `${apiKey.substring(0, 6)}...`,
+  });
 });
 
 // Helper to extract outermost balanced JSON object from a string
@@ -228,15 +417,13 @@ app.post('/api/gemini/chat', async (req, res) => {
           .join('\n---\n');
     }
 
-    // Normalize requested model to the best active multimodal models (gemini-3.5-flash is ultra-reliable)
-    const requestedModel = (!model || model === 'gemini-2.5-pro' || model === 'gemini-2.5-flash' || model === 'gemini-1.5-flash' || model === 'gemini-1.5-pro' || model === 'gemini-flash-latest' || model === 'gemini-pro-latest')
-      ? 'gemini-3.5-flash'
-      : model;
+    // Normalize requested model to valid fast multimodal models
+    const requestedModel = mapServerModel(model);
 
-    const targetModel = enableThinking ? 'gemini-3.5-flash' : requestedModel;
+    const targetModel = enableThinking ? 'gemini-2.5-flash' : requestedModel;
     const isExtendedModel =
       enableThinking ||
-      targetModel === 'gemini-4-argon';
+      model === 'gemini-4-argon';
 
     const systemInstruction = hasImages
       ? `You are Gemini, a helpful, precise, and capable multimodal AI assistant built by Google. Inspect the visual data provided in the attached image parts. Carefully describe what you see, transcribe any visible text, words, and labels with complete accuracy, and format your response in clean Markdown.`
@@ -325,13 +512,21 @@ app.post('/api/gemini/chat', async (req, res) => {
         ? (contentsParts[0] as any).text
         : (contentsParts as any);
 
+    if (vertexKeyCache.get(apiKey) === 'aiplatform') {
+      const vertexResult = await callVertexExpressRest(apiKey, targetModel, finalContents, config);
+      return res.json({
+        reply: cleanGeminiReply(vertexResult.text),
+        modelUsed: vertexResult.modelUsed,
+        thinkingUsed: Boolean(enableThinking || model === 'gemini-4-argon'),
+      });
+    }
+
     // Candidate fallback models in priority order (strictly valid active models)
     const candidateModels = [
       targetModel,
-      'gemini-3.5-flash',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
       'gemini-3.1-flash-lite',
-      'gemini-3.5-flash-lite',
-      'gemini-3.8-flash',
     ].filter((v, i, a) => a.indexOf(v) === i);
 
     let response: any = null;
@@ -350,6 +545,11 @@ app.post('/api/gemini/chat', async (req, res) => {
         break;
       } catch (err: any) {
         lastError = err;
+        const msg = String(err?.message || err);
+        const status = err?.status ?? err?.code;
+        if (isAuthErrorStatus(typeof status === 'number' ? status : undefined, msg)) {
+          throw err;
+        }
         // If thinking config caused rejection, retry candidate without thinkingConfig
         if (config.thinkingConfig) {
           try {
@@ -363,8 +563,12 @@ app.post('/api/gemini/chat', async (req, res) => {
             response = attemptNoThinking;
             successfulModel = m;
             break;
-          } catch {
-            // continue to next model candidate
+          } catch (innerErr: any) {
+            const innerMsg = String(innerErr?.message || innerErr);
+            const innerStatus = innerErr?.status ?? innerErr?.code;
+            if (isAuthErrorStatus(typeof innerStatus === 'number' ? innerStatus : undefined, innerMsg)) {
+              throw innerErr;
+            }
           }
         }
       }
@@ -409,10 +613,177 @@ app.post('/api/gemini/chat', async (req, res) => {
   }
 });
 
+// Server-Sent Events (SSE) Streaming Chat Endpoint
+app.post('/api/gemini/stream', async (req, res) => {
+  try {
+    const {
+      message,
+      model = 'gemini-3.8-flash',
+      enableThinking = false,
+      sources = [],
+      attachments = [],
+    } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    const apiKey = resolveApiKey(req);
+    if (!apiKey) {
+      return res.status(401).json({
+        error: 'Gemini API key is missing. Please enter a valid key in Settings or Login.',
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    const hasImages = Array.isArray(attachments) && attachments.some(
+      (a: any) => a.isImage || a.type?.startsWith('image/') || (a.dataUrl && a.dataUrl.startsWith('data:image/'))
+    );
+
+    let sourcesContext = '';
+    if (!hasImages && Array.isArray(sources) && sources.length > 0) {
+      sourcesContext =
+        `\n\n[Active Knowledge Sources for Grounding]:\n` +
+        sources
+          .map(
+            (s: { title: string; content: string }, idx: number) =>
+              `[Source ${idx + 1}: ${s.title}]\n${s.content}\n`
+          )
+          .join('\n---\n');
+    }
+
+    const targetModel = mapServerModel(enableThinking ? 'gemini-2.5-flash' : model);
+    const isExtendedModel = enableThinking || model === 'gemini-4-argon';
+
+    const systemInstruction = hasImages
+      ? `You are Gemini, a helpful, precise, and capable multimodal AI assistant built by Google. Inspect visual attachments and transcribe or analyze with precision.`
+      : isExtendedModel
+      ? (sourcesContext
+          ? `You are an expert research and academic synthesis assistant using Gemini extended reasoning mode. Strictly cite sources as [1], [2], provide full mathematical derivations in LaTeX, and expansive deep analysis.`
+          : `You are Gemini in extended reasoning mode, built by Google. Generate comprehensive, in-depth responses with clean Markdown and LaTeX formulas.`)
+      : (sourcesContext
+          ? `You are a research synthesis assistant grounded in the provided study sources. Cite sources as [1], [2].`
+          : `You are Gemini, a helpful, capable, and thoughtful AI assistant built by Google.`);
+
+    const config: Record<string, unknown> = { systemInstruction };
+    if (isExtendedModel) config.maxOutputTokens = 8192;
+    if (enableThinking) config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+
+    const promptWithContext = sourcesContext ? `${sourcesContext}\n\nUser Question:\n${message}` : message;
+
+    const contentsParts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+    contentsParts.push({ text: promptWithContext });
+
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      for (const att of attachments) {
+        if (att.dataUrl && typeof att.dataUrl === 'string' && att.dataUrl.includes('base64,')) {
+          const [header, base64Data] = att.dataUrl.split('base64,');
+          if (base64Data && base64Data.trim()) {
+            let mimeType = att.type || 'image/png';
+            contentsParts.push({ inlineData: { mimeType, data: base64Data.trim() } });
+          }
+        } else if (att.textContent && !att.isImage) {
+          contentsParts.push({ text: `\n\n[Document: ${att.name}]\n${att.textContent.slice(0, 45000)}\n` });
+        }
+      }
+    }
+
+    const finalContents = contentsParts.length === 1 && 'text' in contentsParts[0]
+      ? (contentsParts[0] as any).text
+      : (contentsParts as any);
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    if (vertexKeyCache.get(apiKey) === 'aiplatform') {
+      const vertexResult = await callVertexExpressRest(apiKey, targetModel, finalContents, config);
+      res.write(`data: ${JSON.stringify({ text: vertexResult.text })}\n\n`);
+      res.write(`data: [DONE]\n\n`);
+      res.end();
+      return;
+    }
+
+    const stream = await ai.models.generateContentStream({
+      model: targetModel,
+      contents: finalContents,
+      config,
+    });
+
+    for await (const chunk of stream) {
+      const text = chunk.text;
+      if (text) {
+        res.write(`data: ${JSON.stringify({ text })}\n\n`);
+      }
+    }
+
+    res.write(`data: [DONE]\n\n`);
+    res.end();
+  } catch (err: unknown) {
+    console.error('Gemini Stream Error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Streaming error' });
+    } else {
+      res.write(`data: ${JSON.stringify({ error: err instanceof Error ? err.message : 'Stream failed' })}\n\n`);
+      res.end();
+    }
+  }
+});
+
+// Helper for robust generation with automatic retry and model fallback (handles 503 high-demand spikes)
+async function generateWithModelFallback(
+  ai: GoogleGenAI,
+  preferredModel: string,
+  contents: any,
+  config?: any
+) {
+  const candidateModels = [
+    preferredModel,
+    'gemini-2.5-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash-lite',
+  ];
+  const uniqueModels = Array.from(new Set(candidateModels.filter(Boolean)));
+  let lastError: any = null;
+
+  for (const model of uniqueModels) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents,
+          config,
+        });
+        if (response && (response.text !== undefined || (response.candidates && response.candidates.length > 0))) {
+          return { response, modelUsed: model };
+        }
+      } catch (err: any) {
+        lastError = err;
+        const msg = String(err?.message || err);
+        console.warn(`[Gemini Fallback] Model ${model} (attempt ${attempt + 1}) encountered: ${msg}`);
+        if (msg.includes('503') || msg.includes('429') || msg.includes('high demand') || msg.includes('UNAVAILABLE')) {
+          await new Promise((resolve) => setTimeout(resolve, 350));
+        } else {
+          break;
+        }
+      }
+    }
+  }
+  throw lastError;
+}
+
 // Quick Study Synthesis Generator (Study Guide, FAQ, Briefing, Audio Overview script)
 app.post('/api/gemini/synthesize', async (req, res) => {
   try {
-    const { type, sources = [], title = 'Research Synthesis' } = req.body;
+    const { type, sources = [], title = 'Research Synthesis', model: requestedModel } = req.body;
     
     if (!sources || sources.length === 0) {
       return res.status(400).json({ error: 'At least one source is required for synthesis' });
@@ -436,27 +807,201 @@ app.post('/api/gemini/synthesize', async (req, res) => {
       case 'audio_overview':
         synthesisPrompt = `Generate an engaging dual-host podcast discussion script ('Host Alex' and 'Host Morgan') discussing and dissecting these sources in an insightful, conversational NotebookLM style:`;
         break;
+      case 'topics_covered':
+        synthesisPrompt = `Analyze all the provided sources and generate a comprehensive, structured, categorized list of ALL topics, domains, subtopics, and key themes covered across the sources. Group them systematically with clear headers, bullet points, and concise explanatory summaries for each:`;
+        break;
       default:
         synthesisPrompt = `Summarize and organize key insights from these sources:`;
     }
 
     const apiKey = resolveApiKey(req);
-    const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: `${synthesisPrompt}\n\n${combinedSources}`,
-      config: {
-        systemInstruction: 'You are an elite academic synthesizer. Produce beautifully formatted, insightful markdown documents.',
-      },
+    if (!apiKey) {
+      return res.status(401).json({ error: 'Gemini API key is missing.' });
+    }
+
+    if (vertexKeyCache.get(apiKey) === 'aiplatform') {
+      const vertexResult = await callVertexExpressRest(
+        apiKey,
+        requestedModel || 'gemini-2.5-flash',
+        `${synthesisPrompt}\n\n${combinedSources}`,
+        { systemInstruction: 'You are an elite academic synthesizer. Produce beautifully formatted, insightful markdown documents.' }
+      );
+      return res.json({
+        title: `${title} - ${type.replace('_', ' ').toUpperCase()}`,
+        content: vertexResult.text,
+        modelUsed: vertexResult.modelUsed,
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
+
+    // Use fallback-enabled generator starting with gemini-2.5-flash or requested model
+    const primaryModel = mapServerModel(requestedModel || 'gemini-2.5-flash');
+    const { response, modelUsed } = await generateWithModelFallback(
+      ai,
+      primaryModel,
+      `${synthesisPrompt}\n\n${combinedSources}`,
+      {
+        systemInstruction: 'You are an elite academic synthesizer. Produce beautifully formatted, insightful markdown documents.',
+      }
+    );
 
     return res.json({
       title: `${title} - ${type.replace('_', ' ').toUpperCase()}`,
       content: response.text || 'Synthesis could not be generated.',
+      modelUsed,
     });
   } catch (err: unknown) {
     console.error('Synthesis Error:', err);
     const errorMessage = err instanceof Error ? err.message : 'Failed to synthesize content';
+    return res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Exam Schedule Photo Decoder Endpoint (Multimodal Gemini Vision -> Structured JSON)
+app.post('/api/gemini/decode-exam-schedule', async (req, res) => {
+  try {
+    const { imageDataUrl, mimeType: explicitMime } = req.body as {
+      imageDataUrl?: string;
+      mimeType?: string;
+    };
+
+    if (!imageDataUrl || typeof imageDataUrl !== 'string' || !imageDataUrl.includes('base64,')) {
+      return res.status(400).json({ error: 'A valid base64 imageDataUrl of the exam schedule is required.' });
+    }
+
+    const apiKey = resolveApiKey(req);
+    if (!apiKey) {
+      return res.status(401).json({
+        error: 'Gemini API key is missing. Configure GEMINI_API_KEY in Secrets or Settings.',
+      });
+    }
+
+    const [header, base64Data] = imageDataUrl.split('base64,');
+    let mimeType = explicitMime || '';
+    if (!mimeType || !mimeType.includes('/')) {
+      const match = header.match(/data:([^;]+);/);
+      mimeType = match?.[1] || 'image/png';
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    const extractionPrompt =
+      'Inspect this exam schedule image carefully. Extract every individual exam row or entry visible in the photo. ' +
+      'For each exam, normalize the date to YYYY-MM-DD when the year/month/day can be determined (otherwise keep the exact readable date string), ' +
+      'preserve the course code/subject name, exam paper/type title, exam time window, venue/room/hall (if visible), and any seat/instructions notes.';
+
+    const contents = {
+      parts: [
+        {
+          inlineData: {
+            mimeType,
+            data: base64Data.trim(),
+          },
+        },
+        {
+          text: extractionPrompt,
+        },
+      ],
+    };
+
+    const config = {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          exams: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                course: { type: Type.STRING, description: 'Course code or subject name' },
+                title: { type: Type.STRING, description: 'Exam title or paper description' },
+                date: { type: Type.STRING, description: 'Exam date (YYYY-MM-DD if known)' },
+                time: { type: Type.STRING, description: 'Start and end time or session slot' },
+                venue: { type: Type.STRING, description: 'Exam room, hall, or location' },
+                notes: { type: Type.STRING, description: 'Seat number, reporting time, or extra notes' },
+              },
+              required: ['course', 'title', 'date', 'time'],
+            },
+          },
+        },
+        required: ['exams'],
+      },
+    };
+
+    if (vertexKeyCache.get(apiKey) === 'aiplatform') {
+      const vertexResult = await callVertexExpressRest(apiKey, 'gemini-2.5-flash', contents, config);
+      const rawVertex = vertexResult.text.trim();
+      let parsedVertex: { exams?: Array<Record<string, string>> } = { exams: [] };
+      try {
+        parsedVertex = JSON.parse(rawVertex);
+      } catch {
+        const jsonMatch = rawVertex.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsedVertex = JSON.parse(jsonMatch[0]);
+        }
+      }
+      return res.json({
+        exams: Array.isArray(parsedVertex.exams) ? parsedVertex.exams : [],
+        modelUsed: vertexResult.modelUsed,
+      });
+    }
+
+    const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'];
+    let response: any = null;
+    let modelUsed = candidateModels[0];
+    let lastError: any = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents,
+          config,
+        });
+        modelUsed = modelName;
+        break;
+      } catch (err: any) {
+        lastError = err;
+        const msg = String(err?.message || err);
+        const status = err?.status ?? err?.code;
+        if (isAuthErrorStatus(typeof status === 'number' ? status : undefined, msg)) {
+          throw err;
+        }
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error('Failed to decode exam schedule image.');
+    }
+
+    const rawText = (response.text ?? '{}').trim();
+    let parsed: { exams?: Array<Record<string, string>> } = { exams: [] };
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      }
+    }
+
+    const exams = Array.isArray(parsed.exams) ? parsed.exams : [];
+    return res.json({ exams, modelUsed });
+  } catch (err: unknown) {
+    console.error('Exam Schedule Decode Error:', err);
+    const errorMessage = err instanceof Error ? err.message : 'Failed to decode exam schedule image';
     return res.status(500).json({ error: errorMessage });
   }
 });

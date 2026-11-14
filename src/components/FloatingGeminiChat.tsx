@@ -72,6 +72,14 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
   const tileRafRef = useRef<number | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const pendingPromptIdRef = useRef<string | null>(null);
+  const wasLoadingRef = useRef(false);
+
+  const { wrapperRef: chatScrollRef, scrollToBottom, scrollToElementTop } = useChatSmoothScroll<HTMLDivElement>({
+    enabled: smoothScroll && isOpen,
+    deps: [messages, isLoading],
+  });
+
   const handleStop = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -125,12 +133,38 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
     };
   }, []);
 
-  // Auto-scroll to latest message when new messages arrive
+  // Auto-scroll: glide to bottom while waiting on prompt, then align top of answered prompt when response completes
   useEffect(() => {
-    if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!isOpen) return;
+    if (isLoading) {
+      wasLoadingRef.current = true;
+      const timer = setTimeout(() => {
+        scrollToBottom();
+      }, 50);
+      return () => clearTimeout(timer);
+    } else if (wasLoadingRef.current) {
+      wasLoadingRef.current = false;
+      const targetId = pendingPromptIdRef.current;
+      pendingPromptIdRef.current = null;
+      const timer = setTimeout(() => {
+        const container = chatScrollRef.current;
+        if (!container) return;
+        let promptEl = targetId
+          ? (container.querySelector(`[data-msg-id="${targetId}"]`) as HTMLElement | null)
+          : null;
+        if (!promptEl) {
+          const allUserMsgs = container.querySelectorAll<HTMLElement>('[data-msg-role="user"]');
+          promptEl = allUserMsgs.length > 0 ? allUserMsgs[allUserMsgs.length - 1] : null;
+        }
+        if (promptEl) {
+          scrollToElementTop(promptEl, 12);
+        } else {
+          scrollToBottom();
+        }
+      }, 70);
+      return () => clearTimeout(timer);
     }
-  }, [messages, isOpen]);
+  }, [isLoading, isOpen, scrollToBottom, scrollToElementTop]);
 
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -144,6 +178,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
+    pendingPromptIdRef.current = userMsg.id;
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
@@ -399,69 +434,77 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
             {/* Chat Body: Messages + Input Form */}
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                   {/* Message List */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs leading-relaxed custom-scrollbar relative z-10">
-                    {messages.map((m) => (
-                      <div
-                        key={m.id}
-                        className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}
-                      >
-                        <div
-                          className={`max-w-[85%] p-3.5 rounded-2xl shadow-sm ${
-                            m.role === 'user'
-                              ? 'text-slate-950 font-semibold rounded-tr-none shadow-md'
-                              : darkMode
-                              ? 'bg-slate-900/60 text-slate-100 border border-white/14 rounded-tl-none shadow-md backdrop-blur-md'
-                              : 'bg-white/90 text-slate-900 border border-slate-200/90 rounded-tl-none shadow-sm backdrop-blur-sm'
-                          }`}
-                          style={
-                            m.role === 'user'
-                              ? {
-                                  background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
-                                  boxShadow: `0 4px 14px ${activePalette.primary}35`,
-                                }
-                              : {}
-                          }
+                  <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 text-xs leading-relaxed custom-scrollbar relative z-10">
+                    <AnimatePresence initial={false}>
+                      {messages.map((m) => (
+                        <motion.div
+                          key={m.id}
+                          data-msg-id={m.id}
+                          data-msg-role={m.role}
+                          initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.88, height: 0, overflow: 'hidden', marginBottom: 0 }}
+                          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                          className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}
                         >
-                          <MarkdownRenderer
-                            content={m.text}
-                            darkMode={darkMode}
-                            isUser={m.role === 'user'}
-                          />
-                          <div className="flex items-center justify-between gap-2 mt-1.5 pt-1 border-t border-white/10 text-[9px] font-mono">
-                            <span
-                              className={
-                                m.role === 'user'
-                                  ? 'text-slate-950/75'
-                                  : darkMode
-                                  ? 'text-slate-400'
-                                  : 'text-slate-500'
-                              }
-                            >
-                              {m.timestamp}
-                            </span>
+                          <div
+                            className={`max-w-[85%] p-3.5 rounded-2xl shadow-sm ${
+                              m.role === 'user'
+                                ? 'text-slate-950 font-semibold rounded-tr-none shadow-md'
+                                : darkMode
+                                ? 'bg-slate-900/60 text-slate-100 border border-white/14 rounded-tl-none shadow-md backdrop-blur-md'
+                                : 'bg-white/90 text-slate-900 border border-slate-200/90 rounded-tl-none shadow-sm backdrop-blur-sm'
+                            }`}
+                            style={
+                              m.role === 'user'
+                                ? {
+                                    background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                                    boxShadow: `0 4px 14px ${activePalette.primary}35`,
+                                  }
+                                : {}
+                            }
+                          >
+                            <MarkdownRenderer
+                              content={m.text}
+                              darkMode={darkMode}
+                              isUser={m.role === 'user'}
+                            />
+                            <div className="flex items-center justify-between gap-2 mt-1.5 pt-1 border-t border-white/10 text-[9px] font-mono">
+                              <span
+                                className={
+                                  m.role === 'user'
+                                    ? 'text-slate-950/75'
+                                    : darkMode
+                                    ? 'text-slate-400'
+                                    : 'text-slate-500'
+                                }
+                              >
+                                {m.timestamp}
+                              </span>
 
-                            <div className="flex items-center gap-1.5 opacity-80 hover:opacity-100">
-                              <button
-                                type="button"
-                                onClick={() => navigator.clipboard.writeText(m.text)}
-                                className="p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-                                title="Copy text"
-                              >
-                                <Copy className="w-2.5 h-2.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setMessages((prev) => prev.filter((item) => item.id !== m.id))}
-                                className="p-0.5 rounded hover:bg-rose-500/10 text-slate-400 hover:text-rose-400"
-                                title="Delete message"
-                              >
-                                <Trash2 className="w-2.5 h-2.5" />
-                              </button>
+                              <div className="flex items-center gap-1.5 opacity-80 hover:opacity-100">
+                                <button
+                                  type="button"
+                                  onClick={() => navigator.clipboard.writeText(m.text)}
+                                  className="p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white"
+                                  title="Copy text"
+                                >
+                                  <Copy className="w-2.5 h-2.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setMessages((prev) => prev.filter((item) => item.id !== m.id))}
+                                  className="p-0.5 rounded hover:bg-rose-500/10 text-slate-400 hover:text-rose-400"
+                                  title="Delete message"
+                                >
+                                  <Trash2 className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </div>
-                    ))}
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
 
                     {isLoading && (
                       <motion.div

@@ -16,7 +16,7 @@ import {
   Check,
 } from 'lucide-react';
 import { ColorPalette } from '../types';
-import { getActiveGeminiApiKey, setActiveGeminiApiKey, callGeminiChat } from '../utils/geminiClient';
+import { setActiveGeminiApiKey, verifyGeminiApiKey } from '../utils/geminiClient';
 
 interface AuthOnboardingModalProps {
   isOpen: boolean;
@@ -70,17 +70,20 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
   } | null>(null);
   const [isCopiedSuccess, setIsCopiedSuccess] = useState(false);
 
-  // Initialize key from stored value on open
+  // Initialize key ONLY from user manual storage (never autofill default/mock key)
   useEffect(() => {
     if (isOpen) {
-      const active = getActiveGeminiApiKey();
-      setApiKeyInput(active);
-      if (active) {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('aether_gemini_api_key') : null;
+      if (stored && stored.trim()) {
+        setApiKeyInput(stored.trim());
         setKeyStatus({
           tested: true,
           success: true,
           message: 'Saved Gemini API key ready for use',
         });
+      } else {
+        setApiKeyInput('');
+        setKeyStatus(null);
       }
     }
   }, [isOpen]);
@@ -113,7 +116,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
     }
   };
 
-  // Test and save the key
+  // Test and save the key (fast verification < 500ms, works on both Firebase Hosting and Express)
   const handleSaveAndTestKey = async () => {
     const keyToTest = apiKeyInput.trim();
     if (!keyToTest) {
@@ -130,23 +133,20 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
     setActiveGeminiApiKey(keyToTest);
 
     try {
-      const res = await callGeminiChat({
-        message: 'Ping verification. Respond with "Aether Gemini Connected" in 3 words.',
-        apiKey: keyToTest,
-      });
+      const res = await verifyGeminiApiKey(keyToTest);
 
-      if (res.success) {
+      if (res.valid) {
         setKeyStatus({
           tested: true,
           success: true,
-          message: `Live Connection Confirmed · ${res.modelUsed || 'gemini-3.8-flash'} ready`,
+          message: `Live Connection Confirmed · ${res.model || 'gemini-2.5-flash'} ready`,
         });
         setTimeout(() => {
           localStorage.setItem('aether_gemini_api_key', keyToTest);
           const email = signedInAccount || 'alex.learner@gmail.com';
           localStorage.setItem('aether_auth_user', JSON.stringify({ email, name: 'Alex Learner' }));
           onComplete({ email, apiKey: keyToTest });
-        }, 600);
+        }, 450);
       } else {
         setKeyStatus({
           tested: true,
@@ -328,8 +328,11 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
                 <input
                   type={showKey ? 'text' : 'password'}
                   value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder="Paste your Gemini API key (AIzaSy...)"
+                  onChange={(e) => {
+                    setApiKeyInput(e.target.value);
+                    if (keyStatus) setKeyStatus(null);
+                  }}
+                  placeholder="Paste your Gemini API key (AIzaSy... or AQ....)"
                   className={`w-full pl-3.5 pr-20 py-2.5 rounded-xl border text-xs font-mono focus:outline-none transition ${
                     darkMode
                       ? 'bg-slate-950/80 border-white/20 text-slate-100 placeholder-slate-500 focus:border-cyan-400'
@@ -433,8 +436,9 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
                 <li className="flex items-start gap-2">
                   <span className="font-bold text-white shrink-0">4. Copy &amp; Paste:</span>
                   <span>
-                    Copy the generated string of characters (it usually begins with{' '}
-                    <code className="px-1 py-0.2 rounded font-mono bg-white/10 text-cyan-300">AIzaSy...</code>) and paste it into the field above.
+                    Copy the generated string of characters (begins with{' '}
+                    <code className="px-1 py-0.2 rounded font-mono bg-white/10 text-cyan-300">AIzaSy...</code> or{' '}
+                    <code className="px-1 py-0.2 rounded font-mono bg-white/10 text-cyan-300">AQ.Ab8...</code>) and paste it into the field above to use your own Gemini credits.
                   </span>
                 </li>
               </ol>
@@ -456,40 +460,30 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
               </p>
             )}
 
-            {/* Bottom Actions */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-white/10">
+            {/* Bottom Actions - Mandatory API Key (No Skip Allowed) */}
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-white/10">
               <button
                 type="button"
-                onClick={handleProceedDirect}
-                className="text-xs text-slate-400 hover:text-white transition cursor-pointer order-2 sm:order-1 font-mono"
+                onClick={handleSaveAndTestKey}
+                disabled={isTestingKey || !apiKeyInput.trim()}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                  color: '#0f172a',
+                }}
               >
-                Skip for now &gt;
+                {isTestingKey ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verifying Gemini API Key...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Verify &amp; Launch Aether Studio</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
-
-              <div className="flex items-center gap-2 w-full sm:w-auto order-1 sm:order-2">
-                <button
-                  type="button"
-                  onClick={handleSaveAndTestKey}
-                  disabled={isTestingKey || !apiKeyInput.trim()}
-                  className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
-                  style={{
-                    background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
-                    color: '#0f172a',
-                  }}
-                >
-                  {isTestingKey ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Testing Live Connection...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Save &amp; Launch Aether Studio</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </div>
             </div>
           </div>
         )}

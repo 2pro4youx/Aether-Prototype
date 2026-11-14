@@ -9,92 +9,149 @@ import {
   Sparkles,
   Layers,
   ArrowRight,
-  BrainCircuit,
   GraduationCap,
+  Network,
+  FlaskConical,
+  Lock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ColorPalette } from '../types';
 import { LiquidGlassSvgFilter } from './LiquidGlassFilter';
 
+export type CreationItemType =
+  | 'note'
+  | 'project'
+  | 'notebook'
+  | 'document'
+  | 'planner'
+  | 'onenote'
+  | 'flashcards'
+  | 'mindmap'
+  | 'lab';
+
 interface CreateModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateItem: (type: 'note' | 'project' | 'notebook' | 'document' | 'planner' | 'onenote' | 'flashcards') => void;
+  onCreateItem: (type: CreationItemType) => void;
   darkMode?: boolean;
   activePalette?: ColorPalette;
 }
 
-export const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, onCreateItem, darkMode = true, activePalette }) => {
+export const CreateModal: React.FC<CreateModalProps> = ({
+  isOpen,
+  onClose,
+  onCreateItem,
+  darkMode = true,
+  activePalette,
+}) => {
   const creationOptions = [
     {
       type: 'notebook' as const,
       title: 'Google NotebookLM Workspace',
-      description: 'Multi-source grounded AI workspace for ingesting PDFs, research papers, and generating audio podcast scripts.',
+      description:
+        'Multi-source grounded AI workspace for ingesting PDFs, research papers, and generating audio podcast scripts.',
       icon: BookOpen,
       badge: 'Grounded AI',
       gradient: 'from-amber-500/20 to-red-500/20',
       border: 'border-amber-500/40',
       iconColor: 'text-amber-400',
+      inDevelopment: false,
     },
     {
       type: 'onenote' as const,
       title: 'OneNote Multi-Tab Notebook',
-      description: 'Hierarchical notebook (Notebooks > Color Sections > Pages) with rich block editing, code syntax, and action items.',
+      description:
+        'Standalone hierarchical notebook (Notebooks > Color Sections > Pages) with rich block editing and no Google Notebook window.',
       icon: Layers,
-      badge: 'Rich Blocks',
+      badge: 'Standalone',
       gradient: 'from-purple-500/20 to-indigo-500/20',
       border: 'border-purple-500/40',
       iconColor: 'text-purple-400',
+      inDevelopment: false,
     },
     {
       type: 'note' as const,
       title: 'Quick Atomic Note',
-      description: 'Fast markdown scratchpad for capturing lecture insights, spontaneous thoughts, or exam formulas.',
+      description:
+        'Fast markdown scratchpad for capturing lecture insights, spontaneous thoughts, or exam formulas.',
       icon: FileText,
-      badge: 'Instant Capture',
-      gradient: 'from-blue-500/20 to-cyan-500/20',
-      border: 'border-blue-500/40',
-      iconColor: 'text-blue-400',
+      badge: 'In Development',
+      gradient: 'from-slate-500/10 to-slate-600/10',
+      border: 'border-white/10',
+      iconColor: 'text-slate-400',
+      inDevelopment: true,
     },
     {
       type: 'project' as const,
       title: 'Research Project',
-      description: 'Structured repository uniting citations, milestone goals, lab benchmarks, and teammate assets.',
+      description:
+        'Structured repository uniting citations, milestone goals, lab benchmarks, and teammate assets.',
       icon: FolderGit2,
-      badge: 'Multi-Asset',
-      gradient: 'from-emerald-500/20 to-teal-500/20',
-      border: 'border-emerald-500/40',
-      iconColor: 'text-emerald-400',
+      badge: 'In Development',
+      gradient: 'from-slate-500/10 to-slate-600/10',
+      border: 'border-white/10',
+      iconColor: 'text-slate-400',
+      inDevelopment: true,
     },
     {
       type: 'document' as const,
       title: 'Academic Document',
-      description: 'Polished editorial document formatted for literature reviews, conference submissions, or lab write-ups.',
+      description:
+        'Polished editorial document formatted for literature reviews, conference submissions, or lab write-ups.',
       icon: FileCode,
-      badge: 'Publication',
-      gradient: 'from-rose-500/20 to-pink-500/20',
-      border: 'border-rose-500/40',
-      iconColor: 'text-rose-400',
+      badge: 'In Development',
+      gradient: 'from-slate-500/10 to-slate-600/10',
+      border: 'border-white/10',
+      iconColor: 'text-slate-400',
+      inDevelopment: true,
     },
     {
       type: 'planner' as const,
       title: 'Study Planner & Sprint',
-      description: 'Time-blocked calendar agenda with hourly slots, task dependencies, and milestone velocity meters.',
+      description:
+        'Time-blocked calendar agenda with hourly slots, task dependencies, and milestone velocity meters.',
       icon: Calendar,
-      badge: 'Time Management',
-      gradient: 'from-amber-600/20 to-yellow-500/20',
-      border: 'border-yellow-500/40',
-      iconColor: 'text-yellow-400',
+      badge: 'In Development',
+      gradient: 'from-slate-500/10 to-slate-600/10',
+      border: 'border-white/10',
+      iconColor: 'text-slate-400',
+      inDevelopment: true,
     },
     {
       type: 'flashcards' as const,
       title: 'Active Recall & Resource Deck',
-      description: 'Spaced repetition flashcards with algorithmic review intervals and self-testing rubrics.',
+      description:
+        'Spaced repetition flashcards with algorithmic review intervals and self-testing rubrics.',
       icon: GraduationCap,
-      badge: 'Retention',
-      gradient: 'from-cyan-500/20 to-emerald-500/20',
-      border: 'border-cyan-500/40',
-      iconColor: 'text-cyan-400',
+      badge: 'In Development',
+      gradient: 'from-slate-500/10 to-slate-600/10',
+      border: 'border-white/10',
+      iconColor: 'text-slate-400',
+      inDevelopment: true,
+    },
+    {
+      type: 'mindmap' as const,
+      title: 'Interactive Concept Mindmap',
+      description:
+        'Spatial node-graph canvas for linking theories, theorem proofs, and source references visually.',
+      icon: Network,
+      badge: 'In Development',
+      gradient: 'from-slate-500/10 to-slate-600/10',
+      border: 'border-white/10',
+      iconColor: 'text-slate-400',
+      inDevelopment: true,
+    },
+    {
+      type: 'lab' as const,
+      title: 'Code & Math Execution Lab',
+      description:
+        'Live computational notebook pairing executable code cells, LaTeX derivations, and interactive charts.',
+      icon: FlaskConical,
+      badge: 'In Development',
+      gradient: 'from-slate-500/10 to-slate-600/10',
+      border: 'border-white/10',
+      iconColor: 'text-slate-400',
+      inDevelopment: true,
     },
   ];
 
@@ -148,104 +205,152 @@ export const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, onCre
                   darkMode ? 'border-white/10' : 'border-slate-200'
                 }`}
               >
-          <div className="space-y-1">
-            <div
-              className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-widest"
-              style={{ color: activePalette?.primary || '#f59e0b' }}
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>Creation Studio</span>
-            </div>
-            <h2
-              className={`text-2xl sm:text-3xl font-extrabold ${
-                darkMode ? 'text-slate-100' : 'text-slate-900'
-              }`}
-            >
-              What will you build today?
-            </h2>
-            <p
-              className={`text-xs sm:text-sm ${
-                darkMode ? 'text-slate-400' : 'text-slate-600'
-              }`}
-            >
-              Select an instrument to harness your study insights, grounded models, and documentation.
-            </p>
-          </div>
-
-          <button
-            onClick={onClose}
-            className={`p-2 rounded-xl transition ${
-              darkMode ? 'text-slate-400 hover:text-white hover:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Grid of Creation Instruments */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {creationOptions.map((opt) => {
-            const Icon = opt.icon;
-            return (
-              <div
-                key={opt.type}
-                onClick={() => {
-                  onCreateItem(opt.type);
-                  onClose();
-                }}
-                className={`p-5 rounded-2xl bg-gradient-to-br ${opt.gradient} border ${opt.border} hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer shadow-lg space-y-3 flex flex-col justify-between group ${
-                  darkMode ? '' : 'shadow-slate-200/60'
-                }`}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div
-                      className={`p-2.5 rounded-xl border ${
-                        darkMode ? 'bg-slate-950/60 border-white/10' : 'bg-white border-slate-200 shadow-sm'
-                      } ${opt.iconColor}`}
-                    >
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <span
-                      className={`text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                        darkMode
-                          ? 'bg-slate-950/60 border-white/10 text-slate-300'
-                          : 'bg-white border-slate-200 text-slate-700 shadow-sm'
-                      }`}
-                    >
-                      {opt.badge}
-                    </span>
+                <div className="space-y-1">
+                  <div
+                    className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-widest"
+                    style={{ color: activePalette?.primary || '#f59e0b' }}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Creation Studio</span>
                   </div>
-
-                  <div>
-                    <h3
-                      className={`text-sm font-bold transition ${
-                        darkMode ? 'text-slate-100 group-hover:text-amber-300' : 'text-slate-900 group-hover:text-amber-700'
-                      }`}
-                    >
-                      {opt.title}
-                    </h3>
-                    <p
-                      className={`text-xs leading-relaxed mt-1 ${
-                        darkMode ? 'text-slate-400' : 'text-slate-700 font-medium'
-                      }`}
-                    >
-                      {opt.description}
-                    </p>
-                  </div>
+                  <h2
+                    className={`text-2xl sm:text-3xl font-extrabold ${
+                      darkMode ? 'text-slate-100' : 'text-slate-900'
+                    }`}
+                  >
+                    What will you build today?
+                  </h2>
+                  <p
+                    className={`text-xs sm:text-sm ${
+                      darkMode ? 'text-slate-400' : 'text-slate-600'
+                    }`}
+                  >
+                    Launch a grounded NotebookLM workspace or a standalone OneNote notebook — additional studios are in development.
+                  </p>
                 </div>
 
-                <div
-                  className="pt-2 flex items-center justify-between text-xs font-semibold"
-                  style={{ color: activePalette?.primary || '#f59e0b' }}
+                <button
+                  onClick={onClose}
+                  className={`p-2 rounded-xl transition cursor-pointer ${
+                    darkMode
+                      ? 'text-slate-400 hover:text-white hover:bg-white/5'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                  aria-label="Close Creation Studio"
                 >
-                  <span>Create Now</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </div>
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-            );
-          })}
-        </div>
+
+              {/* Grid of Creation Instruments (3x3) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {creationOptions.map((opt) => {
+                  const Icon = opt.icon;
+                  const disabled = opt.inDevelopment;
+
+                  return (
+                    <div
+                      key={opt.type}
+                      aria-disabled={disabled}
+                      onClick={() => {
+                        if (disabled) return;
+                        onCreateItem(opt.type);
+                        onClose();
+                      }}
+                      className={`p-5 rounded-2xl border space-y-3 flex flex-col justify-between transition ${
+                        disabled
+                          ? darkMode
+                            ? 'bg-slate-900/40 border-white/10 opacity-45 grayscale cursor-not-allowed'
+                            : 'bg-slate-100/70 border-slate-200 opacity-50 grayscale cursor-not-allowed'
+                          : `bg-gradient-to-br ${opt.gradient} ${opt.border} hover:-translate-y-0.5 active:translate-y-0 cursor-pointer shadow-lg group ${
+                              darkMode ? '' : 'shadow-slate-200/60'
+                            }`
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div
+                            className={`p-2.5 rounded-xl border ${
+                              disabled
+                                ? darkMode
+                                  ? 'bg-slate-900/70 border-white/10 text-slate-500'
+                                  : 'bg-white/70 border-slate-200 text-slate-400'
+                                : `${
+                                    darkMode
+                                      ? 'bg-slate-950/60 border-white/10'
+                                      : 'bg-white border-slate-200 shadow-sm'
+                                  } ${opt.iconColor}`
+                            }`}
+                          >
+                            <Icon className="w-5 h-5" />
+                          </div>
+                          <span
+                            className={`text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                              disabled
+                                ? darkMode
+                                  ? 'bg-slate-900/70 border-white/10 text-slate-500'
+                                  : 'bg-white/80 border-slate-200 text-slate-500'
+                                : darkMode
+                                ? 'bg-slate-950/60 border-white/10 text-slate-300'
+                                : 'bg-white border-slate-200 text-slate-700 shadow-sm'
+                            }`}
+                          >
+                            {opt.badge}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h3
+                            className={`text-sm font-bold transition ${
+                              disabled
+                                ? darkMode
+                                  ? 'text-slate-400'
+                                  : 'text-slate-600'
+                                : darkMode
+                                ? 'text-slate-100 group-hover:text-amber-300'
+                                : 'text-slate-900 group-hover:text-amber-700'
+                            }`}
+                          >
+                            {opt.title}
+                          </h3>
+                          <p
+                            className={`text-xs leading-relaxed mt-1 ${
+                              disabled
+                                ? darkMode
+                                  ? 'text-slate-500'
+                                  : 'text-slate-500'
+                                : darkMode
+                                ? 'text-slate-400'
+                                : 'text-slate-700 font-medium'
+                            }`}
+                          >
+                            {opt.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      {disabled ? (
+                        <div
+                          className={`pt-2 flex items-center justify-between text-xs font-mono ${
+                            darkMode ? 'text-slate-500' : 'text-slate-400'
+                          }`}
+                        >
+                          <span>Coming Soon</span>
+                          <Lock className="w-3.5 h-3.5" />
+                        </div>
+                      ) : (
+                        <div
+                          className="pt-2 flex items-center justify-between text-xs font-semibold"
+                          style={{ color: activePalette?.primary || '#f59e0b' }}
+                        >
+                          <span>Create Now</span>
+                          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </motion.div>
         </div>

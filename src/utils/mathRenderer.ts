@@ -144,19 +144,16 @@ export function parseAndRenderMath(text: string): { hasMath: boolean; html: stri
     return `<span class="katex-inline-wrapper mx-0.5 select-text">${renderKatex(normalized, false)}</span>`;
   });
 
-  // 3. Auto-detect plain-text formula patterns like "Label: Formula = ..." (e.g. from user screenshot)
-  if (!hasMath && text.includes('=')) {
-    // Check if contains mathematical markers: sqrt, ^, *, Softmax, Attention, fractions, etc.
+  // 3. Auto-detect plain-text formula ONLY on single isolated short lines (never multi-paragraph text)
+  if (!hasMath && !text.includes('\n') && text.length < 140 && text.includes('=')) {
     const isMathFormulation =
       text.includes('^') ||
       text.includes('sqrt(') ||
-      text.includes('\\') ||
-      /\b(Attention|Softmax|ReLU|Sigmoid|arg(min|max))\b/i.test(text);
+      /\b(Attention|Softmax|ReLU|Sigmoid|arg(min|max))\s*\(/i.test(text);
 
     if (isMathFormulation) {
-      // Check for prefix like "Mathematical Formulation: Attention(...) = ..."
       const colonIdx = text.indexOf(':');
-      if (colonIdx > 0 && colonIdx < 50) {
+      if (colonIdx > 0 && colonIdx < 40) {
         const prefix = text.slice(0, colonIdx + 1);
         const formula = text.slice(colonIdx + 1).trim();
         hasMath = true;
@@ -165,18 +162,11 @@ export function parseAndRenderMath(text: string): { hasMath: boolean; html: stri
           hasMath: true,
           html: `${escapeHtml(prefix)} <span class="katex-inline-wrapper ml-1 inline-block align-middle select-text">${renderKatex(normalized, false)}</span>`,
         };
-      } else {
-        hasMath = true;
-        const normalized = normalizeMathExpression(text);
-        return {
-          hasMath: true,
-          html: `<div class="katex-block-wrapper my-1 overflow-x-auto select-text">${renderKatex(normalized, true)}</div>`,
-        };
       }
     }
   }
 
-  return { hasMath, html: escapeHtmlPreservingTags(processed) };
+  return { hasMath, html: processed };
 }
 
 function escapeHtml(str: string): string {

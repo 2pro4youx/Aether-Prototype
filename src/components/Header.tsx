@@ -12,6 +12,7 @@ interface HeaderProps {
   activePalette: ColorPalette;
   isWorkspaceSelectorOpen?: boolean;
   isAuthenticated?: boolean;
+  autoHideOnTopEdge?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,9 +24,13 @@ export const Header: React.FC<HeaderProps> = ({
   activePalette,
   isWorkspaceSelectorOpen = false,
   isAuthenticated = true,
+  autoHideOnTopEdge = false,
 }) => {
   const isInitialMount = useRef(true);
   const [spinCount, setSpinCount] = useState(0);
+  const [isEdgeRevealed, setIsEdgeRevealed] = useState(false);
+  const [isNavHovered, setIsNavHovered] = useState(false);
+  const navHoveredRef = useRef(false);
 
   // Trigger blur spinning animation on '+' icon when theme palette changes via lander/home interactions
   useEffect(() => {
@@ -35,6 +40,45 @@ export const Header: React.FC<HeaderProps> = ({
     }
     setSpinCount((prev) => prev + 1);
   }, [activePalette.id]);
+
+  // Auto-hide header above viewport and slide down on top-edge touch in singular OneNote workbench
+  useEffect(() => {
+    if (!autoHideOnTopEdge) {
+      setIsEdgeRevealed(false);
+      setIsNavHovered(false);
+      navHoveredRef.current = false;
+      return;
+    }
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.clientY <= 12) {
+        setIsEdgeRevealed(true);
+      } else if (e.clientY > 92 && !navHoveredRef.current) {
+        setIsEdgeRevealed(false);
+      }
+    };
+
+    const handlePointerLeaveWindow = () => {
+      if (!navHoveredRef.current) {
+        setIsEdgeRevealed(false);
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    document.addEventListener('mouseleave', handlePointerLeaveWindow);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('mouseleave', handlePointerLeaveWindow);
+    };
+  }, [autoHideOnTopEdge]);
+
+  useEffect(() => {
+    if (isWorkspaceSelectorOpen) {
+      setIsEdgeRevealed(false);
+      setIsNavHovered(false);
+      navHoveredRef.current = false;
+    }
+  }, [isWorkspaceSelectorOpen]);
 
   const getTabStyle = (tab: ActiveTab) => {
     if (activeTab === tab) {
@@ -50,31 +94,55 @@ export const Header: React.FC<HeaderProps> = ({
 
   if (!isAuthenticated) return null;
 
+  const isHeaderHidden =
+    isWorkspaceSelectorOpen || (autoHideOnTopEdge && !isEdgeRevealed && !isNavHovered);
+
   return (
-    <motion.header
-      initial={{ y: -90, opacity: 0, scale: 0.95 }}
-      animate={{
-        y: isWorkspaceSelectorOpen ? -80 : 0,
-        opacity: isWorkspaceSelectorOpen ? 0 : 1,
-        scale: 1,
-      }}
-      transition={{
-        type: 'spring',
-        stiffness: 260,
-        damping: 20,
-        mass: 0.8,
-      }}
-      className={`fixed top-4 inset-x-0 z-50 flex justify-center items-center pointer-events-none px-4 ${
-        isWorkspaceSelectorOpen ? 'pointer-events-none' : ''
-      }`}
-    >
-      {/* Floating Pill Container with Liquid Glass - seamless smooth edges with zero gap */}
-      <nav
-        aria-label="Main Navigation"
-        className={`pointer-events-auto rounded-full px-5 py-2 flex items-center gap-2 sm:gap-3 shadow-2xl transition-all duration-300 liquid-glass no-lift overflow-hidden ${
-          darkMode ? 'text-slate-200' : 'text-slate-800'
-        }`}
+    <>
+      {autoHideOnTopEdge && !isWorkspaceSelectorOpen && (
+        <div
+          onPointerEnter={() => setIsEdgeRevealed(true)}
+          className="fixed top-0 inset-x-0 h-3 z-[210] pointer-events-auto"
+          aria-hidden="true"
+        />
+      )}
+
+      <motion.header
+        initial={{ y: -90, opacity: 0, scale: 0.95 }}
+        animate={{
+          y: isHeaderHidden ? -84 : 0,
+          opacity: isHeaderHidden ? 0 : 1,
+          scale: isHeaderHidden ? 0.96 : 1,
+        }}
+        transition={{
+          type: 'spring',
+          stiffness: 380,
+          damping: 30,
+          mass: 0.65,
+        }}
+        className="fixed top-4 inset-x-0 z-[200] flex justify-center items-center pointer-events-none px-4"
       >
+        {/* Floating Pill Container with Liquid Glass - seamless smooth edges with zero gap */}
+        <nav
+          aria-label="Main Navigation"
+          onPointerEnter={() => {
+            navHoveredRef.current = true;
+            setIsNavHovered(true);
+            if (autoHideOnTopEdge) setIsEdgeRevealed(true);
+          }}
+          onPointerLeave={(e) => {
+            navHoveredRef.current = false;
+            setIsNavHovered(false);
+            if (autoHideOnTopEdge && e.clientY > 92) {
+              setIsEdgeRevealed(false);
+            }
+          }}
+          className={`${
+            isHeaderHidden ? 'pointer-events-none' : 'pointer-events-auto'
+          } rounded-full px-5 py-2 flex items-center gap-2 sm:gap-3 shadow-2xl transition-all duration-300 liquid-glass no-lift overflow-hidden ${
+            darkMode ? 'text-slate-200' : 'text-slate-800'
+          }`}
+        >
         {/* Brand / Home anchor with clean white A icon */}
         <button
           onClick={() => onSelectTab('lander')}
@@ -236,5 +304,6 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
       </nav>
     </motion.header>
+    </>
   );
 };
