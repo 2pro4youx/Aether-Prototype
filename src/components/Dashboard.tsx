@@ -506,6 +506,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isDesktopGrid, setIsDesktopGrid] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
   );
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
 
   useLayoutEffect(() => {
     const updateMeasure = () => {
@@ -517,6 +520,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
       }
       setIsDesktopGrid(window.innerWidth >= 1024);
+      setIsMobileViewport(window.innerWidth < 768);
     };
     updateMeasure();
 
@@ -538,6 +542,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           }
         }
         setIsDesktopGrid(window.innerWidth >= 1024);
+        setIsMobileViewport(window.innerWidth < 768);
       });
       ro.observe(gridRef.current);
     }
@@ -941,6 +946,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
     window.addEventListener('pointercancel', handlePointerUp);
   };
 
+  const updateIsolatedCard = (
+    cardId: string,
+    updater: (card: DashboardCardInstance) => DashboardCardInstance
+  ) => {
+    setCards((prev) => prev.map((c) => (c.id === cardId ? updater(c) : c)));
+  };
+
   const handleAddCard = (type: DashboardCardType) => {
     const meta = CARD_CATALOG.find((c) => c.type === type);
     if (!meta) return;
@@ -950,6 +962,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
       colSpan: meta.defaultColSpan,
       widthPct: meta.defaultWidthPct,
       height: meta.defaultHeight,
+      isolated: true,
+      ...(type === 'tasks' ? { tasks: [] } : {}),
+      ...(type === 'planner' ? { planners: [] } : {}),
+      ...(type === 'syllabus' ? { syllabusCourses: [] } : {}),
+      ...(type === 'exam_schedule' ? { examSchedules: [] } : {}),
+      ...(type === 'timetable' ? { timetableSlots: [] } : {}),
+      ...(type === 'calendar' ? { calendarEvents: [] } : {}),
     };
     if (isMetaverseEdit) {
       const cw = gridRef.current?.clientWidth || gridWidth || 1000;
@@ -1050,7 +1069,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [studyDays]);
 
   return (
-    <div className="relative min-h-[100dvh] md:min-h-screen pt-5 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 transition-colors duration-300">
+    <div className="relative min-h-[100dvh] md:min-h-screen pt-4 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-4 md:space-y-8 transition-colors duration-300">
       {/* Dark Spatial Metaverse Depth Scrim (dims entire background, header & heatmap cleanly) */}
       <AnimatePresence>
         {isMetaverseEdit && (
@@ -1088,14 +1107,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </AnimatePresence>
 
       {/* Top Welcome & Metaverse Edit Control */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="pr-14 md:pr-0">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 md:gap-4">
+        <div className="pr-28 md:pr-0">
           {(() => {
             const firstName = extractFirstName(userName);
             if (!firstName) return null;
             return (
               <div
-                className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-1"
+                className="flex items-center gap-2 text-[11px] md:text-xs font-semibold uppercase tracking-wider mb-0.5 md:mb-1"
                 style={{ color: activePalette.primary }}
               >
                 <span>{`Welcome, ${firstName}`}</span>
@@ -1103,14 +1122,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
             );
           })()}
           <h1
-            className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${
+            className={`text-2xl md:text-4xl font-extrabold tracking-tight ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
           >
             Dashboard
           </h1>
           <p
-            className={`text-sm mt-1 ${
+            className={`hidden md:block text-sm mt-1 ${
               darkMode ? 'text-slate-400' : 'text-slate-600'
             }`}
           >
@@ -1124,7 +1143,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           onClick={toggleMetaverseEdit}
           aria-pressed={isMetaverseEdit}
           title={isMetaverseEdit ? 'Exit Metaverse mode and fit cards to closest ratio' : 'Enter Metaverse freeform layout mode'}
-          className={`relative px-4 py-2.5 min-h-[42px] rounded-xl text-xs font-extrabold tracking-wider uppercase inline-flex items-center justify-center gap-2 border shrink-0 self-start md:self-auto transition-all duration-300 cursor-pointer focus:outline-none ${
+          className={`relative px-3 py-1.5 min-h-[34px] md:px-4 md:py-2.5 md:min-h-[42px] rounded-xl text-[11px] md:text-xs font-extrabold tracking-wider uppercase inline-flex items-center justify-center gap-1.5 md:gap-2 border shrink-0 self-start md:self-auto transition-all duration-300 cursor-pointer focus:outline-none ${
             isMetaverseEdit
               ? 'z-[220] text-white'
               : `liquid-glass shadow-inner ${
@@ -1147,7 +1166,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           }
         >
           <Box
-            className="w-4 h-4 shrink-0 transition-transform duration-300"
+            className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0 transition-transform duration-300"
             style={{
               color: isMetaverseEdit ? '#ffffff' : activePalette.primary,
               filter: isMetaverseEdit ? `drop-shadow(0 0 8px ${activePalette.primary})` : undefined,
@@ -1159,13 +1178,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Real-Time 365-Day Study Hours Heatmap Tile (Zero Dummy Data) */}
-      <div className="liquid-glass rounded-2xl p-6 shadow-xl flex flex-col gap-4 overflow-hidden">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4" style={{ color: activePalette.primary }} />
+      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4 overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-4">
+          <div className="space-y-0.5 md:space-y-1">
+            <div className="flex items-center gap-1.5 md:gap-2">
+              <Calendar className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
               <h2
-                className={`text-lg font-bold ${
+                className={`text-sm md:text-lg font-bold ${
                   darkMode ? 'text-slate-100' : 'text-slate-900'
                 }`}
               >
@@ -1173,7 +1192,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </h2>
             </div>
             <p
-              className={`text-xs ${
+              className={`hidden sm:block text-xs ${
                 darkMode ? 'text-slate-400' : 'text-slate-500'
               }`}
             >
@@ -1181,9 +1200,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-4 text-xs font-mono">
+          <div className="flex items-center gap-2 md:gap-4 text-[11px] md:text-xs font-mono">
             <div
-              className={`px-3 py-1.5 rounded-lg border flex items-center gap-1 ${
+              className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg border flex items-center gap-1 ${
                 darkMode
                   ? 'bg-slate-900/20 border-white/10 text-slate-300'
                   : 'bg-white/25 border-slate-200/60 text-slate-700'
@@ -1195,13 +1214,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
               Total
             </div>
             <div
-              className={`px-3 py-1.5 rounded-lg border flex items-center gap-1 ${
+              className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg border flex items-center gap-1 ${
                 darkMode
                   ? 'bg-slate-900/20 border-white/10 text-slate-300'
                   : 'bg-white/25 border-slate-200/60 text-slate-700'
               }`}
             >
-              <Flame className="w-3.5 h-3.5" style={{ color: activePalette.accent }} />
+              <Flame className="w-3 h-3 md:w-3.5 md:h-3.5" style={{ color: activePalette.accent }} />
               <span className="font-bold tabular-nums" style={{ color: activePalette.primary }}>
                 {currentStreak}
               </span>{' '}
@@ -1210,9 +1229,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        <div className="overflow-x-auto pb-2 pt-1">
-          <div className="min-w-[760px]">
-            <div className="grid grid-flow-col grid-rows-7 gap-1">
+        <div className="overflow-x-auto pb-1 md:pb-2 pt-0.5 md:pt-1">
+          <div className="min-w-[640px] md:min-w-[760px]">
+            <div className="grid grid-flow-col grid-rows-7 gap-0.5 md:gap-1">
               {studyDays.map((day) => {
                 let cellStyle: React.CSSProperties = {
                   backgroundColor: darkMode
@@ -1252,7 +1271,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     key={day.date}
                     onMouseEnter={() => setHoveredDay(day)}
                     onMouseLeave={() => setHoveredDay(null)}
-                    className="w-3.5 h-3.5 rounded-[3px] border transition-transform duration-150 hover:scale-125 cursor-pointer"
+                    className="w-2.5 h-2.5 md:w-3.5 md:h-3.5 rounded-[2px] md:rounded-[3px] border transition-transform duration-150 hover:scale-125 cursor-pointer"
                     style={cellStyle}
                     title={`${day.date}: ${day.hours} study hours`}
                   />
@@ -1261,25 +1280,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
 
             <div
-              className={`flex items-center justify-between pt-3 text-xs ${
+              className={`flex items-center justify-between pt-2 md:pt-3 text-[10px] md:text-xs ${
                 darkMode ? 'text-slate-400' : 'text-slate-500'
               }`}
             >
-              <div className="min-h-[20px] font-mono">
+              <div className="min-h-[16px] md:min-h-[20px] font-mono">
                 {hoveredDay ? (
                   <span style={{ color: activePalette.primary }} className="font-medium tabular-nums">
                     {hoveredDay.date} — {hoveredDay.hours} hours logged (
                     {hoveredDay.hours > 0 ? 'Active Session' : 'No Activity'})
                   </span>
                 ) : (
-                  <span>Hover over any tile to inspect daily study hours</span>
+                  <>
+                    <span className="hidden md:inline">Hover over any tile to inspect daily study hours</span>
+                    <span className="md:hidden">Swipe horizontally · Tap tile for hours</span>
+                  </>
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 md:gap-2">
                 <span>Less</span>
                 <span
-                  className="w-3 h-3 rounded-[2px] border"
+                  className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
                   style={{
                     backgroundColor: darkMode
                       ? 'rgba(255, 255, 255, 0.05)'
@@ -1287,19 +1309,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   }}
                 />
                 <span
-                  className="w-3 h-3 rounded-[2px] border"
+                  className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
                   style={{ backgroundColor: `${activePalette.primary}40` }}
                 />
                 <span
-                  className="w-3 h-3 rounded-[2px] border"
+                  className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
                   style={{ backgroundColor: `${activePalette.primary}80` }}
                 />
                 <span
-                  className="w-3 h-3 rounded-[2px] border"
+                  className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
                   style={{ backgroundColor: activePalette.primary }}
                 />
                 <span
-                  className="w-3 h-3 rounded-[2px] border"
+                  className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
                   style={{
                     background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
                   }}
@@ -1328,7 +1350,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             ? layoutTransitionReady
               ? 'transition-[height] duration-300 ease-out'
               : ''
-            : 'flex flex-col gap-6'
+            : 'flex flex-col gap-3.5 md:gap-6'
         }`}
       >
         <AnimatePresence initial={false}>
@@ -1340,7 +1362,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             const isResizing = resizingCardId === card.id;
             const isAnyResizing = resizingCardId !== null;
             const isActiveFreeAction = activeFreeDragId === card.id || (isMetaverseEdit && isResizing);
-            const displayHeight = freeRect ? freeRect.h : rect ? rect.h : card.height;
+            const rawDisplayHeight = freeRect ? freeRect.h : rect ? rect.h : card.height;
+            const displayHeight =
+              isMobileViewport && !isMetaverseEdit && !rect
+                ? Math.min(rawDisplayHeight, card.type === 'calendar' ? 400 : 325)
+                : rawDisplayHeight;
             const cardZIndex = isMetaverseEdit ? (freeZOrder[card.id] ?? idx + 1) : undefined;
 
             const positionedStyle: React.CSSProperties = freeRect
@@ -1479,7 +1505,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               >
                 <div
                   style={depthVisualStyle}
-                  className={`w-full group/card relative liquid-glass rounded-2xl p-6 shadow-xl flex flex-col overflow-hidden ${
+                  className={`w-full group/card relative liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col overflow-hidden ${
                     isResizing || activeFreeDragId === card.id ? 'select-none no-tilt' : ''
                   }`}
                 >
@@ -1597,11 +1623,58 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                   {card.type === 'tasks' && (
                     <TasksCard
-                      tasks={tasks}
-                      onToggleTask={onToggleTask}
-                      onAddTask={onAddTask}
-                      onUpdateTask={onUpdateTask}
-                      onDeleteTask={onDeleteTask}
+                      tasks={card.isolated ? card.tasks ?? [] : tasks}
+                      onToggleTask={
+                        card.isolated
+                          ? (taskId) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                tasks: (c.tasks ?? []).map((t) =>
+                                  t.id === taskId ? { ...t, completed: !t.completed } : t
+                                ),
+                              }))
+                          : onToggleTask
+                      }
+                      onAddTask={
+                        card.isolated
+                          ? (title, category, priority, dueAt) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                tasks: [
+                                  {
+                                    id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                                    title,
+                                    category,
+                                    priority,
+                                    completed: false,
+                                    dueDate: dueAt ? 'Timed' : 'No time until completion',
+                                    dueAt: dueAt ?? null,
+                                  },
+                                  ...(c.tasks ?? []),
+                                ],
+                              }))
+                          : onAddTask
+                      }
+                      onUpdateTask={
+                        card.isolated
+                          ? (taskId, updates) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                tasks: (c.tasks ?? []).map((t) =>
+                                  t.id === taskId ? { ...t, ...updates } : t
+                                ),
+                              }))
+                          : onUpdateTask
+                      }
+                      onDeleteTask={
+                        card.isolated
+                          ? (taskId) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                tasks: (c.tasks ?? []).filter((t) => t.id !== taskId),
+                              }))
+                          : onDeleteTask
+                      }
                       activePalette={activePalette}
                       darkMode={darkMode}
                       searchQuery=""
@@ -1612,11 +1685,53 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                   {card.type === 'planner' && (
                     <StudyPlannerCard
-                      planners={planners}
-                      onAddPlanner={onAddPlanner}
-                      onUpdatePlanner={onUpdatePlanner}
-                      onUpdateProgress={onUpdatePlannerProgress}
-                      onDeletePlanner={onDeletePlanner}
+                      planners={card.isolated ? card.planners ?? [] : planners}
+                      onAddPlanner={
+                        card.isolated
+                          ? (entry) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                planners: [
+                                  {
+                                    id: `pl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                                    ...entry,
+                                  },
+                                  ...(c.planners ?? []),
+                                ],
+                              }))
+                          : onAddPlanner
+                      }
+                      onUpdatePlanner={
+                        card.isolated
+                          ? (id, updates) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                planners: (c.planners ?? []).map((p) =>
+                                  p.id === id ? { ...p, ...updates } : p
+                                ),
+                              }))
+                          : onUpdatePlanner
+                      }
+                      onUpdateProgress={
+                        card.isolated
+                          ? (id, progress) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                planners: (c.planners ?? []).map((p) =>
+                                  p.id === id ? { ...p, progress } : p
+                                ),
+                              }))
+                          : onUpdatePlannerProgress
+                      }
+                      onDeletePlanner={
+                        card.isolated
+                          ? (id) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                planners: (c.planners ?? []).filter((p) => p.id !== id),
+                              }))
+                          : onDeletePlanner
+                      }
                       onOpenStudio={onOpenNotebookLM}
                       activePalette={activePalette}
                       darkMode={darkMode}
@@ -1628,8 +1743,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                   {card.type === 'syllabus' && (
                     <SyllabusCard
-                      courses={syllabusCourses}
-                      onChangeCourses={setSyllabusCourses}
+                      courses={card.isolated ? card.syllabusCourses ?? [] : syllabusCourses}
+                      onChangeCourses={
+                        card.isolated
+                          ? (nextCourses) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                syllabusCourses: nextCourses,
+                              }))
+                          : setSyllabusCourses
+                      }
                       activePalette={activePalette}
                       darkMode={darkMode}
                       searchQuery=""
@@ -1640,8 +1763,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                   {card.type === 'exam_schedule' && (
                     <ExamScheduleCard
-                      exams={examSchedules}
-                      onChangeExams={setExamSchedules}
+                      exams={card.isolated ? card.examSchedules ?? [] : examSchedules}
+                      onChangeExams={
+                        card.isolated
+                          ? (nextExams) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                examSchedules: nextExams,
+                              }))
+                          : setExamSchedules
+                      }
                       activePalette={activePalette}
                       darkMode={darkMode}
                       searchQuery=""
@@ -1652,8 +1783,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                   {card.type === 'timetable' && (
                     <TimetableCard
-                      slots={timetableSlots}
-                      onChangeSlots={setTimetableSlots}
+                      slots={card.isolated ? card.timetableSlots ?? [] : timetableSlots}
+                      onChangeSlots={
+                        card.isolated
+                          ? (nextSlots) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                timetableSlots: nextSlots,
+                              }))
+                          : setTimetableSlots
+                      }
+                      calendarEvents={card.isolated ? [] : localCalendarEvents}
+                      onChangeCalendarEvents={card.isolated ? undefined : setLocalCalendarEvents}
+                      tasks={card.isolated ? [] : tasks}
                       activePalette={activePalette}
                       darkMode={darkMode}
                       searchQuery=""
@@ -1664,8 +1806,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                   {card.type === 'calendar' && (
                     <CalendarCard
-                      localEvents={localCalendarEvents}
-                      onChangeLocalEvents={setLocalCalendarEvents}
+                      localEvents={card.isolated ? card.calendarEvents ?? [] : localCalendarEvents}
+                      onChangeLocalEvents={
+                        card.isolated
+                          ? (nextEvents) =>
+                              updateIsolatedCard(card.id, (c) => ({
+                                ...c,
+                                calendarEvents: nextEvents,
+                              }))
+                          : setLocalCalendarEvents
+                      }
+                      tasks={card.isolated ? [] : tasks}
+                      onToggleTask={card.isolated ? undefined : onToggleTask}
                       activePalette={activePalette}
                       darkMode={darkMode}
                       searchQuery=""
@@ -1697,7 +1849,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 borderColor: `${activePalette.primary}45`,
               }
         }
-        className={`relative w-full rounded-2xl border-2 border-dashed p-4 md:p-6 transition-[transform,box-shadow,border-color,background-color] duration-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-left cursor-pointer group backdrop-blur-md hover:scale-[1.004] active:scale-[0.996] ${
+        className={`relative w-full rounded-2xl border-2 border-dashed p-3 md:p-6 transition-[transform,box-shadow,border-color,background-color] duration-200 flex flex-row items-center justify-between gap-2.5 md:gap-4 text-left cursor-pointer group backdrop-blur-md hover:scale-[1.004] active:scale-[0.996] ${
           isMetaverseEdit ? 'z-[220]' : ''
         } ${
           darkMode
@@ -1705,32 +1857,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
             : 'bg-white/55 hover:bg-white/80 shadow-sm hover:shadow-md'
         }`}
       >
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2.5 md:gap-4 min-w-0">
           <div
-            className="w-11 h-11 rounded-xl border-2 border-dashed flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shrink-0"
+            className="w-9 h-9 md:w-11 md:h-11 rounded-xl border-2 border-dashed flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shrink-0"
             style={{
               borderColor: activePalette.primary,
               color: activePalette.primary,
             }}
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4 md:w-5 md:h-5" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p
-              className={`text-sm font-bold ${
+              className={`text-xs md:text-sm font-bold truncate ${
                 darkMode ? 'text-slate-100' : 'text-slate-900'
               }`}
             >
               Add Dashboard Card
             </p>
-            <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <p className={`hidden sm:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Tasks · Study Planner · Syllabus · Exam Schedule · Timetable · Calendar
             </p>
           </div>
         </div>
 
         <span
-          className="text-xs font-semibold px-3.5 py-2 rounded-xl border transition shrink-0 group-hover:opacity-90"
+          className="text-[11px] md:text-xs font-semibold px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl border transition shrink-0 group-hover:opacity-90"
           style={{
             borderColor: `${activePalette.primary}55`,
             backgroundColor: `${activePalette.primary}15`,

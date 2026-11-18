@@ -15,6 +15,7 @@ interface HeaderProps {
   isAuthenticated?: boolean;
   autoHideOnTopEdge?: boolean;
   isStageHidden?: boolean;
+  onToggleMobileSettings?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -28,6 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   isAuthenticated = true,
   autoHideOnTopEdge = false,
   isStageHidden = false,
+  onToggleMobileSettings,
 }) => {
   const isInitialMount = useRef(true);
   const [spinCount, setSpinCount] = useState(0);
@@ -117,10 +119,10 @@ export const Header: React.FC<HeaderProps> = ({
         !isStageHidden &&
         createPortal(
           <>
-            {/* Floating Settings Button (replaces mobile top header) */}
+            {/* Floating Settings Button (replaces mobile top header; click again to return to previous view) */}
             <button
               type="button"
-              onClick={() => onSelectTab('settings')}
+              onClick={() => (onToggleMobileSettings ? onToggleMobileSettings() : onSelectTab('settings'))}
               style={
                 activeTab === 'settings'
                   ? {
@@ -140,8 +142,8 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-slate-950/88 text-slate-100 shadow-black/50'
                   : 'bg-white/92 text-slate-700 shadow-slate-400/25'
               }`}
-              aria-label="Settings"
-              title="Settings"
+              aria-label={activeTab === 'settings' ? 'Return to previous view' : 'Settings'}
+              title={activeTab === 'settings' ? 'Return to previous view' : 'Settings'}
             >
               <Settings
                 className="w-5 h-5"
@@ -149,7 +151,8 @@ export const Header: React.FC<HeaderProps> = ({
               />
             </button>
 
-            {/* Sticky Bottom Navigation Dock */}
+            {/* Sticky Bottom Navigation Dock (hidden on mobile when Settings view is active) */}
+            {activeTab !== 'settings' && (
             <nav
               aria-label="Mobile Bottom Navigation"
               className={`md:hidden fixed bottom-0 inset-x-0 z-40 pb-[env(safe-area-inset-bottom,0px)] border-t backdrop-blur-2xl shadow-2xl transition-colors duration-300 ${
@@ -303,6 +306,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               </div>
             </nav>
+            )}
           </>,
           document.body
         )}

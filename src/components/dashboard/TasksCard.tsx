@@ -91,7 +91,9 @@ export const TasksCard: React.FC<TasksCardProps> = ({
   cardTitle,
   onEditTitle,
 }) => {
-  const [taskFilter, setTaskFilter] = useState<'all' | 'pending' | 'completed'>('all');
+  const [taskFilter, setTaskFilter] = useState<'all' | 'pending' | 'completed'>(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 'pending' : 'all'
+  );
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -100,6 +102,20 @@ export const TasksCard: React.FC<TasksCardProps> = ({
   const [enableDeadline, setEnableDeadline] = useState(false);
   const [newTaskDueAt, setNewTaskDueAt] = useState('');
   const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const syncFilterForMobile = (matches: boolean) => {
+      if (matches) {
+        setTaskFilter((prev) => (prev === 'all' ? 'pending' : prev));
+      }
+    };
+    syncFilterForMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => syncFilterForMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   const hasTimedTask = tasks.some((t) => Boolean(t.dueAt) && !t.completed);
 
@@ -262,7 +278,7 @@ export const TasksCard: React.FC<TasksCardProps> = ({
             <button
               type="button"
               onClick={() => setTaskFilter('all')}
-              className={`px-2.5 py-1 rounded-md transition whitespace-nowrap ${
+              className={`hidden md:inline-block px-2.5 py-1 rounded-md transition whitespace-nowrap ${
                 taskFilter === 'all'
                   ? 'font-semibold'
                   : darkMode

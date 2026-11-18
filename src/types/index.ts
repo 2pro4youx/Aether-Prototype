@@ -72,6 +72,13 @@ export interface DashboardCardInstance {
   colSpan: number; // legacy 4 to 12 fallback in 12-col desktop grid
   widthPct?: number; // continuous percentage width (25 to 100) for smooth horizontal resize
   height: number; // card height in px
+  isolated?: boolean; // when true, card starts blank and stores items independently from primary cards
+  tasks?: TaskItem[];
+  planners?: PlannerEntry[];
+  syllabusCourses?: SyllabusCourse[];
+  examSchedules?: ExamScheduleEntry[];
+  timetableSlots?: TimetableSlot[];
+  calendarEvents?: CalendarEventEntry[];
 }
 
 export interface SyllabusTopic {
@@ -118,7 +125,8 @@ export interface CalendarEventEntry {
   allDay?: boolean;
   location?: string;
   description?: string;
-  source?: 'local';
+  source?: 'local' | 'google';
+  googleEventId?: string;
 }
 
 export interface NotebookSource {

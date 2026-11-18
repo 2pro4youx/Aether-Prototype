@@ -1073,6 +1073,152 @@ app.post('/api/gemini/decode-exam-schedule', async (req, res) => {
   }
 });
 
+// Multimodal AI Timetable Photo Decoder Endpoint
+app.post('/api/gemini/decode-timetable', async (req, res) => {
+  try {
+    const { imageDataUrl, mimeType: explicitMime } = req.body as {
+      imageDataUrl?: string;
+      mimeType?: string;
+    };
+
+    if (!imageDataUrl || typeof imageDataUrl !== 'string' || !imageDataUrl.includes('base64,')) {
+      return res.status(400).json({ error: 'A valid base64 imageDataUrl of the timetable is required.' });
+    }
+
+    const apiKey = resolveApiKey(req);
+    if (!apiKey) {
+      return res.status(401).json({
+        error: 'Gemini API key is missing. Configure GEMINI_API_KEY in Secrets or Settings.',
+      });
+    }
+
+    const [header, base64Data] = imageDataUrl.split('base64,');
+    let mimeType = explicitMime || '';
+    if (!mimeType || !mimeType.includes('/')) {
+      const match = header.match(/data:([^;]+);/);
+      mimeType = match?.[1] || 'image/png';
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    const extractionPrompt =
+      'Inspect this weekly timetable or class schedule image carefully. Extract every individual class, lecture, lab, tutorial, or study session block visible. ' +
+      'Map weekday to exactly one of Mon, Tue, Wed, Thu, Fri, Sat, Sun. ' +
+      'Convert startTime and endTime to 24-hour HH:MM format when visible (empty string if omitted). ' +
+      'Classify kind as one of Lecture, Lab, Tutorial, Study.';
+
+    const contents = {
+      parts: [
+        {
+          inlineData: {
+            mimeType,
+            data: base64Data.trim(),
+          },
+        },
+        {
+          text: extractionPrompt,
+        },
+      ],
+    };
+
+    const config = {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          slots: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                day: { type: Type.STRING, description: 'Weekday short name: Mon, Tue, Wed, Thu, Fri, Sat, or Sun' },
+                subject: { type: Type.STRING, description: 'Course or subject name' },
+                startTime: { type: Type.STRING, description: '24-hour HH:MM start time if visible' },
+                endTime: { type: Type.STRING, description: '24-hour HH:MM end time if visible' },
+                room: { type: Type.STRING, description: 'Room or location if visible' },
+                kind: { type: Type.STRING, description: 'Lecture, Lab, Tutorial, or Study' },
+              },
+              required: ['day', 'subject', 'kind'],
+            },
+          },
+        },
+        required: ['slots'],
+      },
+    };
+
+    if (vertexKeyCache.get(apiKey) === 'aiplatform') {
+      const vertexResult = await callVertexExpressRest(apiKey, 'gemini-3.5-flash-lite', contents, config);
+      const rawVertex = vertexResult.text.trim();
+      let parsedVertex: { slots?: Array<Record<string, string>> } = { slots: [] };
+      try {
+        parsedVertex = JSON.parse(rawVertex);
+      } catch {
+        const jsonMatch = rawVertex.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsedVertex = JSON.parse(jsonMatch[0]);
+        }
+      }
+      return res.json({
+        slots: Array.isArray(parsedVertex.slots) ? parsedVertex.slots : [],
+        modelUsed: vertexResult.modelUsed,
+      });
+    }
+
+    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-4-hydrogen'];
+    let response: any = null;
+    let modelUsed = candidateModels[0];
+    let lastError: any = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents,
+          config,
+        });
+        modelUsed = modelName;
+        break;
+      } catch (err: any) {
+        lastError = err;
+        const msg = String(err?.message || err);
+        const status = err?.status ?? err?.code;
+        if (isAuthErrorStatus(typeof status === 'number' ? status : undefined, msg)) {
+          throw err;
+        }
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error('Failed to decode timetable image.');
+    }
+
+    const rawText = (response.text ?? '{}').trim();
+    let parsed: { slots?: Array<Record<string, string>> } = { slots: [] };
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      }
+    }
+
+    const slots = Array.isArray(parsed.slots) ? parsed.slots : [];
+    return res.json({ slots, modelUsed });
+  } catch (err: unknown) {
+    console.error('Timetable Decode Error:', err);
+    const errorMessage = err instanceof Error ? err.message : 'Failed to decode timetable image';
+    return res.status(500).json({ error: errorMessage });
+  }
+});
+
 // Functional User Memory Extraction Endpoint (powers the Settings -> Gemini Personalization Memory Slider)
 app.post('/api/gemini/learn-memory', async (req, res) => {
   try {

@@ -112,6 +112,21 @@ const CONTEXT_LABELS: Record<NonNullable<AuditLog['targetContext']>, string> = {
 };
 
 const PAGE_SIZE = 9; // 3x3 grid
+const AUDIT_PAGE_SIZE = 10; // Entries per page in Interaction Audit Ledger
+
+function getAuditPageIndices(current: number, total: number): Array<number | 'ellipsis'> {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i);
+  }
+  const pages: Array<number | 'ellipsis'> = [0];
+  const start = Math.max(1, current - 1);
+  const end = Math.min(total - 2, current + 1);
+  if (start > 1) pages.push('ellipsis');
+  for (let i = start; i <= end; i += 1) pages.push(i);
+  if (end < total - 2) pages.push('ellipsis');
+  pages.push(total - 1);
+  return pages;
+}
 
 function formatDuration(totalSeconds: number): string {
   const secs = Math.max(0, Math.floor(totalSeconds));
@@ -146,6 +161,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const [pageDirection, setPageDirection] = useState<1 | -1>(1);
   const [logFilter, setLogFilter] = useState<'all' | 'system' | 'ai' | 'note' | 'source' | 'task'>('all');
   const [expandedAuditId, setExpandedAuditId] = useState<string | null>(null);
+  const [auditPage, setAuditPage] = useState(0);
 
   const primaryAccent = activePalette.id === 'black-night' ? '#f1f5f9' : activePalette.primary;
   const themeColors = useMemo(
@@ -341,6 +357,32 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     });
   }, [auditLogs, logFilter]);
 
+  const auditTotalPages = Math.max(1, Math.ceil(filteredLogs.length / AUDIT_PAGE_SIZE));
+
+  useEffect(() => {
+    setAuditPage(0);
+    setExpandedAuditId(null);
+  }, [logFilter]);
+
+  useEffect(() => {
+    if (auditPage >= auditTotalPages) {
+      setAuditPage(Math.max(0, auditTotalPages - 1));
+    }
+  }, [auditPage, auditTotalPages]);
+
+  const pagedLogs = useMemo(() => {
+    const start = auditPage * AUDIT_PAGE_SIZE;
+    return filteredLogs.slice(start, start + AUDIT_PAGE_SIZE);
+  }, [filteredLogs, auditPage]);
+
+  const auditPageNumbers = useMemo(
+    () => getAuditPageIndices(auditPage, auditTotalPages),
+    [auditPage, auditTotalPages]
+  );
+
+  const auditRangeStart = filteredLogs.length === 0 ? 0 : auditPage * AUDIT_PAGE_SIZE + 1;
+  const auditRangeEnd = Math.min(filteredLogs.length, (auditPage + 1) * AUDIT_PAGE_SIZE);
+
   const handlePrevPage = () => {
     if (currentPage > 0) {
       setPageDirection(-1);
@@ -382,18 +424,18 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   };
 
   return (
-    <div className="relative min-h-[100dvh] md:min-h-screen pt-5 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
+    <div className="relative min-h-[100dvh] md:min-h-screen pt-5 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-4 md:space-y-8 select-none transition-colors duration-300">
       {/* Header */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="pr-14 md:pr-0">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 md:gap-4">
+        <div className="pr-28 md:pr-0">
           <h1
-            className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${
+            className={`text-2xl sm:text-4xl font-extrabold tracking-tight ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
           >
             Analytics and Audits
           </h1>
-          <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <p className={`hidden md:block text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Real-time session tracking across your workspaces, folders, and verified interaction logs.
           </p>
         </div>
@@ -406,107 +448,111 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             borderColor: `${activePalette.primary}60`,
             color: darkMode ? '#ffffff' : activePalette.primary,
           }}
-          className="px-4 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 transition hover:opacity-90 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          className="px-3 py-1.5 md:px-4 md:py-2 rounded-xl border text-[11px] md:text-xs font-semibold flex items-center gap-1.5 md:gap-2 transition hover:opacity-90 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <Download className="w-4 h-4" />
-          <span>Export Audit Ledger (CSV)</span>
+          <Download className="w-3.5 h-3.5 md:w-4 md:h-4" />
+          <span className="sm:hidden">Export CSV</span>
+          <span className="hidden sm:inline">Export Audit Ledger (CSV)</span>
         </button>
       </div>
 
-      {/* KPI Cards Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="liquid-glass no-tilt rounded-2xl p-5 shadow-lg space-y-1 overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-mono uppercase ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
+      {/* KPI Cards Strip (2x2 compact on mobile, 4-col on desktop) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-4">
+        <div className="liquid-glass no-tilt rounded-xl md:rounded-2xl p-3 md:p-5 shadow-lg space-y-0.5 md:space-y-1 overflow-hidden">
+          <div className="flex items-center justify-between gap-1">
+            <span className={`text-[10px] md:text-xs font-mono uppercase truncate ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
               Active Study Time
             </span>
-            <Clock className="w-4 h-4 opacity-70" style={{ color: primaryAccent }} />
+            <Clock className="w-3.5 h-3.5 md:w-4 md:h-4 opacity-70 shrink-0" style={{ color: primaryAccent }} />
           </div>
           <p
-            className={`text-3xl font-extrabold tabular-nums ${darkMode ? 'text-white' : ''}`}
+            className={`text-xl sm:text-2xl md:text-3xl font-extrabold tabular-nums truncate ${darkMode ? 'text-white' : ''}`}
             style={!darkMode ? { color: activePalette.primary } : undefined}
           >
             {formatDuration(totalSeconds)}
           </p>
-          <span className={`text-[11px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            {Math.floor(totalSeconds / 60)} min · updates every second live
+          <span className={`block text-[10px] md:text-[11px] truncate ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            {Math.floor(totalSeconds / 60)} min · live timer
           </span>
         </div>
 
-        <div className="liquid-glass no-tilt rounded-2xl p-5 shadow-lg space-y-1 overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-mono uppercase ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
-              Top {breakdownMode === 'workspaces' ? 'Workspace' : 'Folder'} Focus
+        <div className="liquid-glass no-tilt rounded-xl md:rounded-2xl p-3 md:p-5 shadow-lg space-y-0.5 md:space-y-1 overflow-hidden">
+          <div className="flex items-center justify-between gap-1">
+            <span className={`text-[10px] md:text-xs font-mono uppercase truncate ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
+              Top {breakdownMode === 'workspaces' ? 'Workspace' : 'Folder'}
             </span>
             {breakdownMode === 'workspaces' ? (
-              <Layers className="w-4 h-4 opacity-70" style={{ color: primaryAccent }} />
+              <Layers className="w-3.5 h-3.5 md:w-4 md:h-4 opacity-70 shrink-0" style={{ color: primaryAccent }} />
             ) : (
-              <FolderOpen className="w-4 h-4 opacity-70" style={{ color: primaryAccent }} />
+              <FolderOpen className="w-3.5 h-3.5 md:w-4 md:h-4 opacity-70 shrink-0" style={{ color: primaryAccent }} />
             )}
           </div>
           <p
-            className={`text-2xl font-extrabold truncate ${
+            className={`text-base sm:text-xl md:text-2xl font-extrabold truncate ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
           >
             {topFocus ? topFocus.name : 'No activity yet'}
           </p>
           <span
-            className="text-[11px] font-semibold"
+            className="block text-[10px] md:text-[11px] font-semibold truncate"
             style={{ color: darkMode ? '#cbd5e1' : activePalette.accent }}
           >
             {topFocus
               ? `${topFocus.percentage}% (${formatDuration(topFocus.seconds)})`
-              : 'Interact or study to start tracking'}
+              : 'Start studying to track'}
           </span>
         </div>
 
-        <div className="liquid-glass no-tilt rounded-2xl p-5 shadow-lg space-y-1 overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-mono uppercase ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              Interaction Audits
+        <div className="liquid-glass no-tilt rounded-xl md:rounded-2xl p-3 md:p-5 shadow-lg space-y-0.5 md:space-y-1 overflow-hidden">
+          <div className="flex items-center justify-between gap-1">
+            <span className={`text-[10px] md:text-xs font-mono uppercase truncate ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Audit Records
             </span>
-            <FileText className="w-4 h-4 opacity-70" style={{ color: primaryAccent }} />
+            <FileText className="w-3.5 h-3.5 md:w-4 md:h-4 opacity-70 shrink-0" style={{ color: primaryAccent }} />
           </div>
           <p
-            className={`text-3xl font-extrabold tabular-nums ${
+            className={`text-xl sm:text-2xl md:text-3xl font-extrabold tabular-nums truncate ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
           >
-            {auditLogs.length} {auditLogs.length === 1 ? 'Record' : 'Records'}
+            {auditLogs.length} <span className="text-xs sm:text-base md:text-2xl font-bold">{auditLogs.length === 1 ? 'Record' : 'Records'}</span>
           </p>
-          <span className="text-[11px] text-emerald-500 font-medium">
-            {auditLogs.length > 0 ? 'Click any log row for info & jump' : 'Ledger reset — awaiting events'}
+          <span className="block text-[10px] md:text-[11px] text-emerald-500 font-medium truncate">
+            {auditLogs.length > 0 ? 'Tap row to inspect' : 'Awaiting events'}
           </span>
         </div>
 
-        <div className="liquid-glass no-tilt rounded-2xl p-5 shadow-lg space-y-1 overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-mono uppercase ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              Recorded Interactions
+        <div className="liquid-glass no-tilt rounded-xl md:rounded-2xl p-3 md:p-5 shadow-lg space-y-0.5 md:space-y-1 overflow-hidden">
+          <div className="flex items-center justify-between gap-1">
+            <span className={`text-[10px] md:text-xs font-mono uppercase truncate ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Interactions
             </span>
-            <Activity className="w-4 h-4 opacity-70" style={{ color: primaryAccent }} />
+            <Activity className="w-3.5 h-3.5 md:w-4 md:h-4 opacity-70 shrink-0" style={{ color: primaryAccent }} />
           </div>
           <p
-            className={`text-3xl font-extrabold tabular-nums ${
+            className={`text-xl sm:text-2xl md:text-3xl font-extrabold tabular-nums truncate ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
           >
             {totalInteractions.toLocaleString()}
           </p>
-          <span className={`text-[11px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            Actions logged across {workspaces.length}{' '}
-            {workspaces.length === 1 ? 'workspace' : 'workspaces'}
+          <span className={`block text-[10px] md:text-[11px] truncate ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <span className="md:hidden">Across {workspaces.length} ws</span>
+            <span className="hidden md:inline">
+              Actions logged across {workspaces.length}{' '}
+              {workspaces.length === 1 ? 'workspace' : 'workspaces'}
+            </span>
           </span>
         </div>
       </div>
 
       {/* Time Spent Across Workspaces / Folders Breakdown with Inline Word Toggle & 3x3 Pagination */}
-      <div className="liquid-glass no-tilt rounded-2xl p-6 shadow-xl flex flex-col gap-5 overflow-hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="liquid-glass no-tilt rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-3 md:gap-5 overflow-hidden">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 md:gap-4">
           <div className="space-y-0.5">
             <h3
-              className={`text-base font-bold flex items-center gap-2 ${
+              className={`text-sm md:text-base font-bold flex items-center gap-2 ${
                 darkMode ? 'text-slate-100' : 'text-slate-900'
               }`}
             >
@@ -549,7 +595,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 </button>
               </span>
             </h3>
-            <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <p className={`hidden md:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Live session time and interaction breakdown grouped by{' '}
               {breakdownMode === 'workspaces' ? 'individual workspace' : 'workspace folder'} — click{' '}
               {breakdownMode === 'workspaces' ? 'Workspaces' : 'Folders'} above to switch.
@@ -594,7 +640,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
         {/* Visual Stacked Progress Bar */}
         <div
-          className={`w-full h-3 rounded-full overflow-hidden flex ${
+          className={`w-full h-2 md:h-3 rounded-full overflow-hidden flex ${
             darkMode ? 'bg-slate-900' : 'bg-slate-200'
           }`}
         >
@@ -620,7 +666,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
           )}
         </div>
 
-        {/* 3x3 Workspace / Folder Cards Grid */}
+        {/* 3x3 Workspace / Folder Cards Grid (2-col compact on mobile) */}
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={`${breakdownMode}-${currentPage}`}
@@ -628,14 +674,14 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: pageDirection * -18 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-1"
+            className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 md:gap-4 pt-0.5 md:pt-1"
           >
             {pagedItems.map((item) => (
               <div
                 key={item.id}
                 onClick={() => onOpenFolderInLibrary(item.targetFolder)}
                 title={`Open folder "${item.targetFolder === 'all' ? 'All Folders' : item.targetFolder}" in My Library`}
-                className={`relative z-20 p-4 rounded-xl border space-y-2.5 transition-all duration-200 hover:-translate-y-0.5 cursor-pointer ${
+                className={`relative z-20 p-2.5 md:p-4 rounded-xl border space-y-1.5 md:space-y-2.5 transition-all duration-200 hover:-translate-y-0.5 cursor-pointer ${
                   darkMode
                     ? 'bg-slate-900/65 border-white/10 hover:border-white/25'
                     : 'bg-white/85 border-slate-200 hover:border-slate-300 shadow-sm'
@@ -649,16 +695,16 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                     : undefined
                 }
               >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex items-center gap-2.5">
+                  <div className="flex items-start justify-between gap-1.5 md:gap-2">
+                    <div className="min-w-0 flex items-center gap-1.5 md:gap-2.5">
                       <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full shrink-0"
                         style={{ backgroundColor: item.color }}
                       />
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1 md:gap-1.5">
                           <h4
-                            className={`text-xs font-bold truncate ${
+                            className={`text-[11px] md:text-xs font-bold truncate ${
                               darkMode ? 'text-slate-100' : 'text-slate-900'
                             }`}
                           >
@@ -666,7 +712,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                           </h4>
                           {item.isActive && (
                             <span
-                              className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold shrink-0"
+                              className="hidden sm:inline-block text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold shrink-0"
                               style={{
                                 backgroundColor: `${activePalette.primary}25`,
                                 color: primaryAccent,
@@ -677,7 +723,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                           )}
                         </div>
                         <p
-                          className={`text-[11px] truncate ${
+                          className={`hidden sm:block text-[11px] truncate ${
                             darkMode ? 'text-slate-400' : 'text-slate-500'
                           }`}
                         >
@@ -687,7 +733,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                     </div>
 
                     <span
-                      className={`text-xs font-mono font-bold tabular-nums shrink-0 ${
+                      className={`text-[11px] md:text-xs font-mono font-bold tabular-nums shrink-0 ${
                         darkMode ? 'text-slate-200' : 'text-slate-800'
                       }`}
                     >
@@ -697,7 +743,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
                   {/* Mini proportional bar */}
                   <div
-                    className={`w-full h-1.5 rounded-full overflow-hidden ${
+                    className={`w-full h-1 md:h-1.5 rounded-full overflow-hidden ${
                       darkMode ? 'bg-slate-800' : 'bg-slate-200'
                     }`}
                   >
@@ -711,15 +757,18 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   </div>
 
                   <div
-                    className={`flex items-center justify-between text-[11px] font-mono ${
+                    className={`flex items-center justify-between text-[10px] md:text-[11px] font-mono ${
                       darkMode ? 'text-slate-400' : 'text-slate-500'
                     }`}
                   >
                     <span className="tabular-nums font-semibold" style={{ color: item.seconds > 0 ? primaryAccent : undefined }}>
                       {formatDuration(item.seconds)}
                     </span>
-                    <span className="tabular-nums">
-                      {item.interactions} {item.interactions === 1 ? 'interaction' : 'interactions'}
+                    <span className="tabular-nums truncate">
+                      <span className="md:hidden">{item.interactions}×</span>
+                      <span className="hidden md:inline">
+                        {item.interactions} {item.interactions === 1 ? 'interaction' : 'interactions'}
+                      </span>
                     </span>
                   </div>
                 </div>
@@ -753,24 +802,24 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       </div>
 
       {/* Interaction Audit Ledger */}
-      <div className="liquid-glass no-tilt rounded-2xl p-6 shadow-xl flex flex-col gap-4 overflow-hidden">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div className="liquid-glass no-tilt rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-3 md:gap-4 overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3">
           <div className="space-y-0.5">
             <h3
-              className={`text-base font-bold ${
+              className={`text-sm md:text-base font-bold ${
                 darkMode ? 'text-slate-100' : 'text-slate-900'
               }`}
             >
               Interaction Audit Ledger
             </h3>
-            <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <p className={`hidden md:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Click any entry to inspect workspace metadata and jump directly to that context.
             </p>
           </div>
 
           {/* Filter Pills */}
           <div
-            className={`flex flex-wrap items-center gap-1 p-0.5 rounded-lg border text-xs ${
+            className={`flex flex-wrap items-center gap-0.5 md:gap-1 p-0.5 rounded-lg border text-xs ${
               darkMode ? 'bg-slate-900/60 border-white/10' : 'bg-slate-100 border-slate-200'
             }`}
           >
@@ -786,7 +835,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       }
                     : {}
                 }
-                className={`px-2.5 py-1 rounded-md uppercase font-mono text-[10px] transition ${
+                className={`px-2 py-0.5 md:px-2.5 md:py-1 rounded-md uppercase font-mono text-[10px] transition ${
                   logFilter === cat
                     ? 'font-bold'
                     : darkMode
@@ -803,7 +852,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         {/* Audit Rows */}
         {filteredLogs.length === 0 ? (
           <div
-            className={`rounded-xl border border-dashed py-12 px-6 text-center space-y-2 ${
+            className={`rounded-xl border border-dashed py-8 md:py-12 px-4 md:px-6 text-center space-y-2 ${
               darkMode
                 ? 'border-white/10 bg-slate-900/30 text-slate-400'
                 : 'border-slate-300 bg-slate-50/70 text-slate-500'
@@ -821,8 +870,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {filteredLogs.map((log) => {
+          <div className="space-y-2.5 md:space-y-3">
+            <div className="space-y-1.5 md:space-y-2">
+              {pagedLogs.map((log) => {
               const isExpanded = expandedAuditId === log.id;
               const contextLabel = log.targetContext
                 ? CONTEXT_LABELS[log.targetContext]
@@ -842,10 +892,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       : 'bg-white/75 border-slate-200 hover:border-slate-300 hover:bg-white shadow-xs'
                   }`}
                 >
-                  <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                    <div className="flex flex-wrap items-center gap-3 min-w-0">
+                  <div className="px-3 py-2 md:px-4 md:py-3 flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
                       <span
-                        className={`font-mono whitespace-nowrap tabular-nums ${
+                        className={`font-mono whitespace-nowrap tabular-nums text-[10px] sm:text-xs ${
                           darkMode ? 'text-slate-400' : 'text-slate-500'
                         }`}
                       >
@@ -853,7 +903,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       </span>
 
                       <span
-                        className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border shrink-0"
+                        className="text-[9px] sm:text-[10px] font-mono font-bold uppercase px-1.5 sm:px-2 py-0.5 rounded border shrink-0"
                         style={{
                           backgroundColor: `${activePalette.primary}18`,
                           borderColor: `${activePalette.primary}40`,
@@ -864,7 +914,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       </span>
 
                       <span
-                        className={`font-semibold whitespace-nowrap ${
+                        className={`font-semibold truncate text-[11px] sm:text-xs ${
                           darkMode ? 'text-slate-100' : 'text-slate-900'
                         }`}
                       >
@@ -872,7 +922,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       </span>
 
                       <span
-                        className={`truncate max-w-full md:max-w-xl ${
+                        className={`hidden sm:inline truncate max-w-full md:max-w-xl ${
                           darkMode ? 'text-slate-400' : 'text-slate-600'
                         }`}
                       >
@@ -880,10 +930,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <div className="flex items-center gap-2 shrink-0">
                       {log.workspaceName && (
                         <span
-                          className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                          className={`hidden sm:inline-block text-[10px] font-mono px-2 py-0.5 rounded border ${
                             darkMode
                               ? 'bg-white/5 border-white/10 text-slate-300'
                               : 'bg-slate-100 border-slate-200 text-slate-600'
@@ -983,6 +1033,97 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 </div>
               );
             })}
+            </div>
+
+            {/* Indexing Navigation Bar */}
+            <div
+              className={`pt-3 mt-1 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs ${
+                darkMode ? 'border-white/10' : 'border-slate-200/80'
+              }`}
+            >
+              <span className={`font-mono text-[11px] tabular-nums ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Showing {auditRangeStart}–{auditRangeEnd} of {filteredLogs.length}{' '}
+                {filteredLogs.length === 1 ? 'audit' : 'audits'} · Page {auditPage + 1} of {auditTotalPages}
+              </span>
+
+              <div className="flex items-center gap-1 flex-wrap justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuditPage((p) => Math.max(0, p - 1));
+                    setExpandedAuditId(null);
+                  }}
+                  disabled={auditPage === 0}
+                  aria-label="Previous audit page"
+                  className={`p-1.5 rounded-lg border transition disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer ${
+                    darkMode
+                      ? 'border-white/10 text-slate-300 hover:bg-white/10'
+                      : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+
+                {auditPageNumbers.map((entry, idx) =>
+                  entry === 'ellipsis' ? (
+                    <span
+                      key={`ellipsis-${idx}`}
+                      className={`px-1.5 text-[11px] font-mono select-none ${
+                        darkMode ? 'text-slate-500' : 'text-slate-400'
+                      }`}
+                    >
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={`audit-page-${entry}`}
+                      type="button"
+                      onClick={() => {
+                        setAuditPage(entry);
+                        setExpandedAuditId(null);
+                      }}
+                      aria-label={`Audit ledger page ${entry + 1}`}
+                      aria-current={auditPage === entry ? 'page' : undefined}
+                      style={
+                        auditPage === entry
+                          ? {
+                              backgroundColor: `${activePalette.primary}25`,
+                              borderColor: `${activePalette.primary}70`,
+                              color: primaryAccent,
+                            }
+                          : undefined
+                      }
+                      className={`min-w-[28px] h-7 px-2 rounded-lg border text-[11px] font-mono tabular-nums transition cursor-pointer ${
+                        auditPage === entry
+                          ? 'font-bold shadow-xs'
+                          : darkMode
+                          ? 'border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
+                          : 'border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                      }`}
+                    >
+                      {entry + 1}
+                    </button>
+                  )
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuditPage((p) => Math.min(auditTotalPages - 1, p + 1));
+                    setExpandedAuditId(null);
+                  }}
+                  disabled={auditPage >= auditTotalPages - 1}
+                  aria-label="Next audit page"
+                  className={`p-1.5 rounded-lg border transition disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer ${
+                    darkMode
+                      ? 'border-white/10 text-slate-300 hover:bg-white/10'
+                      : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

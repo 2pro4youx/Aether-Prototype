@@ -33,6 +33,7 @@ interface FloatingGeminiChatProps {
   messages?: FloatingChatMessage[];
   onUpdateMessages?: (messages: FloatingChatMessage[]) => void;
   userName?: string;
+  settingsHiddenOnMobile?: boolean;
 }
 
 type Message = FloatingChatMessage;
@@ -48,6 +49,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
   messages: controlledMessages,
   onUpdateMessages,
   userName,
+  settingsHiddenOnMobile = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
@@ -244,9 +246,11 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
 
   const widget = (
     <aside
-      aria-label="Floating Gemini Assistant"
-      className={`fixed right-3 md:right-6 bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-6 z-[60] flex flex-col items-end pointer-events-none transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-        hidden ? 'translate-y-28 opacity-0 pointer-events-none select-none invisible' : 'opacity-100'
+      aria-label="Floating Eclipse Assistant"
+      className={`fixed top-[calc(0.75rem+env(safe-area-inset-top,0px))] md:top-auto md:bottom-6 md:right-6 ${
+        isOpen || settingsHiddenOnMobile ? 'right-3' : 'right-[4.25rem]'
+      } z-[60] flex flex-col items-end pointer-events-none transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        hidden ? '-translate-y-24 md:translate-y-28 opacity-0 pointer-events-none select-none invisible' : 'opacity-100'
       }`}
     >
       {/* SVG Chromatic Aberration & Liquid Glass Displacement Shader Filter Definition */}
@@ -274,10 +278,10 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
               borderColor: `${activePalette.primary}60`,
               boxShadow: `0 8px 32px ${activePalette.primary}25`,
             }}
-            className={`pointer-events-auto acrylic-glass-panel-minimized liquid-glass liquid-glass-tile no-lift floating-gemini-tile border group relative overflow-hidden p-3 md:p-3.5 rounded-2xl shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 flex items-center gap-2.5 cursor-pointer ${
+            className={`pointer-events-auto acrylic-glass-panel-minimized liquid-glass liquid-glass-tile no-lift floating-gemini-tile border group relative overflow-hidden w-11 h-11 p-0 justify-center md:w-auto md:h-auto md:p-3.5 md:justify-start rounded-2xl shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 flex items-center gap-2.5 cursor-pointer ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
-            title="Open Gemini"
+            title="Open Eclipse"
           >
             {/* Liquid Glass Chromatic Filter Layer */}
             <div className="liquidglass pointer-events-none" aria-hidden="true" />
@@ -294,7 +298,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
               </div>
               <div className="text-left pr-1 hidden md:block">
                 <p className="text-xs font-bold transition flex items-center gap-1.5" style={{ color: activePalette.primary }}>
-                  <span>Gemini</span>
+                  <span>Eclipse</span>
                 </p>
                 <p className={`text-[10px] font-mono ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   {enableThinking ? 'High Thinking' : selectedModel}
@@ -324,9 +328,8 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
             }}
             onPointerMove={handleTilePointerMove}
             onPointerLeave={handleTilePointerLeave}
-            className={`pointer-events-auto no-lift flex flex-col overflow-hidden relative transition-[box-shadow,border-color,background-color] duration-300 liquid-glass liquid-glass-tile floating-gemini-tile border rounded-3xl shadow-2xl w-[calc(100vw-1.5rem)] md:w-96 max-w-sm h-[440px] md:h-[520px] max-h-[calc(100dvh-8.5rem)] md:max-h-[85vh] border-white/20`}
+            className={`pointer-events-auto no-lift flex flex-col overflow-hidden relative transition-[box-shadow,border-color,background-color] duration-300 liquid-glass liquid-glass-tile floating-gemini-tile border rounded-3xl shadow-2xl origin-top-right md:origin-bottom-right w-[calc(100vw-1.5rem)] md:w-96 max-w-sm h-[440px] md:h-[520px] max-h-[calc(100dvh-6rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] md:max-h-[85vh] border-white/20`}
             style={{
-              transformOrigin: 'bottom right',
               borderColor: `${activePalette.primary}50`,
             }}
           >
@@ -357,7 +360,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
                       darkMode ? 'text-slate-100' : 'text-slate-900'
                     }`}
                   >
-                    Gemini
+                    Eclipse
                   </h4>
                   <div
                     className={`flex items-center gap-1.5 text-[10px] font-mono leading-none mt-0.5 relative ${
@@ -534,7 +537,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
                         className="flex items-center gap-2 text-xs font-mono p-2.5 bg-slate-950/70 text-amber-300 rounded-xl border border-white/14 shadow-sm backdrop-blur-md"
                       >
                         <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                        <span>Gemini is thinking...</span>
+                        <span>Eclipse is thinking...</span>
                       </motion.div>
                     )}
                     <div ref={messagesEndRef} />
@@ -553,7 +556,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
                       type="text"
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      placeholder="Ask Gemini anything..."
+                      placeholder="Ask Eclipse anything..."
                       className={`flex-1 px-3 py-2 rounded-xl border text-xs focus:outline-none focus:ring-2 transition ${
                         darkMode
                           ? 'bg-slate-950/50 border-white/14 text-slate-100 placeholder-slate-400 focus:border-amber-400/80 focus:ring-amber-400/20'

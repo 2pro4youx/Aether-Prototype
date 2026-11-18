@@ -176,7 +176,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
             <div
               onPointerMove={handleTilePointerMove}
               onPointerLeave={handleTilePointerLeave}
-              className={`relative w-full border-b rounded-b-3xl shadow-2xl overflow-hidden liquid-glass liquid-glass-tile floating-gemini-tile no-lift workspace-studio-panel ${
+              className={`relative w-full border-b rounded-b-2xl md:rounded-b-3xl shadow-2xl overflow-hidden liquid-glass liquid-glass-tile floating-gemini-tile no-lift workspace-studio-panel ${
                 darkMode
                   ? 'bg-slate-950/90 text-slate-100'
                   : 'bg-white/95 text-slate-900 shadow-slate-300/60'
@@ -191,24 +191,24 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
         {/* Liquid Glass Chromatic Layer matching Workspace Card */}
         <div className="liquidglass pointer-events-none z-0" aria-hidden="true" />
 
-        <div className="max-w-[1720px] mx-auto px-3.5 md:px-8 py-4 space-y-4 relative z-20 isolate max-h-[88dvh] overflow-y-auto md:max-h-none md:overflow-visible">
+        <div className="max-w-[1720px] mx-auto px-3 md:px-8 py-2.5 md:py-4 space-y-2 md:space-y-4 relative z-20 isolate max-h-[78dvh] overflow-y-auto md:max-h-none md:overflow-visible">
           {/* Bar Header */}
-          <div className="flex flex-wrap items-center justify-between gap-2 relative z-20">
-            <div className="flex items-center gap-3 relative z-20">
+          <div className="flex flex-nowrap md:flex-wrap items-center justify-between gap-2 relative z-20">
+            <div className="flex items-center gap-2 md:gap-3 min-w-0 relative z-20">
               <div
-                className="w-8 h-8 rounded-xl flex items-center justify-center shadow-sm shrink-0"
+                className="w-7 h-7 md:w-8 md:h-8 rounded-lg md:rounded-xl flex items-center justify-center shadow-sm shrink-0"
                 style={{
                   backgroundColor: `${activePalette.primary}25`,
                   color: activePalette.primary,
                 }}
               >
-                <Layers className="w-4 h-4 stroke-[2.5]" />
+                <Layers className="w-3.5 h-3.5 md:w-4 md:h-4 stroke-[2.5]" />
               </div>
-              <div className="relative z-20">
+              <div className="relative z-20 min-w-0">
                 <div className="flex items-center gap-2">
-                  <h2 className={`text-sm font-bold tracking-tight relative z-20 ${darkMode ? 'text-white' : 'text-slate-950'}`}>Workspaces Studio</h2>
+                  <h2 className={`text-xs md:text-sm font-bold tracking-tight truncate relative z-20 ${darkMode ? 'text-white' : 'text-slate-950'}`}>Workspaces Studio</h2>
                   <span
-                    className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border relative z-20"
+                    className="hidden md:inline-block text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border relative z-20"
                     style={{
                       backgroundColor: `${activePalette.primary}15`,
                       borderColor: `${activePalette.primary}35`,
@@ -218,13 +218,13 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                     Independent Workspaces
                   </span>
                 </div>
-                <p className={`text-xs relative z-20 font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                <p className={`hidden md:block text-xs relative z-20 font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                   Select a workspace context. Each workspace stores its own independent sources, OneNote canvas, and AI chat.
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 relative z-20">
+            <div className="flex items-center gap-1.5 md:gap-2 shrink-0 relative z-20">
               <button
                 onClick={handleOpenCreateModal}
                 style={{
@@ -232,15 +232,16 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                   borderColor: `${activePalette.primary}50`,
                   color: darkMode ? '#ffffff' : activePalette.primary,
                 }}
-                className="px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition hover:scale-105 active:scale-95 shadow-sm cursor-pointer relative z-20"
+                className="px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl border text-[11px] md:text-xs font-semibold flex items-center gap-1 md:gap-1.5 transition hover:scale-105 active:scale-95 shadow-sm cursor-pointer relative z-20"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>New Workspace</span>
+                <span className="md:hidden">New</span>
+                <span className="hidden md:inline">New Workspace</span>
               </button>
 
               <button
                 onClick={onClose}
-                className={`p-1.5 rounded-xl border transition cursor-pointer relative z-20 ${
+                className={`p-1 md:p-1.5 rounded-lg md:rounded-xl border transition cursor-pointer relative z-20 ${
                   darkMode
                     ? 'border-white/10 text-slate-400 hover:text-white hover:bg-white/5'
                     : 'border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100'
@@ -253,14 +254,14 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
           </div>
 
           {/* Workspace Cards Carousel / Grid with Drag-and-Drop Reorder & Removal Animation */}
-          <div className="pt-4 pb-6 px-3 md:pt-14 md:pb-16 md:px-12 overflow-x-auto no-scrollbar">
+          <div className="pt-1 pb-2 px-1 md:pt-14 md:pb-16 md:px-12 overflow-x-auto no-scrollbar">
             {openWorkspaces.length > 0 && (
               <Reorder.Group
                 axis="x"
                 values={openWorkspaces}
                 onReorder={(newOrder) => onReorderWorkspaces?.(newOrder)}
                 layoutScroll
-                className="flex items-stretch gap-6 w-max min-w-full"
+                className="flex items-stretch gap-3 md:gap-6 w-max min-w-full"
               >
                 <AnimatePresence mode="popLayout" initial={false}>
                   {openWorkspaces.map((ws) => {
@@ -343,7 +344,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                         ? `0 12px 36px -6px rgba(0, 0, 0, 0.35), 0 0 24px -2px ${activePalette.primary}40`
                         : undefined,
                     }}
-                    className={`w-[78vw] max-w-[300px] md:w-84 md:max-w-none h-full rounded-3xl p-5 border transition-[box-shadow,border-color,background-color] duration-300 flex flex-col justify-between relative overflow-hidden liquid-glass liquid-glass-tile floating-gemini-tile no-lift ${
+                    className={`w-[220px] sm:w-[250px] md:w-84 md:max-w-none h-full rounded-2xl md:rounded-3xl p-3 md:p-5 border transition-[box-shadow,border-color,background-color] duration-300 flex flex-col justify-between relative overflow-hidden liquid-glass liquid-glass-tile floating-gemini-tile no-lift ${
                       isActive
                         ? darkMode
                           ? 'bg-slate-900/90 shadow-2xl'
@@ -356,17 +357,17 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                     {/* Liquid Glass Chromatic Filter Layer matching Neural Assistant */}
                     <div className="liquidglass pointer-events-none" aria-hidden="true" />
 
-                  <div className="space-y-2 relative z-20 isolate">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400 relative z-20">
-                            <GripHorizontal className="w-3.5 h-3.5 opacity-45 group-hover:opacity-90 transition-opacity shrink-0" />
+                  <div className="space-y-1.5 md:space-y-2 relative z-20 isolate">
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1 md:gap-1.5 text-[10px] md:text-[11px] font-mono text-slate-400 relative z-20 min-w-0">
+                            <GripHorizontal className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-45 group-hover:opacity-90 transition-opacity shrink-0" />
                             <Folder className="w-3 h-3 shrink-0" />
-                            <span className="truncate max-w-[100px]">{ws.folder || 'Assorted Workspaces'}</span>
+                            <span className="truncate max-w-[74px] md:max-w-[100px]">{ws.folder || 'Assorted Workspaces'}</span>
                           </div>
 
                           {/* Actions: Edit pencil, Close tab, and Active Badge */}
                           <div
-                            className="flex items-center gap-1 relative z-20"
+                            className="flex items-center gap-0.5 md:gap-1 relative z-20 shrink-0"
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -376,7 +377,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                               className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
                               title="Edit workspace name & description"
                             >
-                              <Pencil className="w-3.5 h-3.5" />
+                              <Pencil className="w-3 h-3 md:w-3.5 md:h-3.5" />
                             </button>
 
                             <button
@@ -385,26 +386,26 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                               className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 transition cursor-pointer"
                               title="Remove workspace from studio (saved in My Library)"
                             >
-                              <X className="w-3.5 h-3.5" />
+                              <X className="w-3 h-3 md:w-3.5 md:h-3.5" />
                             </button>
 
                         {isActive && (
                           <span
-                            className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ml-1"
+                            className="flex items-center gap-0.5 md:gap-1 text-[9px] md:text-[10px] font-bold uppercase tracking-wider px-1.5 md:px-2 py-0.5 rounded-full ml-0.5 md:ml-1"
                             style={{
                               backgroundColor: `${activePalette.primary}25`,
                               color: activePalette.primary,
                             }}
                           >
-                            <Check className="w-3 h-3 stroke-[3]" />
-                            <span>Active</span>
+                            <Check className="w-2.5 h-2.5 md:w-3 md:h-3 stroke-[3]" />
+                            <span className="hidden md:inline">Active</span>
                           </span>
                         )}
                       </div>
                     </div>
 
                     <h3
-                      className={`text-sm font-bold truncate transition relative z-20 ${
+                      className={`text-xs md:text-sm font-bold truncate transition relative z-20 ${
                         isActive
                           ? darkMode
                             ? 'text-white'
@@ -418,7 +419,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                     </h3>
 
                     <p
-                      className={`text-xs line-clamp-2 leading-relaxed relative z-20 ${
+                      className={`hidden md:block text-xs line-clamp-2 leading-relaxed relative z-20 ${
                         darkMode ? 'text-slate-400' : 'text-slate-600'
                       }`}
                     >
@@ -428,11 +429,11 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
 
                   {/* Synchronized Components Metrics */}
                   <div
-                    className={`mt-4 pt-3 border-t flex items-center justify-between text-[11px] font-medium relative z-20 isolate ${
+                    className={`mt-2.5 pt-2 md:mt-4 md:pt-3 border-t flex items-center justify-between text-[10px] md:text-[11px] font-medium relative z-20 isolate ${
                       darkMode ? 'border-white/10 text-slate-400' : 'border-slate-200 text-slate-600'
                     }`}
                   >
-                    <div className="flex items-center gap-3 relative z-20">
+                    <div className="flex items-center gap-2 md:gap-3 relative z-20">
                       {ws.mode !== 'onenote-only' ? (
                         <span className="flex items-center gap-1" title="Exclusive sources in NotebookLM">
                           <BookOpen className="w-3 h-3" style={{ color: activePalette.primary }} />
@@ -462,7 +463,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                       )}
                     </div>
 
-                    <span className="text-[10px] text-slate-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-1 relative z-20">
+                    <span className="text-[10px] text-slate-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 md:gap-1 relative z-20">
                       <span>Open</span>
                       <ArrowRight className="w-3 h-3" />
                     </span>
@@ -478,7 +479,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
             {openWorkspaces.length === 0 && (
               <div
                 onClick={handleOpenCreateModal}
-                className={`w-full py-8 px-6 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center text-center cursor-pointer transition gap-2.5 relative z-20 isolate ${
+                className={`w-full py-4 px-4 md:py-8 md:px-6 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center text-center cursor-pointer transition gap-2 md:gap-2.5 relative z-20 isolate ${
                   darkMode
                     ? 'border-white/15 hover:border-white/30 bg-white/5'
                     : 'border-slate-300 hover:border-slate-400 bg-slate-50'
@@ -516,7 +517,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
                       opacity: { duration: 0.18, ease: 'easeOut' },
                     }}
                     style={{ willChange: 'height, opacity' }}
-                    className="overflow-hidden"
+                    className="overflow-hidden hidden md:block"
                   >
                     <motion.div
                       initial={{ y: -16, opacity: 0 }}

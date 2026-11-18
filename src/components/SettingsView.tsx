@@ -303,17 +303,17 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
   };
 
   return (
-    <div ref={sectionRef} className="liquid-glass rounded-2xl p-6 shadow-xl flex flex-col gap-6">
+    <div ref={sectionRef} className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-3.5 md:gap-6">
       {/* Section Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3">
         <div className="space-y-0.5">
           <div className="flex items-center gap-2">
-            <MousePointer className="w-4 h-4" style={{ color: activePalette.primary }} />
-            <h3 className={`text-base font-bold ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>
+            <MousePointer className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
+            <h3 className={`text-sm md:text-base font-bold ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>
               Precision Cursor Selector & Dynamic Color Adapter
             </h3>
           </div>
-          <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <p className={`hidden sm:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Select your preferred pointer style and calibrate the dynamic color adapter to match the curated gradient.
           </p>
         </div>
@@ -321,7 +321,7 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
         {/* Active status pill */}
         <div className="flex items-center gap-2">
           <span
-            className="text-[11px] font-mono font-semibold px-3 py-1 rounded-full border flex items-center gap-1.5 shadow-sm"
+            className="text-[10px] md:text-[11px] font-mono font-semibold px-2.5 py-0.5 md:px-3 md:py-1 rounded-full border flex items-center gap-1.5 shadow-sm"
             style={{
               backgroundColor: `${activePalette.primary}20`,
               borderColor: `${activePalette.primary}50`,
@@ -329,7 +329,7 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
             }}
           >
             <span
-              className="w-2 h-2 rounded-full animate-pulse"
+              className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full animate-pulse"
               style={{ backgroundColor: activePalette.primary }}
             />
             <span ref={headerBadgeRef}>
@@ -340,7 +340,7 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
       </div>
 
       {/* 6 Precision Cursor Choice Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
         {cursorPreviews.map((opt: CursorOption & { svgCode: string }) => {
           const isSelected = normalizeCursorStyle(cursorStyle) === opt.id;
 
@@ -357,22 +357,22 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
                     }
                   : {}
               }
-              className={`p-3.5 rounded-xl border transition cursor-pointer flex flex-col justify-between group liquid-glass-tile relative overflow-hidden ${
+              className={`p-2.5 md:p-3.5 rounded-xl border transition cursor-pointer flex flex-col justify-between group liquid-glass-tile relative overflow-hidden ${
                 isSelected ? 'ring-1 ring-offset-1 ring-amber-400/50' : ''
               }`}
             >
               {/* Active indicator dot */}
               {isSelected && (
                 <div
-                  className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full shadow"
+                  className="absolute top-2 right-2 md:top-2.5 md:right-2.5 w-1.5 h-1.5 md:w-2 md:h-2 rounded-full shadow"
                   style={{ backgroundColor: activePalette.primary }}
                 />
               )}
 
               {/* Top preview box */}
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-2 md:mb-3">
                 <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center border shadow-inner transition-transform group-hover:scale-110"
+                  className="w-9 h-9 md:w-12 md:h-12 rounded-lg md:rounded-xl flex items-center justify-center border shadow-inner transition-transform group-hover:scale-110"
                   style={{
                     backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.7)' : 'rgba(255, 255, 255, 0.85)',
                     borderColor: isSelected
@@ -383,13 +383,13 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
                   }}
                 >
                   <div
-                    className="w-8 h-8 flex items-center justify-center pointer-events-none"
+                    className="w-6 h-6 md:w-8 md:h-8 flex items-center justify-center pointer-events-none"
                     dangerouslySetInnerHTML={{ __html: opt.svgCode }}
                   />
                 </div>
 
                 <div
-                  className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition ${
+                  className={`w-4 h-4 md:w-5 md:h-5 rounded-full border flex items-center justify-center shrink-0 transition ${
                     isSelected
                       ? 'text-slate-950 font-bold'
                       : darkMode
@@ -405,14 +405,14 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
                       : {}
                   }
                 >
-                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                  {isSelected && <Check className="w-3 h-3 md:w-3.5 md:h-3.5 stroke-[3]" />}
                 </div>
               </div>
 
               {/* Info */}
-              <div className="space-y-1">
+              <div className="space-y-0.5 md:space-y-1">
                 <h4
-                  className={`text-xs font-bold ${
+                  className={`text-[11px] md:text-xs font-bold truncate ${
                     isSelected
                       ? darkMode
                         ? 'text-white'
@@ -425,7 +425,7 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
                   {opt.name}
                 </h4>
                 <p
-                  className={`text-[11px] leading-tight line-clamp-2 ${
+                  className={`hidden sm:block text-[11px] leading-tight line-clamp-2 ${
                     darkMode ? 'text-slate-400' : 'text-slate-500'
                   }`}
                 >
@@ -434,9 +434,9 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
               </div>
 
               {/* Bottom badge */}
-              <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between">
+              <div className="mt-2 md:mt-3 pt-1.5 md:pt-2 border-t border-white/5 flex items-center justify-between">
                 <span
-                  className="text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded-md border"
+                  className="text-[9px] font-mono font-bold uppercase px-1.5 md:px-2 py-0.5 rounded-md border truncate max-w-full"
                   style={{
                     backgroundColor: isSelected ? `${activePalette.primary}20` : 'transparent',
                     borderColor: isSelected
@@ -457,27 +457,27 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
 
       {/* Dynamic Color Adapter Slider */}
       <div
-        className={`p-4 rounded-xl border flex flex-col gap-3.5 transition-colors ${
+        className={`p-3 md:p-4 rounded-xl border flex flex-col gap-2.5 md:gap-3.5 transition-colors ${
           darkMode ? 'bg-slate-900/60 border-white/10' : 'bg-slate-50/80 border-slate-200'
         }`}
       >
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <Sliders className="w-3.5 h-3.5" style={{ color: activePalette.primary }} />
-              <h4 className={`text-xs font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+        <div className="flex flex-row items-center justify-between gap-2">
+          <div className="space-y-0.5 min-w-0">
+            <div className="flex items-center gap-1.5 md:gap-2">
+              <Sliders className="w-3.5 h-3.5 shrink-0" style={{ color: activePalette.primary }} />
+              <h4 className={`text-xs font-bold truncate ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
                 Dynamic Color Adapter Slider
               </h4>
             </div>
-            <p className={`text-[11px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <p className={`hidden sm:block text-[11px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Blends the cursor hue from crisp pure white (0%) to your active curated color gradient (100%).
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <span
               ref={badgeRef}
-              className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg border shadow-sm"
+              className="text-[11px] md:text-xs font-mono font-bold px-2 md:px-2.5 py-0.5 md:py-1 rounded-lg border shadow-sm"
               style={{
                 backgroundColor: `${activePalette.primary}20`,
                 borderColor: `${activePalette.primary}50`,
@@ -494,7 +494,7 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
         </div>
 
         {/* Native Hardware-Accelerated Slider */}
-        <div className="space-y-2">
+        <div className="space-y-1.5 md:space-y-2">
           <div className="relative flex items-center">
             <input
               ref={sliderRef}
@@ -509,7 +509,7 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
               onPointerCancel={handlePointerUp}
               onKeyUp={handleKeyUp}
               onBlur={handleBlur}
-              className="smooth-adapter-slider w-full h-7 rounded-lg appearance-none cursor-pointer focus:outline-none select-none touch-none"
+              className="smooth-adapter-slider w-full h-6 md:h-7 rounded-lg appearance-none cursor-pointer focus:outline-none select-none touch-none"
               style={{
                 '--slider-track-bg': `linear-gradient(to right, #ffffff 0%, ${activePalette.primary} 50%, ${activePalette.accent} 100%)`,
               } as React.CSSProperties}
@@ -521,7 +521,7 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
               <span className="w-2 h-2 rounded-full bg-white border border-slate-400 inline-block" />
               <span>0% Pure White</span>
             </span>
-            <span className="flex items-center gap-1 text-center">
+            <span className="hidden sm:flex items-center gap-1 text-center">
               <Sparkles className="w-3 h-3" style={{ color: activePalette.primary }} />
               <span>Dynamic Adapter Interpolator</span>
             </span>
@@ -538,7 +538,7 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
         </div>
 
         {/* Quick Presets & Live Sandbox Preview */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-white/5">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 md:gap-3 pt-2 border-t border-white/5">
           <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
             <span className={`text-[10px] font-semibold mr-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Presets:
@@ -576,7 +576,7 @@ const PrecisionCursorSection: React.FC<PrecisionCursorSectionProps> = React.memo
 
           {/* Interactive Cursor Test Playground Area with live CSS variable gradient */}
           <div
-            className="w-full sm:w-auto px-4 py-2 rounded-xl border flex items-center justify-center gap-2.5 text-xs font-medium transition"
+            className="hidden md:flex w-full sm:w-auto px-4 py-2 rounded-xl border items-center justify-center gap-2.5 text-xs font-medium transition"
             style={{
               borderColor: `${activePalette.primary}40`,
               backgroundColor: darkMode ? `${activePalette.primary}10` : `${activePalette.primary}08`,
@@ -766,18 +766,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const activeModelObj = AVAILABLE_GEMINI_MODELS.find((m) => m.id === selectedModel) || AVAILABLE_GEMINI_MODELS[0];
 
   return (
-    <div className="relative min-h-[100dvh] md:min-h-screen pt-5 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1560px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
+    <div className="relative min-h-[100dvh] md:min-h-screen pt-4 pb-10 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1560px] w-full mx-auto space-y-4 md:space-y-8 select-none transition-colors duration-300">
       {/* Title */}
-      <div className="pr-14 md:pr-0 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-        <div>
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-2.5 md:gap-4">
+        <div className="pr-28 md:pr-0">
           <h1
-            className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${
+            className={`text-2xl md:text-4xl font-extrabold tracking-tight ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
           >
             Settings & Model Hub
           </h1>
-          <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <p className={`hidden md:block text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Customize visual themes, Gemini models, and how Gemini remembers & addresses you.
           </p>
         </div>
@@ -786,15 +786,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div
           role="tablist"
           aria-label="Settings sections"
-          className={`inline-flex flex-wrap items-center gap-1 p-1.5 rounded-2xl border liquid-glass self-start lg:self-auto ${
+          className={`grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 md:p-1.5 rounded-xl md:rounded-2xl border liquid-glass w-full sm:w-auto self-start lg:self-auto ${
             darkMode ? 'bg-slate-900/75 border-white/10' : 'bg-white/85 border-slate-300/80'
           }`}
         >
           {(
             [
-              { id: 'general' as SettingsTabId, label: 'Studio & Theme', icon: Sliders },
-              { id: 'gemini-model' as SettingsTabId, label: 'Gemini Model & API', icon: Cpu },
-              { id: 'gemini-personalization' as SettingsTabId, label: 'Gemini Personalization', icon: Sparkles },
+              { id: 'general' as SettingsTabId, label: 'Studio & Theme', shortLabel: 'Theme', icon: Sliders },
+              { id: 'gemini-model' as SettingsTabId, label: 'Gemini Model & API', shortLabel: 'Model & API', icon: Cpu },
+              { id: 'gemini-personalization' as SettingsTabId, label: 'Gemini Personalization', shortLabel: 'Personalize', icon: Sparkles },
             ]
           ).map((tab) => {
             const Icon = tab.icon;
@@ -814,7 +814,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       }
                     : {}
                 }
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                className={`px-2 py-1.5 md:px-3.5 md:py-2 rounded-lg md:rounded-xl text-[11px] md:text-xs font-bold flex items-center justify-center gap-1 md:gap-1.5 transition-all cursor-pointer min-w-0 ${
                   isActive
                     ? 'shadow-md'
                     : darkMode
@@ -823,10 +823,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 }`}
               >
                 <Icon className="w-3.5 h-3.5 shrink-0" />
-                <span>{tab.label}</span>
+                <span className="sm:hidden truncate">{tab.shortLabel}</span>
+                <span className="hidden sm:inline">{tab.label}</span>
                 {tab.id === 'gemini-personalization' && activePersonalization.memories.length > 0 && (
                   <span
-                    className={`ml-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-md ${
+                    className={`ml-0.5 text-[10px] font-mono px-1 md:px-1.5 py-0.2 rounded-md shrink-0 ${
                       isActive
                         ? 'bg-slate-950/20 text-slate-950'
                         : darkMode
@@ -844,11 +845,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {activeSettingsTab === 'general' && (
-      <div className="space-y-8 onenote-page-content-reveal">
+      <div className="space-y-3.5 md:space-y-8 onenote-page-content-reveal">
 
       {/* Live Active Theme & Palette Status Banner */}
       <div
-        className="p-4 rounded-2xl border transition-all duration-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg"
+        className="p-3 md:p-4 rounded-xl md:rounded-2xl border transition-all duration-300 flex flex-row items-center justify-between gap-2.5 md:gap-3 shadow-lg"
         style={{
           background: darkMode
             ? `linear-gradient(135deg, ${activePalette.primary}18, ${activePalette.accent}12)`
@@ -856,25 +857,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           borderColor: `${activePalette.primary}50`,
         }}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 md:gap-3 min-w-0">
           <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-950 font-bold shadow"
+            className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl flex items-center justify-center text-slate-950 font-bold shadow shrink-0"
             style={{
               background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
             }}
           >
-            <Sparkles className="w-5 h-5 fill-slate-950" />
+            <Sparkles className="w-4 h-4 md:w-5 md:h-5 fill-slate-950" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h4
-              className={`text-sm font-bold ${
+              className={`text-xs md:text-sm font-bold truncate ${
                 darkMode ? 'text-slate-100' : 'text-slate-900'
               }`}
             >
               Active: {activePalette.name}
             </h4>
             <p
-              className={`text-xs ${
+              className={`text-[11px] md:text-xs truncate ${
                 darkMode ? 'text-slate-400' : 'text-slate-600'
               }`}
             >
@@ -883,7 +884,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="hidden sm:flex items-center gap-2 shrink-0">
           <span
             className="text-xs font-mono font-bold px-3 py-1 rounded-full border"
             style={{
@@ -898,28 +899,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Theme: Dark or Light Mode */}
-      <div className="liquid-glass rounded-2xl p-6 shadow-xl flex flex-col gap-4 smooth-scroll-contain">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4 smooth-scroll-contain">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 md:gap-4">
           <div className="space-y-0.5">
             <h3
-              className={`text-base font-bold flex items-center gap-2 ${
+              className={`text-sm md:text-base font-bold flex items-center gap-2 ${
                 darkMode ? 'text-slate-100' : 'text-slate-900'
               }`}
             >
               {darkMode ? (
-                <Moon className="w-4 h-4" style={{ color: activePalette.primary }} />
+                <Moon className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
               ) : (
-                <Sun className="w-4 h-4" style={{ color: activePalette.primary }} />
+                <Sun className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
               )}
               <span>Theme Appearance (Dark & Light Mode)</span>
             </h3>
-            <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <p className={`hidden sm:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Instantly toggle between obsidian night mode and crisp editorial day mode.
             </p>
           </div>
 
           <div
-            className={`flex items-center gap-1 p-1 rounded-xl border ${
+            className={`grid grid-cols-2 sm:flex items-center gap-1 p-1 rounded-xl border w-full sm:w-auto ${
               darkMode ? 'bg-slate-900 border-white/10' : 'bg-slate-100 border-slate-300'
             }`}
           >
@@ -933,11 +934,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }
                   : {}
               }
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+              className={`px-3 py-1.5 md:px-3.5 md:py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition ${
                 !darkMode ? 'shadow-md' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Sun className="w-4 h-4" />
+              <Sun className="w-3.5 h-3.5 md:w-4 md:h-4" />
               <span>Light Mode</span>
             </button>
             <button
@@ -950,11 +951,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }
                   : {}
               }
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+              className={`px-3 py-1.5 md:px-3.5 md:py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition ${
                 darkMode ? 'shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Moon className="w-4 h-4" />
+              <Moon className="w-3.5 h-3.5 md:w-4 md:h-4" />
               <span>Dark Mode</span>
             </button>
           </div>
@@ -962,18 +963,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Curated Color Palettes + Make Your Own Custom Theme */}
-      <div className="liquid-glass rounded-2xl p-6 shadow-xl flex flex-col gap-4 smooth-scroll-contain">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="space-y-0.5">
+      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4 smooth-scroll-contain">
+        <div className="flex flex-row items-center justify-between gap-2">
+          <div className="space-y-0.5 min-w-0">
             <h3
-              className={`text-base font-bold flex items-center gap-2 ${
+              className={`text-sm md:text-base font-bold flex items-center gap-2 ${
                 darkMode ? 'text-slate-100' : 'text-slate-900'
               }`}
             >
-              <Palette className="w-4 h-4" style={{ color: activePalette.primary }} />
-              <span>Color Themes &amp; Custom Palette</span>
+              <Palette className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
+              <span className="truncate">Color Themes &amp; Custom Palette</span>
             </h3>
-            <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <p className={`hidden sm:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Click any curated gradient or design your own custom theme with primary, accent, and canvas base colors.
             </p>
           </div>
@@ -991,14 +992,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               borderColor: `${activePalette.primary}45`,
               color: darkMode ? '#ffffff' : activePalette.primary,
             }}
-            className="px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition hover:opacity-90 shrink-0 self-start sm:self-auto cursor-pointer"
+            className="px-2.5 py-1 md:px-3 md:py-1.5 rounded-xl border text-[11px] md:text-xs font-semibold flex items-center gap-1 md:gap-1.5 transition hover:opacity-90 shrink-0 cursor-pointer"
           >
-            <Wand2 className="w-3.5 h-3.5" />
-            <span>{isCustomBuilderOpen ? 'Hide Palette Studio' : 'Make Your Own Theme'}</span>
+            <Wand2 className="w-3 h-3 md:w-3.5 md:h-3.5" />
+            <span className="sm:hidden">{isCustomBuilderOpen ? 'Hide Studio' : 'Custom'}</span>
+            <span className="hidden sm:inline">{isCustomBuilderOpen ? 'Hide Palette Studio' : 'Make Your Own Theme'}</span>
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3.5 pt-1 md:pt-2">
           {PALETTES.map((pal) => {
             const isSelected = activePaletteId === pal.id;
             return (
@@ -1014,24 +1016,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       }
                     : {}
                 }
-                className={`p-3.5 rounded-xl border transition cursor-pointer flex items-center justify-between group liquid-glass-tile ${
+                className={`p-2.5 md:p-3.5 rounded-xl border transition cursor-pointer flex items-center justify-between group liquid-glass-tile ${
                   isSelected ? 'ring-1 ring-offset-1 ring-amber-400/50' : ''
                 }`}
               >
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-2 md:gap-3 min-w-0">
                   {/* Color Swatch */}
                   <div
-                    className="w-10 h-10 rounded-xl shrink-0 shadow-md border border-white/30 flex items-center justify-center text-white"
+                    className="w-7 h-7 md:w-10 md:h-10 rounded-lg md:rounded-xl shrink-0 shadow-md border border-white/30 flex items-center justify-center text-white"
                     style={{
                       background: `linear-gradient(135deg, ${pal.primary}, ${pal.accent})`,
                     }}
                   >
-                    {isSelected && <Check className="w-5 h-5 drop-shadow-md stroke-[3]" />}
+                    {isSelected && <Check className="w-4 h-4 md:w-5 md:h-5 drop-shadow-md stroke-[3]" />}
                   </div>
 
                   <div className="min-w-0 space-y-0.5">
                     <h4
-                      className={`text-xs font-bold truncate ${
+                      className={`text-[11px] md:text-xs font-bold truncate ${
                         isSelected
                           ? darkMode
                             ? 'text-white'
@@ -1043,13 +1045,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     >
                       {pal.name}
                     </h4>
-                    <p className={`text-[10px] truncate ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <p className={`hidden md:block text-[10px] truncate ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       {pal.description}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 pl-2 shrink-0">
+                <div className="hidden sm:flex items-center gap-1.5 pl-2 shrink-0">
                   <span
                     className="w-3 h-3 rounded-full border border-white/20"
                     style={{ backgroundColor: pal.primary }}
@@ -1085,28 +1087,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       }
                     : {}
                 }
-                className={`p-3.5 rounded-xl border transition cursor-pointer flex items-center justify-between group liquid-glass-tile ${
+                className={`p-2.5 md:p-3.5 rounded-xl border transition cursor-pointer flex items-center justify-between group liquid-glass-tile ${
                   isCustomSelected ? 'ring-1 ring-offset-1 ring-white/40' : 'border-dashed'
                 }`}
               >
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-2 md:gap-3 min-w-0">
                   <div
-                    className="w-10 h-10 rounded-xl shrink-0 shadow-md border border-white/30 flex items-center justify-center text-white"
+                    className="w-7 h-7 md:w-10 md:h-10 rounded-lg md:rounded-xl shrink-0 shadow-md border border-white/30 flex items-center justify-center text-white"
                     style={{
                       background: `linear-gradient(135deg, ${customPaletteConfig.primary}, ${customPaletteConfig.accent})`,
                     }}
                   >
                     {isCustomSelected ? (
-                      <Check className="w-5 h-5 drop-shadow-md stroke-[3]" />
+                      <Check className="w-4 h-4 md:w-5 md:h-5 drop-shadow-md stroke-[3]" />
                     ) : (
-                      <Wand2 className="w-4 h-4 drop-shadow-md" />
+                      <Wand2 className="w-3.5 h-3.5 md:w-4 md:h-4 drop-shadow-md" />
                     )}
                   </div>
 
                   <div className="min-w-0 space-y-0.5">
                     <div className="flex items-center gap-1.5">
                       <h4
-                        className={`text-xs font-bold truncate ${
+                        className={`text-[11px] md:text-xs font-bold truncate ${
                           isCustomSelected
                             ? darkMode
                               ? 'text-white'
@@ -1119,7 +1121,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         {customPaletteConfig.name || 'Custom Studio'}
                       </h4>
                       <span
-                        className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded-full border shrink-0"
+                        className="hidden sm:inline-block text-[9px] font-mono uppercase px-1.5 py-0.5 rounded-full border shrink-0"
                         style={{
                           borderColor: `${customPaletteConfig.primary}50`,
                           color: darkMode ? '#ffffff' : customPaletteConfig.primary,
@@ -1129,13 +1131,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         Custom
                       </span>
                     </div>
-                    <p className={`text-[10px] truncate ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <p className={`hidden md:block text-[10px] truncate ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       Make your own theme · Click to customize colors
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 pl-2 shrink-0">
+                <div className="hidden sm:flex items-center gap-1.5 pl-2 shrink-0">
                   <span
                     className="w-3 h-3 rounded-full border border-white/25"
                     style={{ backgroundColor: customPaletteConfig.primary }}
@@ -1160,7 +1162,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {/* Custom Theme Palette Builder Studio */}
         {(isCustomBuilderOpen || activePaletteId === 'custom') && (
           <div
-            className={`mt-2 p-5 rounded-2xl border space-y-4 transition-colors ${
+            className={`mt-1.5 md:mt-2 p-3.5 md:p-5 rounded-xl md:rounded-2xl border space-y-3 md:space-y-4 transition-colors ${
               darkMode
                 ? 'bg-slate-950/60 border-white/10'
                 : 'bg-white/80 border-slate-200/90 shadow-sm'
@@ -1256,7 +1258,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-4">
               {/* Theme Name */}
               <div className="space-y-1.5">
                 <label className={`block text-[11px] font-semibold ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
@@ -1453,25 +1455,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       />
 
       {/* Smooth Scrolling Support (Momentum & Inertia) */}
-      <div className="liquid-glass rounded-2xl p-6 shadow-xl flex flex-col gap-4 smooth-scroll-contain">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="space-y-0.5">
+      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4 smooth-scroll-contain">
+        <div className="flex flex-row items-center justify-between gap-3">
+          <div className="space-y-0.5 min-w-0">
             <h3
-              className={`text-base font-bold flex items-center gap-2 ${
+              className={`text-sm md:text-base font-bold flex items-center gap-2 ${
                 darkMode ? 'text-slate-100' : 'text-slate-900'
               }`}
             >
-              <Waves className="w-4 h-4" style={{ color: activePalette.primary }} />
-              <span>Smooth Scrolling Support (Lenis Engine)</span>
+              <Waves className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
+              <span className="truncate">Smooth Scrolling Support (Lenis Engine)</span>
             </h3>
-            <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <p className={`hidden sm:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Powered by Studio Freight Lenis. Delivers buttery-smooth momentum inertia and exponential easing across all study tabs, documents, and feeds.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <span
-              className="text-[11px] font-mono font-bold px-3 py-1 rounded-full border shadow-sm flex items-center gap-1.5"
+              className="hidden sm:flex text-[11px] font-mono font-bold px-3 py-1 rounded-full border shadow-sm items-center gap-1.5"
               style={{
                 backgroundColor: smoothScroll ? `${activePalette.primary}20` : 'transparent',
                 borderColor: smoothScroll
@@ -1528,7 +1530,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* Live Scroll Testing Strip */}
         <div
-          className={`p-3.5 rounded-xl border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs ${
+          className={`hidden md:flex p-3.5 rounded-xl border flex-col sm:flex-row items-center justify-between gap-3 text-xs ${
             darkMode
               ? 'bg-slate-900/60 border-white/10 text-slate-300'
               : 'bg-slate-50/80 border-slate-200 text-slate-700'
@@ -1575,31 +1577,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       )}
 
       {activeSettingsTab === 'gemini-model' && (
-      <div className="space-y-8 onenote-page-content-reveal">
+      <div className="space-y-3.5 md:space-y-8 onenote-page-content-reveal">
       {/* Gemini AI Model Changer & Thinking Mode */}
-      <div className="liquid-glass rounded-2xl p-6 shadow-xl flex flex-col gap-5 smooth-scroll-contain">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-3.5 md:gap-5 smooth-scroll-contain">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 md:gap-3">
           <div className="space-y-0.5">
             <h3
-              className={`text-base font-bold flex items-center gap-2 ${
+              className={`text-sm md:text-base font-bold flex items-center gap-2 ${
                 darkMode ? 'text-slate-100' : 'text-slate-900'
               }`}
             >
-              <Cpu className="w-4 h-4" style={{ color: activePalette.primary }} />
+              <Cpu className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
               <span>Gemini Intelligence Model Engine</span>
             </h3>
-            <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <p className={`hidden sm:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Select the active generative model for grounded research queries and AI synthesis.
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2 md:gap-2.5 flex-wrap w-full sm:w-auto">
             {/* Quick On-the-Go Model Selector Dropdown */}
             <div className="relative z-50" ref={modelDropdownRef}>
               <button
                 type="button"
                 onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition select-none liquid-glass-tile cursor-pointer shadow-sm ${
+                className={`px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl text-[11px] md:text-xs font-bold flex items-center gap-1.5 md:gap-2 border transition select-none liquid-glass-tile cursor-pointer shadow-sm ${
                   darkMode
                     ? 'bg-slate-900 border-white/15 text-slate-100 hover:bg-slate-800'
                     : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'
@@ -1686,7 +1688,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }
                   : {}
               }
-              className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition ${
+              className={`px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl border text-[11px] md:text-xs font-bold flex items-center gap-1.5 md:gap-2 transition ${
                 enableThinking
                   ? 'shadow-md border-transparent'
                   : darkMode
@@ -1694,7 +1696,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   : 'bg-slate-100 text-slate-600 border-slate-300 hover:text-slate-900'
               }`}
             >
-              <Brain className="w-4 h-4" />
+              <Brain className="w-3.5 h-3.5 md:w-4 md:h-4" />
               <span>High Thinking: {enableThinking ? 'ON' : 'OFF'}</span>
             </button>
           </div>
@@ -1702,7 +1704,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* API Key Connection & Live Verification Card */}
         <div
-          className={`p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+          className={`p-3 md:p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 md:gap-3 ${
             darkMode
               ? 'bg-slate-900/70 border-white/10'
               : 'bg-white/80 border-slate-300/80 shadow-xs'
@@ -1798,7 +1800,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
 
         {/* Model Options */}
-        <div className="space-y-3">
+        <div className="space-y-2 md:space-y-3">
           {modelOptions.map((opt) => {
             const isSelected = selectedModel === opt.id;
             return (
@@ -1813,19 +1815,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       }
                     : {}
                 }
-                className="p-4 rounded-xl border transition cursor-pointer flex items-start justify-between gap-4 liquid-glass-tile"
+                className="p-3 md:p-4 rounded-xl border transition cursor-pointer flex items-start justify-between gap-2.5 md:gap-4 liquid-glass-tile"
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                <div className="space-y-0.5 md:space-y-1 min-w-0">
+                  <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
                     <h4
-                      className={`text-sm font-bold ${
+                      className={`text-xs md:text-sm font-bold ${
                         darkMode ? 'text-slate-100' : 'text-slate-900'
                       }`}
                     >
                       {opt.name}
                     </h4>
                     <span
-                      className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full border"
+                      className="text-[9px] md:text-[10px] font-mono font-bold uppercase px-1.5 md:px-2 py-0.5 rounded-full border"
                       style={{
                         backgroundColor: `${activePalette.primary}20`,
                         borderColor: `${activePalette.primary}40`,
@@ -1836,7 +1838,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </span>
                   </div>
                   <p
-                    className={`text-xs leading-relaxed max-w-xl ${
+                    className={`text-[11px] md:text-xs leading-snug md:leading-relaxed max-w-xl line-clamp-2 md:line-clamp-none ${
                       darkMode ? 'text-slate-400' : 'text-slate-600'
                     }`}
                   >
@@ -1953,27 +1955,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         };
 
         return (
-          <div className="space-y-6 onenote-page-content-reveal">
+          <div className="space-y-3.5 md:space-y-6 onenote-page-content-reveal">
             {/* 1. Customize Name Card */}
-            <div className="liquid-glass rounded-2xl p-6 shadow-xl space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl space-y-3 md:space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 md:gap-3">
                 <div className="space-y-0.5">
                   <h3
-                    className={`text-base font-bold flex items-center gap-2 ${
+                    className={`text-sm md:text-base font-bold flex items-center gap-2 ${
                       darkMode ? 'text-slate-100' : 'text-slate-900'
                     }`}
                   >
-                    <User className="w-4 h-4" style={{ color: activePalette.primary }} />
+                    <User className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
                     <span>1. Customize Name</span>
                   </h3>
-                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <p className={`hidden sm:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     Choose what Aether &amp; Gemini should call you. We always address you by your first name.
                   </p>
                 </div>
 
                 {savedFirstName && (
                   <div
-                    className="px-3 py-1.5 rounded-xl border text-xs font-mono font-semibold flex items-center gap-2 self-start sm:self-auto"
+                    className="px-2.5 py-1 md:px-3 md:py-1.5 rounded-xl border text-[11px] md:text-xs font-mono font-semibold flex items-center gap-2 self-start sm:self-auto"
                     style={{
                       backgroundColor: `${activePalette.primary}18`,
                       borderColor: `${activePalette.primary}45`,
@@ -1981,7 +1983,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }}
                   >
                     <span
-                      className="w-2 h-2 rounded-full"
+                      className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full"
                       style={{ backgroundColor: activePalette.primary }}
                     />
                     <span>Calling you: {savedFirstName}</span>
@@ -1989,8 +1991,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 )}
               </div>
 
-              <form onSubmit={handleSaveCustomName} className="space-y-3">
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              <form onSubmit={handleSaveCustomName} className="space-y-2.5 md:space-y-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-2.5">
                   <input
                     type="text"
                     maxLength={80}
@@ -2001,7 +2003,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         ? `Account name: ${accountBaseName} (enter custom name to override)`
                         : 'Enter your preferred name...'
                     }
-                    className={`flex-1 px-4 py-2.5 rounded-xl border text-sm font-medium focus:outline-none transition ${
+                    className={`flex-1 px-3 py-2 md:px-4 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium focus:outline-none transition ${
                       darkMode
                         ? 'bg-slate-950/75 border-white/15 text-slate-100 placeholder-slate-500 focus:border-white/35'
                         : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-slate-500'
@@ -2010,7 +2012,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="flex items-center gap-2">
                     <button
                       type="submit"
-                      className="px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer hover:brightness-105"
+                      className="px-3 py-2 md:px-4 md:py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer hover:brightness-105"
                       style={{
                         background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
                         color: '#0f172a',
@@ -2028,7 +2030,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           updatePersonalization({ customName: '' });
                         }}
                         title="Revert to account profile name"
-                        className={`px-3 py-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                        className={`px-3 py-2 md:py-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
                           darkMode
                             ? 'bg-slate-900/70 border-white/10 text-slate-300 hover:bg-white/10'
                             : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
@@ -2042,13 +2044,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div
-                  className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                  className={`p-2.5 md:p-3 rounded-xl border text-[11px] md:text-xs flex items-center justify-between gap-2 ${
                     darkMode
                       ? 'bg-slate-900/55 border-white/10 text-slate-300'
                       : 'bg-slate-50/90 border-slate-200 text-slate-700'
                   }`}
                 >
-                  <span>
+                  <span className="truncate">
                     Greeting preview:{' '}
                     <strong className={darkMode ? 'text-white' : 'text-slate-950'}>
                       {previewFirstName
@@ -2056,7 +2058,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         : '"Hey, what are we mastering today?"'}
                     </strong>
                   </span>
-                  <span className="text-[11px] font-mono text-slate-400 shrink-0">
+                  <span className="hidden sm:inline text-[11px] font-mono text-slate-400 shrink-0">
                     {extractFirstName(accountBaseName) ? `Account: ${extractFirstName(accountBaseName)}` : 'First-name mode'}
                   </span>
                 </div>
@@ -2064,24 +2066,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* 2. Functional Memory Slider Card */}
-            <div className="liquid-glass rounded-2xl p-6 shadow-xl space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl space-y-3.5 md:space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 md:gap-3">
                 <div className="space-y-0.5">
                   <h3
-                    className={`text-base font-bold flex items-center gap-2 ${
+                    className={`text-sm md:text-base font-bold flex items-center gap-2 ${
                       darkMode ? 'text-slate-100' : 'text-slate-900'
                     }`}
                   >
-                    <Brain className="w-4 h-4" style={{ color: activePalette.primary }} />
+                    <Brain className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
                     <span>2. Adaptive Memory (Gemini Learns From You)</span>
                   </h3>
-                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <p className={`text-[11px] md:text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     {tierInfo.description}
                   </p>
                 </div>
 
                 <div
-                  className="px-3 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-2 self-start sm:self-auto"
+                  className="px-2.5 py-1 md:px-3 md:py-1.5 rounded-xl border text-[11px] md:text-xs font-mono font-bold flex items-center gap-2 self-start sm:self-auto"
                   style={{
                     backgroundColor: sliderMemoryLevel > 0 ? `${activePalette.primary}20` : undefined,
                     borderColor:
@@ -2105,7 +2107,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               {/* Interactive Range Slider */}
               <div
-                className={`p-4 rounded-xl border space-y-3 ${
+                className={`p-3 md:p-4 rounded-xl border space-y-2.5 md:space-y-3 ${
                   darkMode ? 'bg-slate-900/60 border-white/10' : 'bg-slate-50/90 border-slate-200'
                 }`}
               >
@@ -2325,24 +2327,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* 3. Instructions for Gemini Card (Gemini Webapp Style) */}
-            <div className="liquid-glass rounded-2xl p-6 shadow-xl space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl space-y-3 md:space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 md:gap-3">
                 <div className="space-y-0.5">
                   <h3
-                    className={`text-base font-bold flex items-center gap-2 ${
+                    className={`text-sm md:text-base font-bold flex items-center gap-2 ${
                       darkMode ? 'text-slate-100' : 'text-slate-900'
                     }`}
                   >
-                    <FileText className="w-4 h-4" style={{ color: activePalette.primary }} />
+                    <FileText className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
                     <span>3. Instructions for Gemini</span>
                   </h3>
-                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <p className={`hidden sm:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     Share persistent info, formatting rules, tone, or academic background so Gemini automatically tailors every response—just like Gemini&apos;s Saved Info.
                   </p>
                 </div>
 
                 <span
-                  className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border self-start sm:self-auto ${
+                  className={`text-[10px] md:text-[11px] font-mono px-2 md:px-2.5 py-0.5 md:py-1 rounded-lg border self-start sm:self-auto ${
                     activePersonalization.customInstructions.trim()
                       ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35'
                       : darkMode
@@ -2359,17 +2361,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               {/* Starter Prompt Chips */}
-              <div className="space-y-2">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+              <div className="space-y-1.5 md:space-y-2">
+                <span className="text-[10px] md:text-[11px] font-mono uppercase tracking-wider text-slate-400">
                   Quick Starters (Click to add)
                 </span>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5 md:gap-2">
                   {GEMINI_INSTRUCTION_STARTERS.map((starter) => (
                     <button
                       key={starter.id}
                       type="button"
                       onClick={() => handleAppendStarter(starter.instruction)}
-                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                      className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-xl border text-[11px] md:text-xs font-semibold flex items-center gap-1 md:gap-1.5 transition cursor-pointer ${
                         darkMode
                           ? 'bg-slate-900/75 border-white/10 text-slate-300 hover:text-white hover:border-white/25'
                           : 'bg-white border-slate-300 text-slate-700 hover:text-slate-950 hover:border-slate-400'
@@ -2384,21 +2386,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               <div className="space-y-2">
                 <textarea
-                  rows={6}
+                  rows={4}
                   maxLength={4000}
                   value={draftInstructions}
                   onChange={(e) => setDraftInstructions(e.target.value)}
                   placeholder="Examples:&#10;- I'm a second-year Computer Science & Physics student.&#10;- Always explain math step-by-step using LaTeX equations.&#10;- Keep summaries concise unless I ask for an exhaustive deep dive.&#10;- Use Python and TypeScript for coding examples."
-                  className={`w-full p-4 rounded-xl border text-xs sm:text-sm leading-relaxed focus:outline-none transition resize-y min-h-[140px] ${
+                  className={`w-full p-3 md:p-4 rounded-xl border text-xs sm:text-sm leading-relaxed focus:outline-none transition resize-y min-h-[100px] md:min-h-[140px] ${
                     darkMode
                       ? 'bg-slate-950/75 border-white/15 text-slate-100 placeholder-slate-500 focus:border-white/35'
                       : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-slate-500'
                   }`}
                 />
 
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
-                  <span className="text-[11px] font-mono text-slate-400">
-                    {draftInstructions.length} / 4000 characters · Applied across Gemini Workspace, NotebookLM &amp; Floating Chat
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 pt-1">
+                  <span className="text-[10px] md:text-[11px] font-mono text-slate-400">
+                    {draftInstructions.length} / 4000 characters
                   </span>
 
                   <div className="flex items-center gap-2 self-end sm:self-auto">
@@ -2453,9 +2455,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {activeSettingsTab !== 'gemini-personalization' && (
       <>
       {/* Authenticated Account & Session Management */}
-      <div className="p-5 rounded-2xl liquid-glass flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className={`text-xs space-y-1.5 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+      <div className="p-3.5 md:p-5 rounded-2xl liquid-glass flex flex-col gap-3 md:gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 md:gap-4">
+          <div className={`text-xs space-y-1 md:space-y-1.5 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
             <div className="flex items-center gap-2 flex-wrap">
               <span
                 className="w-2 h-2 rounded-full"
@@ -2469,7 +2471,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     : activePalette.primary,
                 }}
               />
-              <p className={`text-sm font-bold ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>
+              <p className={`text-xs md:text-sm font-bold ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>
                 Authenticated Studio Session
               </p>
 
@@ -2509,7 +2511,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               )}
             </div>
 
-            <p>
+            <p className="text-[11px] md:text-xs">
               Connected as{' '}
               <span className={`font-mono font-semibold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                 {authenticatedEmail
@@ -2523,7 +2525,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </p>
 
             {isGuestSession && (
-              <p className="text-[11px] leading-relaxed text-amber-400/90">
+              <p className="hidden sm:block text-[11px] leading-relaxed text-amber-400/90">
                 Guest sessions only stay in this browser and reset if you sign out. Connect your Google mail account below to keep all workspaces, folders, sources &amp; chats synced across sign-outs and devices.
               </p>
             )}
@@ -2553,7 +2555,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
                   color: '#0f172a',
                 }}
-                className="px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer hover:brightness-105 disabled:opacity-50"
+                className="px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[11px] md:text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer hover:brightness-105 disabled:opacity-50"
               >
                 {isConnectingGoogle ? (
                   <>
@@ -2574,7 +2576,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 type="button"
                 disabled={cloudSyncStatus === 'syncing'}
                 onClick={() => void onForceCloudSync()}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                className={`px-3 py-1.5 md:px-3.5 md:py-2 rounded-xl text-[11px] md:text-xs font-semibold border transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
                   darkMode
                     ? 'bg-slate-900/70 hover:bg-white/10 text-slate-200 border-white/15'
                     : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
@@ -2597,7 +2599,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   setConfirmGuestSignOut(false);
                   void onSignOut();
                 }}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-60 ${
+                className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[11px] md:text-xs font-semibold border transition flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-60 ${
                   confirmGuestSignOut
                     ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500'
                     : darkMode
@@ -2644,12 +2646,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Reset & Storage info */}
-      <div className="p-4 rounded-2xl liquid-glass flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-        <div className={`text-xs space-y-0.5 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-          <p className={`font-semibold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+      <div className="p-3.5 md:p-4 rounded-2xl liquid-glass flex flex-row items-center justify-between gap-2.5 md:gap-3">
+        <div className={`text-xs space-y-0.5 min-w-0 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+          <p className={`font-semibold truncate ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
             Cloud &amp; Local State Management
           </p>
-          <p>
+          <p className="hidden sm:block">
             {isGuestSession
               ? 'Your guest session stays saved locally on this browser. Resetting clears your workspace data while keeping your login.'
               : 'Your notes, chats, workspaces, themes, and study logs sync automatically to your Google account across devices.'}
@@ -2662,7 +2664,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             setIsJustReset(true);
             setTimeout(() => setIsJustReset(false), 1800);
           }}
-          className={`px-3 py-1.5 rounded-xl text-xs border transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
+          className={`px-3 py-1.5 rounded-xl text-[11px] md:text-xs border transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
             isJustReset
               ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/35'
               : darkMode

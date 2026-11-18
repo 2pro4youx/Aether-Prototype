@@ -1130,4 +1130,70 @@ export async function decodeExamScheduleImage(options: {
   };
 }
 
+/**
+ * Timetable Photo Decoder (Express + Firebase Hosting compatible).
+ */
+export async function decodeTimetableImage(options: {
+  imageDataUrl: string;
+  mimeType?: string;
+}): Promise<{ slots: Array<Record<string, string>>; modelUsed?: string }> {
+  const { imageDataUrl, mimeType: explicitMime } = options;
+  const apiKey = getActiveGeminiApiKey();
 
+  const backendRes = await postBackendJson<{ slots: Array<Record<string, string>>; modelUsed?: string }>(
+    '/api/gemini/decode-timetable',
+    { imageDataUrl, mimeType: explicitMime, apiKey },
+    apiKey,
+    45000
+  );
+
+  if (backendRes.status === 'ok') {
+    return backendRes.data;
+  }
+  if (backendRes.status === 'http-error') {
+    throw new Error(backendRes.error);
+  }
+
+  if (!apiKey) {
+    throw new Error('Gemini API key is missing. Please add it in Settings.');
+  }
+
+  const [header, base64Data] = imageDataUrl.split('base64,');
+  let mimeType = explicitMime || '';
+  if (!mimeType || !mimeType.includes('/')) {
+    const match = header.match(/data:([^;]+);/);
+    mimeType = match?.[1] || 'image/png';
+  }
+
+  const extractionPrompt =
+    'Inspect this weekly timetable or class schedule image carefully. Extract every individual class, lecture, lab, tutorial, or study session block visible in the photo. ' +
+    'Return ONLY a JSON object with shape {"slots":[{"day":"Mon|Tue|Wed|Thu|Fri|Sat|Sun","subject":"","startTime":"HH:MM","endTime":"HH:MM","room":"","kind":"Lecture|Lab|Tutorial|Study"}]}.';
+
+  const restResult = await callDirectGoogleRest({
+    apiKey,
+    model: 'gemini-3.5-flash-lite',
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType, data: base64Data.trim() } },
+          { text: extractionPrompt },
+        ],
+      },
+    ],
+    generationConfig: { responseMimeType: 'application/json' },
+  });
+
+  let parsed: { slots?: Array<Record<string, string>> } = { slots: [] };
+  try {
+    parsed = JSON.parse(restResult.text.trim());
+  } catch {
+    const match = restResult.text.match(/\{[\s\S]*\}/);
+    if (match) parsed = JSON.parse(match[0]);
+  }
+
+  return {
+    slots: Array.isArray(parsed.slots) ? parsed.slots : [],
+    modelUsed: restResult.modelUsed,
+  };
+}

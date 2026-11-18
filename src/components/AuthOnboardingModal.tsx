@@ -16,7 +16,7 @@ import {
   Check,
   User as UserIcon,
 } from 'lucide-react';
-import { signInWithPopup, User } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup, User } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
 import { ColorPalette } from '../types';
 import {
@@ -25,6 +25,7 @@ import {
   setRememberedGoogleApiKey,
   verifyGeminiApiKey,
 } from '../utils/geminiClient';
+import { setGoogleCalendarAccessToken } from '../utils/googleCalendarSync';
 import { extractFirstName } from '../utils/personalization';
 
 interface AuthOnboardingModalProps {
@@ -151,6 +152,10 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
     setGoogleAuthError(null);
     try {
       const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setGoogleCalendarAccessToken(credential.accessToken);
+      }
       const user = result.user;
       const email = user.email || `${user.uid}@gmail.com`;
       const displayName = user.displayName || email.split('@')[0] || 'Aether Learner';
@@ -389,7 +394,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
                 Welcome to Aether Studio
               </h2>
               <p className={`text-xs sm:text-sm max-w-md mx-auto leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                Sign in with your Google account to synchronize your research notebooks, OneNote canvas, and neural synthesis history.
+                Sign in with your Google account to synchronize your research notebooks, OneNote canvas, Google Calendar events & tasks, and neural synthesis history.
               </p>
             </div>
 

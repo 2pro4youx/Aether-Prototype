@@ -2052,6 +2052,12 @@ html:not(.lenis) {
     width: calc(100vw - 1.5rem);
     max-width: 360px;
   }
+
+  /* Avoid double-pass SVG displacement backdrop-filter glitches inside Creation Studio modals on mobile browsers */
+  .creation-frost-panel .liquidglass {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
 }
 
 /* Prevent sticky hover spotlight halos lingering after touch taps on Android */

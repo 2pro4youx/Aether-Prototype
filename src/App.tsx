@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Sliders, Sparkles, MoveVertical } from 'lucide-react';
-import { onAuthStateChanged, signOut, signInWithPopup, User } from 'firebase/auth';
+import { GoogleAuthProvider, onAuthStateChanged, signOut, signInWithPopup, User } from 'firebase/auth';
 import { auth, googleProvider } from './firebase';
 import {
   setActiveGeminiApiKey,
@@ -13,6 +13,13 @@ import {
   getRememberedGoogleApiKey,
   setRememberedGoogleApiKey,
 } from './utils/geminiClient';
+import {
+  getGoogleCalendarAccessToken,
+  mergeGoogleAndLocalEvents,
+  pullGoogleCalendarEvents,
+  setGoogleCalendarAccessToken,
+  subscribeGoogleCalendarToken,
+} from './utils/googleCalendarSync';
 import {
   AppStateKey,
   AnalyticsStatePayload,
@@ -155,6 +162,8 @@ export default function App() {
     return savedUser && savedKey ? 'dashboard' : 'lander';
   });
   const activeTabRef = useRef(activeTab);
+  const previousTabBeforeSettingsRef = useRef<ActiveTab>('dashboard');
+  const previousTabBeforeWorkspaceRef = useRef<ActiveTab>('dashboard');
 
   const [isOneNoteOpen, setIsOneNoteOpen] = useState(false);
   const [isGeminiWorkspaceOpen, setIsGeminiWorkspaceOpen] = useState(false);
@@ -322,6 +331,7 @@ export default function App() {
       setCloudSyncStatus('idle');
       setCloudSyncError(null);
       setLastCloudSyncAt(null);
+      setGoogleCalendarAccessToken(null);
       setFirebaseUser(null);
       setAuthProfile({});
 
@@ -2298,6 +2308,7 @@ export default function App() {
         hydratingPromiseRef.current = null;
         setIsCloudSyncReady(false);
         setCloudSyncStatus('idle');
+        setGoogleCalendarAccessToken(null);
       }
     });
 
@@ -2310,10 +2321,52 @@ export default function App() {
     };
   }, [hydrateAndSubscribeUser]);
 
+  // Automatic Google Calendar sync right after Google Sign-In (zero extra auth prompt)
+  const [calendarOAuthToken, setCalendarOAuthToken] = useState<string | null>(() =>
+    getGoogleCalendarAccessToken()
+  );
+  const autoSyncedCalendarTokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setCalendarOAuthToken(getGoogleCalendarAccessToken());
+    return subscribeGoogleCalendarToken((token) => {
+      setCalendarOAuthToken(token);
+      if (!token) {
+        autoSyncedCalendarTokenRef.current = null;
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!calendarOAuthToken) return;
+    if (firebaseUser && !isCloudSyncReady) return;
+    if (autoSyncedCalendarTokenRef.current === calendarOAuthToken) return;
+
+    autoSyncedCalendarTokenRef.current = calendarOAuthToken;
+    let cancelled = false;
+
+    void pullGoogleCalendarEvents(calendarOAuthToken)
+      .then((pulled) => {
+        if (cancelled) return;
+        setLocalCalendarEvents((prev) => mergeGoogleAndLocalEvents(prev, pulled));
+      })
+      .catch((err) => {
+        console.warn('Automatic Google Calendar pull skipped:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [calendarOAuthToken, firebaseUser, isCloudSyncReady]);
+
   // Connect Google account directly from Settings while keeping current workspaces/folders
   const handleConnectGoogleFromSettings = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setGoogleCalendarAccessToken(credential.accessToken);
+      }
       const user = result.user;
       const email = user.email || `${user.uid}@gmail.com`;
       const displayName = user.displayName || email.split('@')[0] || 'Aether Learner';
@@ -3521,9 +3574,28 @@ export default function App() {
           isAuthenticated={isAuthenticated}
           activeTab={activeTab}
           onSelectTab={(tab) => {
+            if (tab === 'settings' && activeTab !== 'settings') {
+              previousTabBeforeSettingsRef.current = activeTab === 'lander' ? 'dashboard' : activeTab;
+            }
+            if (tab === 'notebooklm' && activeTab !== 'notebooklm') {
+              previousTabBeforeWorkspaceRef.current =
+                activeTab === 'lander' || activeTab === 'settings' ? 'dashboard' : activeTab;
+            }
             setActiveTab(tab);
             if (tab !== 'onenote') setIsOneNoteOpen(false);
             if (tab !== 'gemini') setIsGeminiWorkspaceOpen(false);
+            setIsWorkspaceSelectorOpen(false);
+          }}
+          onToggleMobileSettings={() => {
+            if (activeTab === 'settings') {
+              const prev = previousTabBeforeSettingsRef.current;
+              setActiveTab(prev && prev !== 'settings' ? prev : 'dashboard');
+            } else {
+              previousTabBeforeSettingsRef.current = activeTab === 'lander' ? 'dashboard' : activeTab;
+              setActiveTab('settings');
+            }
+            setIsOneNoteOpen(false);
+            setIsGeminiWorkspaceOpen(false);
             setIsWorkspaceSelectorOpen(false);
           }}
           onOpenCreate={() => setIsCreateModalOpen(true)}
@@ -3533,10 +3605,8 @@ export default function App() {
           darkMode={darkMode}
           activePalette={activePalette}
           isWorkspaceSelectorOpen={isWorkspaceSelectorOpen}
-          isStageHidden={isOneNoteOpen || isGeminiWorkspaceOpen || isMetaverseEdit}
-          autoHideOnTopEdge={
-            activeTab === 'notebooklm' && activeWorkspace?.mode === 'onenote-only'
-          }
+          isStageHidden={isOneNoteOpen || isGeminiWorkspaceOpen || isMetaverseEdit || activeTab === 'notebooklm'}
+          autoHideOnTopEdge={activeTab === 'notebooklm'}
         />
 
         {/* Main Tab View Switcher — content fades in after frost peak for a seamless reveal */}
@@ -3629,6 +3699,10 @@ export default function App() {
                     onDismissExpiredNotice={() => handleDismissExpiredNotice(activeWorkspace?.id)}
                     onOpenOneNoteNotes={() => setIsOneNoteOpen(true)}
                     onOpenGeminiWorkspace={() => setIsGeminiWorkspaceOpen(true)}
+                    onBack={() => {
+                      const prev = previousTabBeforeWorkspaceRef.current;
+                      setActiveTab(prev && prev !== 'notebooklm' ? prev : 'dashboard');
+                    }}
                     selectedModel={selectedModel}
                     onChangeModel={(m) => {
                       setSelectedModel(m);
@@ -3785,7 +3859,8 @@ export default function App() {
           enableThinking={enableThinking}
           activePalette={activePalette}
           darkMode={darkMode}
-          hidden={isGeminiWorkspaceOpen || activeTab === 'lander' || isMetaverseEdit}
+          hidden={isGeminiWorkspaceOpen || activeTab === 'lander' || isMetaverseEdit || isWorkspaceSelectorOpen}
+          settingsHiddenOnMobile={activeTab === 'notebooklm' || isOneNoteOpen}
           messages={floatingChatMessages}
           onUpdateMessages={setFloatingChatMessages}
           userName={activeUserName}

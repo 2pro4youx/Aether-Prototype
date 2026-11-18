@@ -14,6 +14,7 @@ import {
   Check,
   Bot,
   Clock,
+  ArrowLeft,
   ArrowRight,
   X,
   AlertTriangle,
@@ -80,8 +81,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     setActiveType('all');
     setSearchFilter('');
   }, [folderSignal, folders]);
-  const [draggedFolder, setDraggedFolder] = useState<string | null>(null);
-  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
   // Deletion Confirmation Modals
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
@@ -182,10 +181,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const currentFolderTarget = activeFolder === 'all' ? 'Assorted Workspaces' : activeFolder;
 
   return (
-    <div className="relative min-h-[100dvh] md:min-h-screen pt-5 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-8 select-none transition-colors duration-300">
+    <div className="relative min-h-[100dvh] md:min-h-screen pt-5 pb-24 md:pt-28 md:pb-16 px-3.5 md:px-8 lg:px-12 max-w-[1720px] w-full mx-auto space-y-4 md:space-y-8 select-none transition-colors duration-300">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="pr-14 md:pr-0">
+        <div className="pr-28 md:pr-0">
           <h1
             className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
@@ -193,7 +192,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           >
             Library
           </h1>
-          <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+          <p className={`hidden md:block text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
             Categorized research repositories, synchronized workspaces, OneNote canvases, and planners.
           </p>
         </div>
@@ -235,104 +234,36 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         </div>
       </div>
 
-      {/* Categorized Folders Pill Bar & Sorting Controls */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b pb-4 border-white/10">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar w-full sm:w-auto">
-          <button
-            onClick={() => handleSelectFolder('all')}
-            style={
-              activeFolder === 'all'
-                ? {
-                    backgroundColor: `${activePalette.primary}25`,
-                    borderColor: activePalette.primary,
-                    color: darkMode ? '#ffffff' : activePalette.primary,
-                  }
-                : {}
-            }
-            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition whitespace-nowrap border cursor-pointer ${
-              activeFolder === 'all'
-                ? 'shadow-sm font-bold'
-                : darkMode
-                ? 'liquid-glass text-slate-400 hover:text-white'
-                : 'bg-white/80 border-slate-200 text-slate-600 hover:text-slate-900 shadow-sm'
-            }`}
-          >
-            All Folders ({folders.length})
-          </button>
-
-          {sortedFolders.map((f) => {
-            const count = allDisplayItems.filter((i) => i.folder === f).length;
-            const isCurrent = activeFolder === f;
-            const isDragged = draggedFolder === f;
-            const isOver = dragOverFolder === f;
-
-            return (
-              <div
-                key={f}
-                draggable={true}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/plain', f);
-                  setDraggedFolder(f);
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (draggedFolder && draggedFolder !== f) {
-                    setDragOverFolder(f);
-                  }
-                }}
-                onDragLeave={() => {
-                  if (dragOverFolder === f) setDragOverFolder(null);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (!draggedFolder || draggedFolder === f) return;
-                  const currentList = [...folders];
-                  const fromIdx = currentList.indexOf(draggedFolder);
-                  const toIdx = currentList.indexOf(f);
-                  if (fromIdx !== -1 && toIdx !== -1) {
-                    currentList.splice(fromIdx, 1);
-                    currentList.splice(toIdx, 0, draggedFolder);
-                    onReorderFolders?.(currentList);
-                  }
-                  setDraggedFolder(null);
-                  setDragOverFolder(null);
-                }}
-                onDragEnd={() => {
-                  setDraggedFolder(null);
-                  setDragOverFolder(null);
-                }}
-                className={`relative group shrink-0 flex items-center transition-transform ${
-                  isDragged ? 'opacity-40 scale-95' : isOver ? 'scale-105 ring-2 ring-amber-400 rounded-full' : ''
-                }`}
-                title="Left click and drag to rearrange folders"
-              >
-                <button
-                  onClick={() => handleSelectFolder(f)}
-                  style={
-                    isCurrent
-                      ? {
-                          backgroundColor: `${activePalette.primary}25`,
-                          borderColor: activePalette.primary,
-                          color: darkMode ? '#ffffff' : activePalette.primary,
-                        }
-                      : {}
-                  }
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition whitespace-nowrap border flex items-center gap-1.5 cursor-grab active:cursor-grabbing select-none ${
-                    isCurrent
-                      ? 'shadow-sm font-bold'
-                      : darkMode
-                      ? 'liquid-glass text-slate-400 hover:text-white'
-                      : 'bg-white/80 border-slate-200 text-slate-600 hover:text-slate-900 shadow-sm'
-                  }`}
-                >
-                  <Folder className="w-3.5 h-3.5" />
-                  <span>{f}</span>
-                  <span className="text-[10px] font-mono opacity-60">({count})</span>
-                </button>
-              </div>
-            );
-          })}
-        </div>
+      {/* Back Arrow Control (replaces folders pill bar) & Sorting Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4 border-white/10">
+        {activeFolder !== 'all' ? (
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveType('all');
+                handleSelectFolder('all');
+              }}
+              className={`p-2 rounded-xl border transition cursor-pointer flex items-center justify-center ${
+                darkMode
+                  ? 'bg-slate-900/60 border-white/15 text-slate-200 hover:bg-white/10 hover:text-white'
+                  : 'bg-white/90 border-slate-300 text-slate-700 hover:bg-white hover:text-slate-950 shadow-sm'
+              }`}
+              title="Back to all folders"
+              aria-label="Back to all folders"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-1.5 text-sm font-bold">
+              <Folder className="w-4 h-4 shrink-0" style={{ color: activePalette.primary }} />
+              <span className={darkMode ? 'text-slate-100' : 'text-slate-900'}>{activeFolder}</span>
+            </div>
+          </div>
+        ) : (
+          <div className={`text-xs font-mono ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            {folders.length} {folders.length === 1 ? 'folder' : 'folders'}
+          </div>
+        )}
 
         {/* Sorting Dropdown */}
         <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
@@ -415,32 +346,32 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         >
           {/* ================= IF ACTIVE FOLDER IS 'ALL', RENDER FOLDER CARDS (Task 3) ================= */}
           {activeFolder === 'all' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-2.5 md:gap-6">
               {/* New Folder Creation Card */}
               <div
                 onClick={() => setShowNewFolderModal(true)}
                 style={{ borderColor: `${activePalette.primary}70` }}
-                className={`border-2 border-dashed rounded-3xl p-6 flex flex-col items-center justify-center text-center gap-3 transition-[translate,box-shadow,border-color,background-color] duration-200 cursor-pointer group min-h-[200px] hover:-translate-y-0.5 shadow-sm select-none ${
+                className={`col-span-2 md:col-span-1 border-2 border-dashed rounded-2xl md:rounded-3xl p-3 md:p-6 flex flex-row md:flex-col items-center justify-center text-left md:text-center gap-2.5 md:gap-3 transition-[translate,box-shadow,border-color,background-color] duration-200 cursor-pointer group min-h-0 md:min-h-[200px] hover:-translate-y-0.5 shadow-sm select-none ${
                   darkMode ? 'hover:bg-white/5 bg-slate-950/20' : 'hover:bg-slate-50 bg-white/40'
                 }`}
               >
                 <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center transition group-hover:scale-110 shadow-md"
+                  className="w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center transition group-hover:scale-110 shadow-md shrink-0"
                   style={{
                     backgroundColor: `${activePalette.primary}25`,
                     color: activePalette.primary,
                   }}
                 >
-                  <FolderPlus className="w-6 h-6 stroke-[2.2]" />
+                  <FolderPlus className="w-4 h-4 md:w-6 md:h-6 stroke-[2.2]" />
                 </div>
                 <div>
                   <h3
-                    className="text-sm font-bold tracking-tight"
+                    className="text-xs md:text-sm font-bold tracking-tight"
                     style={{ color: activePalette.id === 'black-night' ? '#ffffff' : activePalette.primary }}
                   >
                     + Create New Folder
                   </h3>
-                  <p className={`text-xs mt-1 max-w-[220px] leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <p className={`hidden md:block text-xs mt-1 max-w-[220px] leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     Add a dedicated repository to organize workspaces, notes, and planners.
                   </p>
                 </div>
@@ -455,21 +386,21 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   <div
                     key={folderName}
                     onClick={() => handleSelectFolder(folderName)}
-                    className="liquid-glass no-tilt rounded-3xl p-6 border shadow-xl flex flex-col justify-between group cursor-pointer transition-[translate,box-shadow,border-color,background-color] duration-200 hover:-translate-y-0.5"
+                    className="liquid-glass no-tilt rounded-2xl md:rounded-3xl p-3 md:p-6 border shadow-xl flex flex-col justify-between group cursor-pointer transition-[translate,box-shadow,border-color,background-color] duration-200 hover:-translate-y-0.5"
                     style={{
                       borderColor: 'rgba(255, 255, 255, 0.12)',
                     }}
                   >
-                    <div className="space-y-3 relative z-20">
-                      <div className="flex items-center justify-between">
+                    <div className="space-y-2 md:space-y-3 relative z-20">
+                      <div className="flex items-center justify-between gap-1.5">
                         <div
-                          className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-md"
+                          className="w-7 h-7 md:w-10 md:h-10 rounded-xl md:rounded-2xl flex items-center justify-center shadow-md shrink-0"
                           style={{
                             backgroundColor: `${activePalette.primary}25`,
                             color: activePalette.primary,
                           }}
                         >
-                          <Folder className="w-5 h-5" />
+                          <Folder className="w-3.5 h-3.5 md:w-5 md:h-5" />
                         </div>
 
                         {folderName !== 'Assorted Workspaces' && (
@@ -479,25 +410,30 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                               e.stopPropagation();
                               setFolderToDelete(folderName);
                             }}
-                            className="opacity-80 md:opacity-0 md:group-hover:opacity-100 transition p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/15"
+                            className="opacity-80 md:opacity-0 md:group-hover:opacity-100 transition p-1 md:p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/15"
                             title="Delete folder"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
                           </button>
                         )}
                       </div>
 
-                      <div>
-                        <h3 className="text-base font-bold text-white group-hover:text-cyan-300 transition-colors">
+                      <div className="min-w-0">
+                        <h3 className="text-xs md:text-base font-bold text-white group-hover:text-cyan-300 transition-colors truncate md:whitespace-normal">
                           {folderName}
                         </h3>
-                        <p className={`text-xs mt-1 leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                          {folderWorkspaces.length} workspace{folderWorkspaces.length !== 1 ? 's' : ''} · {folderItems.length} total asset{folderItems.length !== 1 ? 's' : ''}
+                        <p className={`text-[10px] md:text-xs mt-0.5 md:mt-1 leading-tight md:leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                          <span className="md:hidden">
+                            {folderWorkspaces.length} ws · {folderItems.length} items
+                          </span>
+                          <span className="hidden md:inline">
+                            {folderWorkspaces.length} workspace{folderWorkspaces.length !== 1 ? 's' : ''} · {folderItems.length} total asset{folderItems.length !== 1 ? 's' : ''}
+                          </span>
                         </p>
                       </div>
                     </div>
 
-                    <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between text-xs text-slate-400 relative z-20">
+                    <div className="hidden md:flex mt-5 pt-3 border-t border-white/10 items-center justify-between text-xs text-slate-400 relative z-20">
                       <span className="font-mono text-[11px]">Click to view contents</span>
                       <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </div>

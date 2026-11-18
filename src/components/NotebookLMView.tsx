@@ -17,6 +17,7 @@ import {
   Loader2,
   ChevronRight,
   ChevronLeft,
+  ArrowLeft,
   ChevronDown,
   Bot,
   Check,
@@ -64,6 +65,7 @@ interface NotebookLMViewProps {
   onDismissExpiredNotice?: () => void;
   onOpenOneNoteNotes: () => void;
   onOpenGeminiWorkspace?: () => void;
+  onBack?: () => void;
   selectedModel: string;
   onChangeModel?: (model: string) => void;
   enableThinking: boolean;
@@ -96,6 +98,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
   onDismissExpiredNotice,
   onOpenOneNoteNotes,
   onOpenGeminiWorkspace,
+  onBack,
   selectedModel,
   onChangeModel,
   enableThinking,
@@ -731,7 +734,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
   };
 
   return (
-    <div className="relative h-full flex-1 min-h-0 pt-3.5 pb-20 md:pt-20 md:pb-6 px-3 md:px-6 lg:px-8 max-w-[1720px] w-full mx-auto flex flex-col gap-2.5 md:gap-3.5 select-none">
+    <div className="relative h-full flex-1 min-h-0 pt-3.5 pb-3 md:pt-5 md:pb-6 px-3 md:px-6 lg:px-8 max-w-[1720px] w-full mx-auto flex flex-col gap-2.5 md:gap-3.5 select-none">
       {/* Notebook Top Title Bar */}
       <div
         className={`flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 md:gap-3 pb-2.5 md:pb-3 border-b shrink-0 ${
@@ -739,6 +742,21 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
         }`}
       >
         <div className="flex items-center gap-2.5 md:gap-3 min-w-0 w-full md:w-auto pr-14 md:pr-0">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className={`md:hidden p-2 rounded-xl border transition shrink-0 flex items-center justify-center ${
+                darkMode
+                  ? 'bg-slate-900/60 border-white/15 text-slate-200 hover:bg-white/10 hover:text-white'
+                  : 'bg-white/90 border-slate-300 text-slate-700 hover:bg-white hover:text-slate-950 shadow-xs'
+              }`}
+              aria-label="Back from workspace"
+              title="Back"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
           <div
             className="w-9 h-9 md:w-10 md:h-10 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg text-slate-950 font-bold shrink-0"
             style={{
@@ -767,7 +785,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
                 Grounded
               </span>
             </div>
-            <p className={`text-[11px] md:text-xs mt-0.5 truncate ${darkMode ? 'text-slate-400' : 'text-slate-600 font-medium'}`}>
+            <p className={`hidden md:block text-[11px] md:text-xs mt-0.5 truncate ${darkMode ? 'text-slate-400' : 'text-slate-600 font-medium'}`}>
               {sources.length} sources indexed ({selectedSources.length} selected for AI grounding) · 16:9 Studio Canvas
             </p>
           </div>

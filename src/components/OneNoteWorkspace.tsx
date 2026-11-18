@@ -4746,6 +4746,22 @@ export const OneNoteWorkspace: React.FC<OneNoteWorkspaceProps> = ({
           style={{ isolation: 'auto' }}
         >
           <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+            {standalone && (
+              <button
+                type="button"
+                onClick={onCloseBack}
+                className={`md:hidden p-1.5 rounded-xl border shrink-0 flex items-center justify-center transition ${
+                  darkMode
+                    ? 'bg-slate-900/50 border-white/15 text-slate-200 hover:bg-white/10'
+                    : 'bg-white/80 border-slate-300 text-slate-800 shadow-xs'
+                }`}
+                aria-label="Back from workspace"
+                title="Back"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+
             {/* Mobile Pages Drawer Trigger (< 768px ONLY) */}
             <button
               type="button"

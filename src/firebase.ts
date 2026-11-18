@@ -5,16 +5,18 @@ import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// CRITICAL: Pass firestoreDatabaseId from firebase-applet-config.json
-export const db = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+const firestoreDatabaseId = (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId;
+export const db = firestoreDatabaseId
+  ? getFirestore(app, firestoreDatabaseId)
   : getFirestore(app);
 
 export const auth = getAuth(app);
 
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('https://www.googleapis.com/auth/calendar.events');
 googleProvider.setCustomParameters({
   prompt: 'select_account',
+  include_granted_scopes: 'true',
 });
 
 export enum OperationType {
