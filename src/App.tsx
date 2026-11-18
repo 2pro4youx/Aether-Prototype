@@ -5,8 +5,8 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Sliders, Sparkles, MoveVertical } from 'lucide-react';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { auth } from './firebase';
+import { onAuthStateChanged, signOut, signInWithPopup, User } from 'firebase/auth';
+import { auth, googleProvider } from './firebase';
 import {
   setActiveGeminiApiKey,
   getActiveGeminiApiKey,
@@ -19,10 +19,13 @@ import {
   DashboardStatePayload,
   FloatingChatMessage,
   FloatingChatStatePayload,
+  GENERAL_SESSION_KEY,
   LoadedCloudState,
   PreferencesStatePayload,
   deleteWorkspaceDoc,
+  formatCloudSyncError,
   loadUserCloudData,
+  migrateAnalyticsRecord,
   subscribeToUserCloudData,
   upsertAppStateDoc,
   upsertWorkspaceDoc,
@@ -89,6 +92,12 @@ import {
   setActiveAccountBaseName,
   setGeminiPersonalization,
 } from './utils/personalization';
+import {
+  MANUAL_DELETED_SOURCE_EXCERPT,
+  pruneExpiredWorkspaceSources,
+  RemovedExpiredSourceInfo,
+  SOURCE_TOUCH_DEBOUNCE_MS,
+} from './utils/sourceRetention';
 
 const DEFAULT_FLOATING_MESSAGES: FloatingChatMessage[] = [
   {
@@ -122,8 +131,18 @@ function getSavedAuthProfile(): SavedAuthProfile {
 
 export default function App() {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(() => auth.currentUser);
+  const firebaseUserRef = useRef<User | null>(firebaseUser);
+  firebaseUserRef.current = firebaseUser;
   const [authProfile, setAuthProfile] = useState<SavedAuthProfile>(() => getSavedAuthProfile());
+  const authProfileRef = useRef<SavedAuthProfile>(authProfile);
+  authProfileRef.current = authProfile;
   const [isCloudSyncReady, setIsCloudSyncReady] = useState(false);
+  const isCloudSyncReadyRef = useRef(isCloudSyncReady);
+  isCloudSyncReadyRef.current = isCloudSyncReady;
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
+  const [lastCloudSyncAt, setLastCloudSyncAt] = useState<string | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     const savedUser = localStorage.getItem('aether_auth_user');
@@ -150,79 +169,224 @@ export default function App() {
   const knownStateKeysRef = useRef<Set<AppStateKey>>(new Set());
   const writtenHashesRef = useRef<Map<string, string>>(new Map());
   const hydratingUidRef = useRef<string | null>(null);
-  const hydratingPromiseRef = useRef<Promise<{ syncedGeminiKey?: string } | void> | null>(null);
+  const hydratingPromiseRef = useRef<Promise<{ syncedGeminiKey?: string; error?: string } | void> | null>(null);
   const isApplyingRemoteRef = useRef(false);
+  const isSigningOutRef = useRef(false);
   const prevSyncedWorkspaceIdsRef = useRef<Set<string>>(new Set());
+  const pendingSyncTimersRef = useRef<{
+    workspaces?: ReturnType<typeof setTimeout>;
+    dashboard?: ReturnType<typeof setTimeout>;
+    analytics?: ReturnType<typeof setTimeout>;
+    analyticsTicker?: ReturnType<typeof setTimeout>;
+    preferences?: ReturnType<typeof setTimeout>;
+    floatingChat?: ReturnType<typeof setTimeout>;
+  }>({});
 
-  const handleSignOut = useCallback(() => {
-    if (cloudUnsubRef.current) {
-      cloudUnsubRef.current();
-      cloudUnsubRef.current = null;
-    }
-    hydratingUidRef.current = null;
-    hydratingPromiseRef.current = null;
-    knownWorkspaceIdsRef.current.clear();
-    knownStateKeysRef.current.clear();
-    writtenHashesRef.current.clear();
-    prevSyncedWorkspaceIdsRef.current.clear();
-    setIsCloudSyncReady(false);
-    setFirebaseUser(null);
-    setAuthProfile({});
-
-    void signOut(auth).catch(() => {});
-
-    // Clear only local browser cache on sign-out so cloud Firestore data remains untouched across devices
-    [
-      'aether_auth_user',
-      'aether_gemini_api_key',
-      'aether_gemini_api_mode',
-      'aether_workspaces_v2',
-      'aether_active_workspace_v2',
-      'aether_tasks',
-      'aether_planners_v1',
-      'aether_dashboard_cards_v1',
-      'aether_syllabus_v1',
-      'aether_exam_schedule_v1',
-      'aether_timetable_v1',
-      'aether_local_calendar_v1',
-      'aether_daily_study_seconds_v1',
-      'aether_workspace_seconds_v1',
-      'aether_workspace_interactions_v1',
-      'aether_audit_logs_v2',
-      'aether_folders_v3',
-      'aether_library_v2',
-      'aether_floating_chat_v1',
-      PERSONALIZATION_STORAGE_KEY,
-    ].forEach((k) => localStorage.removeItem(k));
-
-    setActiveGeminiApiKey('');
-    setSyncedGeminiKey('');
-    setGeminiPersonalization(DEFAULT_GEMINI_PERSONALIZATION, { silent: true });
-    setGeminiPersonalizationState(DEFAULT_GEMINI_PERSONALIZATION);
-    setActiveAccountBaseName('');
-    setTasks([]);
-    setPlanners([]);
-    setDashboardCards(DEFAULT_DASHBOARD_CARDS);
-    setSyllabusCourses([]);
-    setExamSchedules([]);
-    setTimetableSlots([]);
-    setLocalCalendarEvents([]);
-    setDailyStudySeconds({});
-    setWorkspaces([]);
-    setActiveWorkspaceId('');
-    setLibraryItems([]);
-    setFolders(['Assorted Workspaces']);
-    setWorkspaceSeconds({});
-    setWorkspaceInteractions({});
-    setAuditLogs([]);
-    setFloatingChatMessages(DEFAULT_FLOATING_MESSAGES);
-
-    setIsAuthenticated(false);
-    setActiveTab('lander');
-    setIsWorkspaceSelectorOpen(false);
-    setIsOneNoteOpen(false);
-    setIsGeminiWorkspaceOpen(false);
+  const clearPendingSyncTimers = useCallback(() => {
+    const timers = pendingSyncTimersRef.current;
+    if (timers.workspaces) clearTimeout(timers.workspaces);
+    if (timers.dashboard) clearTimeout(timers.dashboard);
+    if (timers.analytics) clearTimeout(timers.analytics);
+    if (timers.analyticsTicker) clearTimeout(timers.analyticsTicker);
+    if (timers.preferences) clearTimeout(timers.preferences);
+    if (timers.floatingChat) clearTimeout(timers.floatingChat);
+    pendingSyncTimersRef.current = {};
   }, []);
+
+  const markCloudSyncOk = useCallback(() => {
+    setCloudSyncStatus('synced');
+    setCloudSyncError(null);
+    setLastCloudSyncAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+  }, []);
+
+  const markCloudSyncError = useCallback((err: unknown) => {
+    const msg = formatCloudSyncError(err);
+    console.error('Firestore cloud sync write error:', err);
+    setCloudSyncStatus('error');
+    setCloudSyncError(msg);
+  }, []);
+
+  const flushAllCloudSync = useCallback(
+    async (explicitUid?: string): Promise<boolean> => {
+      const uid = explicitUid || firebaseUserRef.current?.uid || auth.currentUser?.uid;
+      if (!uid || !isCloudSyncReadyRef.current) return false;
+
+      clearPendingSyncTimers();
+      setCloudSyncStatus('syncing');
+      setCloudSyncError(null);
+
+      try {
+        const currentWorkspaces = workspacesRef.current;
+        const currentIds = new Set(currentWorkspaces.map((w) => w.id));
+        const ops: Promise<unknown>[] = [];
+
+        for (const prevId of prevSyncedWorkspaceIdsRef.current) {
+          if (!currentIds.has(prevId)) {
+            ops.push(
+              deleteWorkspaceDoc(uid, prevId, knownWorkspaceIdsRef.current, writtenHashesRef.current)
+            );
+          }
+        }
+
+        for (const ws of currentWorkspaces) {
+          ops.push(
+            upsertWorkspaceDoc(uid, ws, knownWorkspaceIdsRef.current, writtenHashesRef.current)
+          );
+        }
+
+        ops.push(
+          upsertAppStateDoc(
+            uid,
+            'dashboard',
+            latestSlicesRef.current.dashboard,
+            knownStateKeysRef.current,
+            writtenHashesRef.current
+          ),
+          upsertAppStateDoc(
+            uid,
+            'analytics',
+            latestSlicesRef.current.analytics,
+            knownStateKeysRef.current,
+            writtenHashesRef.current
+          ),
+          upsertAppStateDoc(
+            uid,
+            'preferences',
+            latestSlicesRef.current.preferences,
+            knownStateKeysRef.current,
+            writtenHashesRef.current
+          ),
+          upsertAppStateDoc(
+            uid,
+            'floatingChat',
+            latestSlicesRef.current.floatingChat,
+            knownStateKeysRef.current,
+            writtenHashesRef.current
+          )
+        );
+
+        const results = await Promise.allSettled(ops);
+        prevSyncedWorkspaceIdsRef.current = currentIds;
+
+        const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        if (failed) {
+          markCloudSyncError(failed.reason);
+          return false;
+        }
+        markCloudSyncOk();
+        return true;
+      } catch (err) {
+        markCloudSyncError(err);
+        return false;
+      }
+    },
+    [clearPendingSyncTimers, markCloudSyncError, markCloudSyncOk]
+  );
+
+  const handleSignOut = useCallback(async () => {
+    if (isSigningOutRef.current) return;
+    isSigningOutRef.current = true;
+    setIsSigningOut(true);
+
+    try {
+      clearPendingSyncTimers();
+
+      // Flush every pending workspace, folder, note, dashboard, and preference write to Firestore BEFORE signing out & clearing local cache
+      const activeFbUser = firebaseUserRef.current || auth.currentUser;
+      if (activeFbUser) {
+        if (!isCloudSyncReadyRef.current) {
+          // Ensure user profile & doc existence sets exist before flushing if hydration hadn't completed
+          try {
+            const preload = await loadUserCloudData(activeFbUser);
+            knownWorkspaceIdsRef.current = preload.knownWorkspaceIds;
+            knownStateKeysRef.current = preload.knownStateKeys;
+            isCloudSyncReadyRef.current = true;
+          } catch {
+            // Proceed to attempt flush / sign out cleanly
+          }
+        }
+        await flushAllCloudSync(activeFbUser.uid);
+      }
+
+      if (cloudUnsubRef.current) {
+        cloudUnsubRef.current();
+        cloudUnsubRef.current = null;
+      }
+      hydratingUidRef.current = null;
+      hydratingPromiseRef.current = null;
+      knownWorkspaceIdsRef.current.clear();
+      knownStateKeysRef.current.clear();
+      writtenHashesRef.current.clear();
+      prevSyncedWorkspaceIdsRef.current.clear();
+      setIsCloudSyncReady(false);
+      setCloudSyncStatus('idle');
+      setCloudSyncError(null);
+      setLastCloudSyncAt(null);
+      setFirebaseUser(null);
+      setAuthProfile({});
+
+      await signOut(auth).catch(() => {});
+
+      // Clear only local browser cache on sign-out so cloud Firestore data remains untouched across devices
+      [
+        'aether_auth_user',
+        'aether_gemini_api_key',
+        'aether_gemini_api_mode',
+        'aether_workspaces_v2',
+        'aether_active_workspace_v2',
+        'aether_sources',
+        'aether_onenote',
+        'aether_gemini_conversations',
+        'aether_tasks',
+        'aether_planners_v1',
+        'aether_dashboard_cards_v1',
+        'aether_syllabus_v1',
+        'aether_exam_schedule_v1',
+        'aether_timetable_v1',
+        'aether_local_calendar_v1',
+        'aether_daily_study_seconds_v1',
+        'aether_workspace_seconds_v1',
+        'aether_workspace_interactions_v1',
+        'aether_audit_logs_v2',
+        'aether_folders_v3',
+        'aether_library_v2',
+        'aether_floating_chat_v1',
+        PERSONALIZATION_STORAGE_KEY,
+      ].forEach((k) => localStorage.removeItem(k));
+
+      setActiveGeminiApiKey('');
+      setSyncedGeminiKey('');
+      setGeminiPersonalization(DEFAULT_GEMINI_PERSONALIZATION, { silent: true });
+      setGeminiPersonalizationState(DEFAULT_GEMINI_PERSONALIZATION);
+      setActiveAccountBaseName('');
+      setTasks([]);
+      setPlanners([]);
+      setDashboardCards(DEFAULT_DASHBOARD_CARDS);
+      setSyllabusCourses([]);
+      setExamSchedules([]);
+      setTimetableSlots([]);
+      setLocalCalendarEvents([]);
+      setDailyStudySeconds({});
+      setWorkspaces([]);
+      setExpiredSourcesNotice([]);
+      setActiveWorkspaceId('');
+      setLibraryItems([]);
+      setFolders(['Assorted Workspaces']);
+      setWorkspaceSeconds({});
+      setWorkspaceInteractions({});
+      setAuditLogs([]);
+      setFloatingChatMessages(DEFAULT_FLOATING_MESSAGES);
+
+      setIsAuthenticated(false);
+      setActiveTab('lander');
+      setIsWorkspaceSelectorOpen(false);
+      setIsOneNoteOpen(false);
+      setIsGeminiWorkspaceOpen(false);
+    } finally {
+      isSigningOutRef.current = false;
+      setIsSigningOut(false);
+    }
+  }, [clearPendingSyncTimers, flushAllCloudSync]);
 
   // Optional nonce for transitions that don't change tab/workspace props (e.g., dark mode toggle)
   const [transitionNonce, setTransitionNonce] = useState(0);
@@ -461,11 +625,20 @@ export default function App() {
     }
   }, []);
 
-  // Synchronized Multi-Workspace Studio Store
-  const [workspaces, setWorkspaces] = useState<Workspace[]>(() => {
-    const saved = localStorage.getItem('aether_workspaces_v2');
-    return saved ? JSON.parse(saved) : INITIAL_WORKSPACES;
+  // Synchronized Multi-Workspace Studio Store (auto-prunes sources inactive for >14 days)
+  const [initialPruneState] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aether_workspaces_v2');
+      const parsed: Workspace[] = saved ? JSON.parse(saved) : INITIAL_WORKSPACES;
+      return pruneExpiredWorkspaceSources(Array.isArray(parsed) ? parsed : INITIAL_WORKSPACES);
+    } catch {
+      return { workspaces: INITIAL_WORKSPACES, changed: false, normalized: false, removed: [] as RemovedExpiredSourceInfo[] };
+    }
   });
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(() => initialPruneState.workspaces);
+  const [expiredSourcesNotice, setExpiredSourcesNotice] = useState<RemovedExpiredSourceInfo[]>(
+    () => initialPruneState.removed
+  );
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(() => {
     return localStorage.getItem('aether_active_workspace_v2') || '';
   });
@@ -553,7 +726,7 @@ export default function App() {
   const [workspaceSeconds, setWorkspaceSeconds] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('aether_workspace_seconds_v1');
-      return saved ? JSON.parse(saved) : {};
+      return saved ? migrateAnalyticsRecord(JSON.parse(saved)) : {};
     } catch {
       return {};
     }
@@ -561,7 +734,7 @@ export default function App() {
   const [workspaceInteractions, setWorkspaceInteractions] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('aether_workspace_interactions_v1');
-      return saved ? JSON.parse(saved) : {};
+      return saved ? migrateAnalyticsRecord(JSON.parse(saved)) : {};
     } catch {
       return {};
     }
@@ -1573,6 +1746,10 @@ export default function App() {
   const oneNoteAuditTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workspacesRef = useRef(workspaces);
   workspacesRef.current = workspaces;
+  const foldersRef = useRef(folders);
+  foldersRef.current = folders;
+  const libraryItemsRef = useRef(libraryItems);
+  libraryItemsRef.current = libraryItems;
   const activeWorkspaceRef = useRef(activeWorkspace);
   activeWorkspaceRef.current = activeWorkspace;
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
@@ -1686,10 +1863,14 @@ export default function App() {
 
   const applyAnalyticsRemote = useCallback((a: AnalyticsStatePayload) => {
     isApplyingRemoteRef.current = true;
-    if (a.dailyStudySeconds && typeof a.dailyStudySeconds === 'object') setDailyStudySeconds(a.dailyStudySeconds);
-    if (a.workspaceSeconds && typeof a.workspaceSeconds === 'object') setWorkspaceSeconds(a.workspaceSeconds);
+    if (a.dailyStudySeconds && typeof a.dailyStudySeconds === 'object') {
+      setDailyStudySeconds(migrateAnalyticsRecord(a.dailyStudySeconds));
+    }
+    if (a.workspaceSeconds && typeof a.workspaceSeconds === 'object') {
+      setWorkspaceSeconds(migrateAnalyticsRecord(a.workspaceSeconds));
+    }
     if (a.workspaceInteractions && typeof a.workspaceInteractions === 'object') {
-      setWorkspaceInteractions(a.workspaceInteractions);
+      setWorkspaceInteractions(migrateAnalyticsRecord(a.workspaceInteractions));
     }
     if (Array.isArray(a.auditLogs)) setAuditLogs(a.auditLogs);
     if (Array.isArray(a.folders) && a.folders.length > 0) setFolders(a.folders);
@@ -1759,17 +1940,75 @@ export default function App() {
   }, []);
 
   const applyLoadedCloudState = useCallback(
-    (loaded: LoadedCloudState) => {
+    (loaded: LoadedCloudState, options?: { mergeLocal?: boolean }) => {
       isApplyingRemoteRef.current = true;
-      setWorkspaces(loaded.workspaces);
-      prevSyncedWorkspaceIdsRef.current = new Set(loaded.workspaces.map((w) => w.id));
-      if (loaded.analytics) {
-        applyAnalyticsRemote(loaded.analytics);
-      } else if (loaded.workspaces.length > 0) {
-        setActiveWorkspaceId((prev) =>
-          loaded.workspaces.some((w) => w.id === prev) ? prev : loaded.workspaces[0].id
-        );
+
+      let finalWorkspaces = loaded.workspaces;
+      if (options?.mergeLocal && workspacesRef.current.length > 0) {
+        const cloudIds = new Set(loaded.workspaces.map((w) => w.id));
+        const localOnlyWorkspaces = workspacesRef.current.filter((w) => !cloudIds.has(w.id));
+        if (localOnlyWorkspaces.length > 0) {
+          finalWorkspaces = [...loaded.workspaces, ...localOnlyWorkspaces];
+        }
       }
+
+      setWorkspaces(finalWorkspaces);
+      prevSyncedWorkspaceIdsRef.current = new Set(loaded.workspaces.map((w) => w.id));
+
+      const wsDerivedFolders = finalWorkspaces
+        .map((w) => w.folder)
+        .filter((f): f is string => typeof f === 'string' && f.trim().length > 0);
+
+      if (loaded.analytics) {
+        const mergedFolders = Array.from(
+          new Set([
+            'Assorted Workspaces',
+            ...(Array.isArray(loaded.analytics.folders) ? loaded.analytics.folders : []),
+            ...(options?.mergeLocal ? foldersRef.current : []),
+            ...wsDerivedFolders,
+          ])
+        );
+
+        let mergedLibrary = Array.isArray(loaded.analytics.libraryItems)
+          ? loaded.analytics.libraryItems
+          : [];
+        if (options?.mergeLocal && libraryItemsRef.current.length > 0) {
+          const cloudLibIds = new Set(mergedLibrary.map((it) => it.id));
+          const localLibOnly = libraryItemsRef.current.filter((it) => !cloudLibIds.has(it.id));
+          if (localLibOnly.length > 0) {
+            mergedLibrary = [...mergedLibrary, ...localLibOnly];
+          }
+        }
+
+        applyAnalyticsRemote({
+          ...loaded.analytics,
+          folders: mergedFolders,
+          libraryItems: mergedLibrary,
+          activeWorkspaceId:
+            loaded.analytics.activeWorkspaceId &&
+            finalWorkspaces.some((w) => w.id === loaded.analytics?.activeWorkspaceId)
+              ? loaded.analytics.activeWorkspaceId
+              : finalWorkspaces[0]?.id || loaded.analytics.activeWorkspaceId || '',
+        });
+      } else {
+        if (wsDerivedFolders.length > 0 || (options?.mergeLocal && foldersRef.current.length > 0)) {
+          setFolders((prev) =>
+            Array.from(
+              new Set([
+                'Assorted Workspaces',
+                ...(options?.mergeLocal ? prev : []),
+                ...wsDerivedFolders,
+              ])
+            )
+          );
+        }
+        if (finalWorkspaces.length > 0) {
+          setActiveWorkspaceId((prev) =>
+            finalWorkspaces.some((w) => w.id === prev) ? prev : finalWorkspaces[0].id
+          );
+        }
+      }
+
       if (loaded.dashboard) applyDashboardRemote(loaded.dashboard);
       if (loaded.preferences) applyPreferencesRemote(loaded.preferences);
       if (loaded.floatingChat) applyFloatingChatRemote(loaded.floatingChat);
@@ -1781,7 +2020,7 @@ export default function App() {
   );
 
   const hydrateAndSubscribeUser = useCallback(
-    async (user: User): Promise<{ syncedGeminiKey?: string } | void> => {
+    async (user: User): Promise<{ syncedGeminiKey?: string; error?: string } | void> => {
       if (hydratingUidRef.current === user.uid && hydratingPromiseRef.current) {
         return hydratingPromiseRef.current;
       }
@@ -1790,6 +2029,8 @@ export default function App() {
       const run = async () => {
         try {
           setIsCloudSyncReady(false);
+          setCloudSyncStatus('syncing');
+          setCloudSyncError(null);
           if (cloudUnsubRef.current) {
             cloudUnsubRef.current();
             cloudUnsubRef.current = null;
@@ -1800,8 +2041,82 @@ export default function App() {
           knownWorkspaceIdsRef.current = loaded.knownWorkspaceIds;
           knownStateKeysRef.current = loaded.knownStateKeys;
 
+          const hasUnsyncedLocalData =
+            workspacesRef.current.length > 0 ||
+            foldersRef.current.some((f) => f && f !== 'Assorted Workspaces');
+          const shouldMergeGuestLocal = Boolean(authProfileRef.current.isGuest && hasUnsyncedLocalData);
+
           if (loaded.hasCloudData) {
-            applyLoadedCloudState(loaded);
+            const cloudPrune = pruneExpiredWorkspaceSources(loaded.workspaces);
+            const cleanedLoaded: LoadedCloudState =
+              cloudPrune.workspaces !== loaded.workspaces
+                ? { ...loaded, workspaces: cloudPrune.workspaces }
+                : loaded;
+            applyLoadedCloudState(cleanedLoaded, { mergeLocal: shouldMergeGuestLocal });
+
+            if (cloudPrune.removed.length > 0) {
+              setExpiredSourcesNotice((prev) => {
+                const existing = new Set(prev.map((r) => `${r.workspaceId}:${r.sourceId}`));
+                const fresh = cloudPrune.removed.filter(
+                  (r) => !existing.has(`${r.workspaceId}:${r.sourceId}`)
+                );
+                return [...fresh, ...prev].slice(0, 20);
+              });
+              logAudit(
+                'Expired Sources Archived',
+                `Auto-cleared stored data for ${cloudPrune.removed.length} NotebookLM source${
+                  cloudPrune.removed.length === 1 ? '' : 's'
+                } inactive for over 14 days`,
+                'source'
+              );
+            }
+
+            if (cloudPrune.changed || cloudPrune.normalized) {
+              for (const ws of cloudPrune.workspaces) {
+                await upsertWorkspaceDoc(
+                  user.uid,
+                  ws,
+                  knownWorkspaceIdsRef.current,
+                  writtenHashesRef.current
+                );
+              }
+            }
+
+            // If linking from Guest session with local workspaces/folders, immediately push merged workspaces & folders to cloud
+            if (shouldMergeGuestLocal) {
+              const cloudWsIds = new Set(cleanedLoaded.workspaces.map((w) => w.id));
+              for (const ws of workspacesRef.current) {
+                if (!cloudWsIds.has(ws.id)) {
+                  await upsertWorkspaceDoc(
+                    user.uid,
+                    ws,
+                    knownWorkspaceIdsRef.current,
+                    writtenHashesRef.current
+                  );
+                }
+              }
+              prevSyncedWorkspaceIdsRef.current = new Set([
+                ...cleanedLoaded.workspaces.map((w) => w.id),
+                ...workspacesRef.current.map((w) => w.id),
+              ]);
+              const mergedFolders = Array.from(
+                new Set([
+                  'Assorted Workspaces',
+                  ...(loaded.analytics?.folders || []),
+                  ...foldersRef.current,
+                ])
+              );
+              await upsertAppStateDoc(
+                user.uid,
+                'analytics',
+                {
+                  ...latestSlicesRef.current.analytics,
+                  folders: mergedFolders,
+                },
+                knownStateKeysRef.current,
+                writtenHashesRef.current
+              );
+            }
           } else {
             // First-ever cloud login for this Google user: upload local workspaces/notes/settings
             for (const ws of workspacesRef.current) {
@@ -1844,6 +2159,7 @@ export default function App() {
           }
 
           setIsCloudSyncReady(true);
+          markCloudSyncOk();
 
           // Real-time cross-device listener
           cloudUnsubRef.current = subscribeToUserCloudData(
@@ -1854,8 +2170,25 @@ export default function App() {
             {
               onWorkspacesRemoteChange: (remoteWorkspaces) => {
                 isApplyingRemoteRef.current = true;
-                setWorkspaces(remoteWorkspaces);
-                prevSyncedWorkspaceIdsRef.current = new Set(remoteWorkspaces.map((w) => w.id));
+                const { workspaces: cleanedRemote, removed } =
+                  pruneExpiredWorkspaceSources(remoteWorkspaces);
+                setWorkspaces(cleanedRemote);
+                prevSyncedWorkspaceIdsRef.current = new Set(cleanedRemote.map((w) => w.id));
+                if (removed.length > 0) {
+                  setExpiredSourcesNotice((prev) => {
+                    const existing = new Set(prev.map((r) => `${r.workspaceId}:${r.sourceId}`));
+                    const fresh = removed.filter(
+                      (r) => !existing.has(`${r.workspaceId}:${r.sourceId}`)
+                    );
+                    return [...fresh, ...prev].slice(0, 20);
+                  });
+                }
+                const wsFolders = cleanedRemote
+                  .map((w) => w.folder)
+                  .filter((f): f is string => typeof f === 'string' && f.trim().length > 0);
+                if (wsFolders.length > 0) {
+                  setFolders((prev) => Array.from(new Set([...prev, ...wsFolders])));
+                }
                 queueMicrotask(() => {
                   isApplyingRemoteRef.current = false;
                 });
@@ -1864,6 +2197,7 @@ export default function App() {
               onAnalyticsRemoteChange: applyAnalyticsRemote,
               onPreferencesRemoteChange: applyPreferencesRemote,
               onFloatingChatRemoteChange: applyFloatingChatRemote,
+              onError: markCloudSyncError,
             }
           );
 
@@ -1893,7 +2227,16 @@ export default function App() {
           };
         } catch (err) {
           console.error('Firebase cloud sync hydration error:', err);
+          // Reset hydration lock so transient errors can be retried cleanly
+          hydratingUidRef.current = null;
+          hydratingPromiseRef.current = null;
           setIsCloudSyncReady(false);
+          const msg = formatCloudSyncError(err);
+          setCloudSyncStatus('error');
+          setCloudSyncError(msg);
+          return {
+            error: msg,
+          };
         }
       };
 
@@ -1907,16 +2250,20 @@ export default function App() {
       applyAnalyticsRemote,
       applyPreferencesRemote,
       applyFloatingChatRemote,
+      markCloudSyncError,
+      markCloudSyncOk,
     ]
   );
 
   // Firebase Auth listener: restores Google session & cloud data across refreshes/devices
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
+      if (isSigningOutRef.current) return;
       setFirebaseUser(user);
       if (user) {
         const email = user.email || `${user.uid}@gmail.com`;
         const displayName = user.displayName || email.split('@')[0] || 'Aether Learner';
+        const result = await hydrateAndSubscribeUser(user);
         localStorage.setItem(
           'aether_auth_user',
           JSON.stringify({
@@ -1929,7 +2276,6 @@ export default function App() {
         );
         setAuthProfile({ email, name: displayName, isGuest: false });
 
-        const result = await hydrateAndSubscribeUser(user);
         const restoredKey =
           result?.syncedGeminiKey?.trim() ||
           getRememberedGoogleApiKey(user.uid) ||
@@ -1951,6 +2297,7 @@ export default function App() {
         hydratingUidRef.current = null;
         hydratingPromiseRef.current = null;
         setIsCloudSyncReady(false);
+        setCloudSyncStatus('idle');
       }
     });
 
@@ -1963,31 +2310,122 @@ export default function App() {
     };
   }, [hydrateAndSubscribeUser]);
 
+  // Connect Google account directly from Settings while keeping current workspaces/folders
+  const handleConnectGoogleFromSettings = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      const email = user.email || `${user.uid}@gmail.com`;
+      const displayName = user.displayName || email.split('@')[0] || 'Aether Learner';
+      setFirebaseUser(user);
+      const hydration = await hydrateAndSubscribeUser(user);
+      localStorage.setItem(
+        'aether_auth_user',
+        JSON.stringify({
+          uid: user.uid,
+          email,
+          name: displayName,
+          photoURL: user.photoURL || undefined,
+          isGuest: false,
+        })
+      );
+      setAuthProfile({ email, name: displayName, isGuest: false });
+      const activeKey = getActiveGeminiApiKey();
+      if (activeKey) {
+        setRememberedGoogleApiKey(user.uid, activeKey);
+      }
+      if (hydration?.error) {
+        return { ok: false, error: hydration.error };
+      }
+      return { ok: true };
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code || '';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        return { ok: false, error: 'Google sign-in popup was closed before completing.' };
+      }
+      if (code === 'auth/popup-blocked') {
+        return { ok: false, error: 'Pop-up was blocked by your browser. Please allow pop-ups and try again.' };
+      }
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Unable to connect Google account.',
+      };
+    }
+  }, [hydrateAndSubscribeUser]);
+
+  const handleForceCloudSync = useCallback(async () => {
+    const activeFbUser = firebaseUserRef.current || auth.currentUser;
+    if (!activeFbUser) return;
+    if (!isCloudSyncReadyRef.current) {
+      await hydrateAndSubscribeUser(activeFbUser);
+      return;
+    }
+    await flushAllCloudSync(activeFbUser.uid);
+  }, [flushAllCloudSync, hydrateAndSubscribeUser]);
+
+  // Flush pending writes when hiding tab or navigating away so recent workspaces/folders never drop
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden' && firebaseUserRef.current && isCloudSyncReadyRef.current) {
+        void flushAllCloudSync(firebaseUserRef.current.uid);
+      }
+    };
+    const handlePageHide = () => {
+      if (firebaseUserRef.current && isCloudSyncReadyRef.current) {
+        void flushAllCloudSync(firebaseUserRef.current.uid);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [flushAllCloudSync]);
+
   // Continuous debounced Cloud Sync: Workspaces (notes, sources, NotebookLM chats, Gemini conversations)
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
       const currentIds = new Set(workspaces.map((w) => w.id));
+      const ops: Promise<unknown>[] = [];
       for (const prevId of prevSyncedWorkspaceIdsRef.current) {
         if (!currentIds.has(prevId)) {
-          void deleteWorkspaceDoc(uid, prevId, knownWorkspaceIdsRef.current, writtenHashesRef.current);
+          ops.push(
+            deleteWorkspaceDoc(uid, prevId, knownWorkspaceIdsRef.current, writtenHashesRef.current)
+          );
         }
       }
       prevSyncedWorkspaceIdsRef.current = currentIds;
 
       for (const ws of workspaces) {
-        void upsertWorkspaceDoc(uid, ws, knownWorkspaceIdsRef.current, writtenHashesRef.current);
+        ops.push(
+          upsertWorkspaceDoc(uid, ws, knownWorkspaceIdsRef.current, writtenHashesRef.current)
+        );
       }
-    }, 850);
-    return () => clearTimeout(timer);
-  }, [workspaces, firebaseUser, isCloudSyncReady]);
+      if (ops.length > 0) {
+        setCloudSyncStatus('syncing');
+        void Promise.all(ops)
+          .then(() => markCloudSyncOk())
+          .catch((err) => markCloudSyncError(err));
+      }
+    }, 650);
+    pendingSyncTimersRef.current.workspaces = timer;
+    return () => {
+      clearTimeout(timer);
+      if (pendingSyncTimersRef.current.workspaces === timer) {
+        pendingSyncTimersRef.current.workspaces = undefined;
+      }
+    };
+  }, [workspaces, firebaseUser, isCloudSyncReady, markCloudSyncError, markCloudSyncOk]);
 
   // Continuous debounced Cloud Sync: Dashboard cards, tasks, planners, syllabus, exams, timetable, calendar
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
+      setCloudSyncStatus('syncing');
       void upsertAppStateDoc(
         uid,
         'dashboard',
@@ -2002,9 +2440,17 @@ export default function App() {
         } satisfies DashboardStatePayload,
         knownStateKeysRef.current,
         writtenHashesRef.current
-      );
-    }, 600);
-    return () => clearTimeout(timer);
+      )
+        .then(() => markCloudSyncOk())
+        .catch((err) => markCloudSyncError(err));
+    }, 550);
+    pendingSyncTimersRef.current.dashboard = timer;
+    return () => {
+      clearTimeout(timer);
+      if (pendingSyncTimersRef.current.dashboard === timer) {
+        pendingSyncTimersRef.current.dashboard = undefined;
+      }
+    };
   }, [
     dashboardCards,
     tasks,
@@ -2015,13 +2461,16 @@ export default function App() {
     localCalendarEvents,
     firebaseUser,
     isCloudSyncReady,
+    markCloudSyncError,
+    markCloudSyncOk,
   ]);
 
   // Continuous debounced Cloud Sync: Folders, Library, Active Workspace & Study Analytics
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
+      setCloudSyncStatus('syncing');
       void upsertAppStateDoc(
         uid,
         'analytics',
@@ -2036,14 +2485,31 @@ export default function App() {
         } satisfies AnalyticsStatePayload,
         knownStateKeysRef.current,
         writtenHashesRef.current
-      );
-    }, 1800);
-    return () => clearTimeout(timer);
-  }, [folders, libraryItems, auditLogs, activeWorkspaceId, firebaseUser, isCloudSyncReady]);
+      )
+        .then(() => markCloudSyncOk())
+        .catch((err) => markCloudSyncError(err));
+    }, 700);
+    pendingSyncTimersRef.current.analytics = timer;
+    return () => {
+      clearTimeout(timer);
+      if (pendingSyncTimersRef.current.analytics === timer) {
+        pendingSyncTimersRef.current.analytics = undefined;
+      }
+    };
+  }, [
+    folders,
+    libraryItems,
+    auditLogs,
+    activeWorkspaceId,
+    firebaseUser,
+    isCloudSyncReady,
+    markCloudSyncError,
+    markCloudSyncOk,
+  ]);
 
   // Study timer metrics synced at a lower cadence (10s) to conserve Firestore write quota
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
       void upsertAppStateDoc(
@@ -2052,16 +2518,23 @@ export default function App() {
         latestSlicesRef.current.analytics,
         knownStateKeysRef.current,
         writtenHashesRef.current
-      );
+      ).catch((err) => markCloudSyncError(err));
     }, 10000);
-    return () => clearTimeout(timer);
-  }, [dailyStudySeconds, workspaceSeconds, workspaceInteractions, firebaseUser, isCloudSyncReady]);
+    pendingSyncTimersRef.current.analyticsTicker = timer;
+    return () => {
+      clearTimeout(timer);
+      if (pendingSyncTimersRef.current.analyticsTicker === timer) {
+        pendingSyncTimersRef.current.analyticsTicker = undefined;
+      }
+    };
+  }, [dailyStudySeconds, workspaceSeconds, workspaceInteractions, firebaseUser, isCloudSyncReady, markCloudSyncError]);
 
   // Continuous debounced Cloud Sync: Theme, Palette, Cursor, Model & API Key Preferences
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
+      setCloudSyncStatus('syncing');
       void upsertAppStateDoc(
         uid,
         'preferences',
@@ -2083,9 +2556,17 @@ export default function App() {
         } satisfies PreferencesStatePayload,
         knownStateKeysRef.current,
         writtenHashesRef.current
-      );
+      )
+        .then(() => markCloudSyncOk())
+        .catch((err) => markCloudSyncError(err));
     }, 500);
-    return () => clearTimeout(timer);
+    pendingSyncTimersRef.current.preferences = timer;
+    return () => {
+      clearTimeout(timer);
+      if (pendingSyncTimersRef.current.preferences === timer) {
+        pendingSyncTimersRef.current.preferences = undefined;
+      }
+    };
   }, [
     darkMode,
     activePaletteId,
@@ -2100,23 +2581,34 @@ export default function App() {
     geminiPersonalization,
     firebaseUser,
     isCloudSyncReady,
+    markCloudSyncError,
+    markCloudSyncOk,
   ]);
 
   // Continuous debounced Cloud Sync: Floating Gemini Neural Assistant chats
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current) return;
+    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
+      setCloudSyncStatus('syncing');
       void upsertAppStateDoc(
         uid,
         'floatingChat',
         { messages: floatingChatMessages } satisfies FloatingChatStatePayload,
         knownStateKeysRef.current,
         writtenHashesRef.current
-      );
+      )
+        .then(() => markCloudSyncOk())
+        .catch((err) => markCloudSyncError(err));
     }, 600);
-    return () => clearTimeout(timer);
-  }, [floatingChatMessages, firebaseUser, isCloudSyncReady]);
+    pendingSyncTimersRef.current.floatingChat = timer;
+    return () => {
+      clearTimeout(timer);
+      if (pendingSyncTimersRef.current.floatingChat === timer) {
+        pendingSyncTimersRef.current.floatingChat = undefined;
+      }
+    };
+  }, [floatingChatMessages, firebaseUser, isCloudSyncReady, markCloudSyncError, markCloudSyncOk]);
 
   // Live 1-second active workspace study time ticker (real-time updates)
   useEffect(() => {
@@ -2124,7 +2616,7 @@ export default function App() {
 
     const interval = setInterval(() => {
       if (document.visibilityState === 'hidden') return;
-      const key = activeWorkspaceRef.current?.id || activeWorkspaceIdRef.current || '__general__';
+      const key = activeWorkspaceRef.current?.id || activeWorkspaceIdRef.current || GENERAL_SESSION_KEY;
       setWorkspaceSeconds((prev) => ({
         ...prev,
         [key]: (prev[key] || 0) + 1,
@@ -2197,7 +2689,7 @@ export default function App() {
 
       setAuditLogs((prev) => [newLog, ...prev].slice(0, 250));
 
-      const trackKey = wsId || '__general__';
+      const trackKey = wsId || GENERAL_SESSION_KEY;
       setWorkspaceInteractions((prev) => ({
         ...prev,
         [trackKey]: (prev[trackKey] || 0) + 1,
@@ -2315,17 +2807,69 @@ export default function App() {
     setPlanners((prev) => prev.filter((p) => p.id !== id));
   };
 
+  // Periodic & foreground sweep to clear payload of NotebookLM sources inactive for > 14 days (keeps cards for reupload)
+  const runExpiredSourceSweep = useCallback(() => {
+    const current = workspacesRef.current;
+    if (!current || current.length === 0) return;
+    const { workspaces: cleaned, changed, removed } = pruneExpiredWorkspaceSources(current);
+    if (!changed) return;
+    setWorkspaces(cleaned);
+    if (removed.length > 0) {
+      setExpiredSourcesNotice((prev) => {
+        const existing = new Set(prev.map((r) => `${r.workspaceId}:${r.sourceId}`));
+        const fresh = removed.filter((r) => !existing.has(`${r.workspaceId}:${r.sourceId}`));
+        return [...fresh, ...prev].slice(0, 20);
+      });
+      logAudit(
+        'Expired Sources Archived',
+        `Auto-cleared stored data for ${removed.length} NotebookLM source${
+          removed.length === 1 ? '' : 's'
+        } inactive for over 14 days`,
+        'source'
+      );
+    }
+  }, [logAudit]);
+
+  useEffect(() => {
+    const interval = setInterval(runExpiredSourceSweep, 60_000);
+    const handleResumeCheck = () => {
+      if (document.visibilityState === 'visible') {
+        runExpiredSourceSweep();
+      }
+    };
+    window.addEventListener('focus', handleResumeCheck);
+    document.addEventListener('visibilitychange', handleResumeCheck);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleResumeCheck);
+      document.removeEventListener('visibilitychange', handleResumeCheck);
+    };
+  }, [runExpiredSourceSweep]);
+
+  const handleDismissExpiredNotice = useCallback((workspaceId?: string) => {
+    if (!workspaceId) {
+      setExpiredSourcesNotice([]);
+      return;
+    }
+    setExpiredSourcesNotice((prev) => prev.filter((item) => item.workspaceId !== workspaceId));
+  }, []);
+
   // Source actions (synchronized to active workspace)
   const handleToggleSource = useCallback(
     (id: string) => {
       const targetId = activeWorkspace?.id || activeWorkspaceId;
+      const now = Date.now();
       setWorkspaces((prev) =>
         prev.map((w) =>
           w.id === targetId
             ? {
                 ...w,
                 updatedAt: 'Just now',
-                sources: w.sources.map((s) => (s.id === id ? { ...s, selected: !s.selected } : s)),
+                sources: w.sources.map((s) =>
+                  s.id === id && !s.isExpired
+                    ? { ...s, selected: !s.selected, lastInteractedAt: now }
+                    : s
+                ),
               }
             : w
         )
@@ -2334,13 +2878,86 @@ export default function App() {
     [activeWorkspace?.id, activeWorkspaceId]
   );
 
+  const handleTouchSources = useCallback(
+    (sourceIds: string[]) => {
+      if (!Array.isArray(sourceIds) || sourceIds.length === 0) return;
+      const idSet = new Set(sourceIds);
+      const targetId = activeWorkspace?.id || activeWorkspaceId;
+      const now = Date.now();
+      setWorkspaces((prev) => {
+        let anyUpdated = false;
+        const next = prev.map((w) => {
+          if (w.id !== targetId) return w;
+          let wsUpdated = false;
+          const nextSources = w.sources.map((s) => {
+            if (!idSet.has(s.id) || s.isExpired) return s;
+            const prevAt = s.lastInteractedAt || 0;
+            if (prevAt > 0 && now - prevAt < SOURCE_TOUCH_DEBOUNCE_MS) {
+              return s;
+            }
+            wsUpdated = true;
+            anyUpdated = true;
+            return { ...s, lastInteractedAt: now };
+          });
+          return wsUpdated ? { ...w, sources: nextSources } : w;
+        });
+        return anyUpdated ? next : prev;
+      });
+    },
+    [activeWorkspace?.id, activeWorkspaceId]
+  );
+
+  const handleReuploadSource = useCallback(
+    (id: string, restored: Omit<NotebookSource, 'id' | 'dateAdded'>) => {
+      const targetId = activeWorkspace?.id || activeWorkspaceId;
+      const now = Date.now();
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === targetId
+            ? {
+                ...w,
+                updatedAt: 'Just now',
+                sources: w.sources.map((s) =>
+                  s.id === id
+                    ? {
+                        ...s,
+                        ...restored,
+                        id: s.id,
+                        dateAdded: 'Just now',
+                        lastInteractedAt: now,
+                        isExpired: false,
+                        expiredAt: undefined,
+                        expiredReason: undefined,
+                        selected: true,
+                      }
+                    : s
+                ),
+              }
+            : w
+        )
+      );
+      setExpiredSourcesNotice((prev) =>
+        prev.filter((item) => !(item.workspaceId === targetId && item.sourceId === id))
+      );
+      logAudit(
+        'Source Reuploaded',
+        `Reuploaded "${restored.title}" (${restored.words} words)`,
+        'source'
+      );
+    },
+    [activeWorkspace?.id, activeWorkspaceId, logAudit]
+  );
+
   const handleAddSource = useCallback(
     (sourceData: Omit<NotebookSource, 'id' | 'dateAdded'>) => {
       const targetId = activeWorkspace?.id || activeWorkspaceId;
+      const now = Date.now();
       const newSource: NotebookSource = {
         ...sourceData,
-        id: `src-${Date.now()}`,
+        id: `src-${now}-${Math.random().toString(36).slice(2, 6)}`,
         dateAdded: 'Just now',
+        lastInteractedAt: sourceData.lastInteractedAt ?? now,
+        isExpired: false,
       };
       setWorkspaces((prev) =>
         prev.map((w) =>
@@ -2355,29 +2972,62 @@ export default function App() {
       );
       logAudit('Source Indexed', `Added "${newSource.title}" (${newSource.words} words)`, 'source');
     },
-    [activeWorkspace?.id, activeWorkspaceId]
+    [activeWorkspace?.id, activeWorkspaceId, logAudit]
   );
 
   const handleDeleteSource = useCallback(
-    (id: string) => {
+    (id: string, permanent: boolean = false) => {
       const targetId = activeWorkspace?.id || activeWorkspaceId;
       const s = sources.find((item) => item.id === id);
+      const shouldSoftDelete = Boolean(s && !s.isExpired && !permanent);
+      const now = Date.now();
+
       setWorkspaces((prev) =>
         prev.map((w) =>
           w.id === targetId
             ? {
                 ...w,
                 updatedAt: 'Just now',
-                sources: w.sources.filter((item) => item.id !== id),
+                sources: shouldSoftDelete
+                  ? w.sources.map((item) =>
+                      item.id === id
+                        ? {
+                            ...item,
+                            isExpired: true,
+                            expiredAt: now,
+                            expiredReason: 'manual',
+                            selected: false,
+                            dataUrl: undefined,
+                            fullContent: '',
+                            excerpt: MANUAL_DELETED_SOURCE_EXCERPT,
+                          }
+                        : item
+                    )
+                  : w.sources.filter((item) => item.id !== id),
               }
             : w
         )
       );
+
+      if (!shouldSoftDelete) {
+        setExpiredSourcesNotice((prev) =>
+          prev.filter((item) => !(item.workspaceId === targetId && item.sourceId === id))
+        );
+      }
+
       if (s) {
-        logAudit('Source Removed', `Deleted source "${s.title}"`, 'source');
+        if (shouldSoftDelete) {
+          logAudit(
+            'Source Deleted',
+            `Cleared stored content for "${s.title}" (card kept for reupload)`,
+            'source'
+          );
+        } else {
+          logAudit('Source Card Removed', `Permanently removed source "${s.title}"`, 'source');
+        }
       }
     },
-    [activeWorkspace?.id, activeWorkspaceId, sources]
+    [activeWorkspace?.id, activeWorkspaceId, sources, logAudit]
   );
 
   // Synchronized OneNote & Gemini handlers for active workspace
@@ -2726,6 +3376,7 @@ export default function App() {
     setLocalCalendarEvents([]);
     setDailyStudySeconds({});
     setWorkspaces([]);
+    setExpiredSourcesNotice([]);
     setActiveWorkspaceId('');
     setLibraryItems([]);
     setFolders(['Assorted Workspaces']);
@@ -2970,6 +3621,12 @@ export default function App() {
                     onToggleSource={handleToggleSource}
                     onAddSource={handleAddSource}
                     onDeleteSource={handleDeleteSource}
+                    onReuploadSource={handleReuploadSource}
+                    onTouchSources={handleTouchSources}
+                    expiredSourcesNotice={expiredSourcesNotice.filter(
+                      (item) => !activeWorkspace?.id || item.workspaceId === activeWorkspace.id
+                    )}
+                    onDismissExpiredNotice={() => handleDismissExpiredNotice(activeWorkspace?.id)}
                     onOpenOneNoteNotes={() => setIsOneNoteOpen(true)}
                     onOpenGeminiWorkspace={() => setIsGeminiWorkspaceOpen(true)}
                     selectedModel={selectedModel}
@@ -3059,6 +3716,14 @@ export default function App() {
                   isGuestSession={isGuestSession}
                   personalization={geminiPersonalization}
                   onUpdatePersonalization={handleUpdatePersonalization}
+                  cloudSyncStatus={cloudSyncStatus}
+                  cloudSyncError={cloudSyncError}
+                  lastCloudSyncAt={lastCloudSyncAt}
+                  onForceCloudSync={handleForceCloudSync}
+                  onConnectGoogleAccount={handleConnectGoogleFromSettings}
+                  isSigningOut={isSigningOut}
+                  workspaceCount={workspaces.length}
+                  folderCount={folders.length}
                 />
               )}
         </main>

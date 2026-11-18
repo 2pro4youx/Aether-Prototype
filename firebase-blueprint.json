@@ -91,7 +91,7 @@
         },
         "sources": {
           "type": "array",
-          "description": "Up to 200 notebook sources."
+          "description": "Up to 200 notebook sources (stored payloads auto-cleared after 14 days without interaction; cards remain with isExpired=true for reupload)."
         },
         "notebooks": {
           "type": "array",

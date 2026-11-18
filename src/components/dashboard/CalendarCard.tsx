@@ -1,14 +1,21 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
   Plus,
-  Trash2,
+  X,
   Pencil,
 } from 'lucide-react';
 import { CalendarEventEntry, ColorPalette } from '../../types';
 import { DashboardModal } from './DashboardModal';
+import {
+  CARD_ITEM_INITIAL,
+  CARD_ITEM_ANIMATE,
+  CARD_ITEM_EXIT,
+  CARD_ITEM_TRANSITION,
+} from './cardItemMotion';
 
 interface CalendarCardProps {
   localEvents: CalendarEventEntry[];
@@ -61,8 +68,8 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
 
   const [draftTitle, setDraftTitle] = useState('');
   const [draftDate, setDraftDate] = useState<string>(todayKey);
-  const [draftTime, setDraftTime] = useState('10:00');
-  const [draftEndTime, setDraftEndTime] = useState('11:00');
+  const [draftTime, setDraftTime] = useState('');
+  const [draftEndTime, setDraftEndTime] = useState('');
   const [draftAllDay, setDraftAllDay] = useState(false);
   const [draftLocation, setDraftLocation] = useState('');
 
@@ -70,6 +77,8 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
     setShowAddForm(false);
     setEditingEvent(null);
     setDraftTitle('');
+    setDraftTime('');
+    setDraftEndTime('');
     setDraftLocation('');
   };
 
@@ -77,8 +86,8 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
     setEditingEvent(null);
     setDraftTitle('');
     setDraftDate(selectedDate);
-    setDraftTime('10:00');
-    setDraftEndTime('11:00');
+    setDraftTime('');
+    setDraftEndTime('');
     setDraftAllDay(false);
     setDraftLocation('');
     setShowAddForm(true);
@@ -88,8 +97,8 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
     setEditingEvent(ev);
     setDraftTitle(ev.title);
     setDraftDate(ev.date);
-    setDraftTime(ev.startTime || '10:00');
-    setDraftEndTime(ev.endTime || '11:00');
+    setDraftTime(ev.startTime || '');
+    setDraftEndTime(ev.endTime || '');
     setDraftAllDay(Boolean(ev.allDay));
     setDraftLocation(ev.location || '');
     setShowAddForm(true);
@@ -110,8 +119,8 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
     const draftPayload = {
       title: draftTitle.trim(),
       date: targetDate,
-      startTime: draftAllDay ? undefined : draftTime,
-      endTime: draftAllDay ? undefined : draftEndTime,
+      startTime: draftAllDay ? undefined : draftTime.trim() || undefined,
+      endTime: draftAllDay ? undefined : draftEndTime.trim() || undefined,
       allDay: draftAllDay,
       location: draftLocation.trim() || undefined,
     };
@@ -461,7 +470,7 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
                     darkMode ? 'text-slate-300' : 'text-slate-700'
                   }`}
                 >
-                  Start Time
+                  Start Time <span className="opacity-60">(Optional)</span>
                 </label>
                 <input
                   type="time"
@@ -480,7 +489,7 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
                     darkMode ? 'text-slate-300' : 'text-slate-700'
                   }`}
                 >
-                  End Time
+                  End Time <span className="opacity-60">(Optional)</span>
                 </label>
                 <input
                   type="time"
@@ -520,12 +529,19 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
       </DashboardModal>
 
       {/* Selected Day Agenda */}
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 pr-1">
-        {selectedDayEvents.map((ev) => (
-          <div
-            key={ev.id}
-            className="group/item p-2.5 rounded-xl border transition liquid-glass-tile flex items-center justify-between gap-2"
-          >
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5 relative pr-1">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {selectedDayEvents.map((ev) => (
+            <motion.div
+              key={ev.id}
+              layout="position"
+              initial={CARD_ITEM_INITIAL}
+              animate={CARD_ITEM_ANIMATE}
+              exit={CARD_ITEM_EXIT}
+              transition={CARD_ITEM_TRANSITION}
+              className="dashboard-item-motion"
+            >
+              <div className="group/item p-2.5 rounded-xl border transition liquid-glass-tile flex items-center justify-between gap-2">
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-semibold truncate">{ev.title}</span>
@@ -540,7 +556,9 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
                     ? 'All day'
                     : ev.startTime
                     ? `${ev.startTime}${ev.endTime ? `–${ev.endTime}` : ''}`
-                    : 'Scheduled'}
+                    : ev.endTime
+                    ? `Until ${ev.endTime}`
+                    : 'No time set'}
                 </span>
                 {ev.location && (
                   <>
@@ -555,15 +573,15 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
               <button
                 type="button"
                 onClick={() => handleDeleteEvent(ev)}
-                className={`p-1 rounded-lg opacity-0 pointer-events-none group-hover/item:opacity-100 group-hover/item:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
+                className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
                   darkMode
-                    ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
-                    : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                    ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
                 }`}
-                title="Delete event"
-                aria-label="Delete event"
+                title="Remove event"
+                aria-label="Remove event"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <X className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
@@ -580,7 +598,9 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
               </button>
             </div>
           </div>
-        ))}
+            </motion.div>
+          ))}
+        </AnimatePresence>
 
         {selectedDayEvents.length === 0 && (
           <div className="text-center py-4 text-xs text-slate-500">

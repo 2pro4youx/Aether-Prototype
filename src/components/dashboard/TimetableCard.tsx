@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
-import { CalendarRange, Plus, Trash2, Pencil, MapPin } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { CalendarRange, Plus, X, Pencil, MapPin } from 'lucide-react';
 import { TimetableSlot, WeekdayShort, ColorPalette } from '../../types';
 import { DashboardModal } from './DashboardModal';
+import {
+  CARD_ITEM_INITIAL,
+  CARD_ITEM_ANIMATE,
+  CARD_ITEM_EXIT,
+  CARD_ITEM_TRANSITION,
+} from './cardItemMotion';
 
 interface TimetableCardProps {
   slots: TimetableSlot[];
@@ -36,8 +43,8 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
 
   const [day, setDay] = useState<WeekdayShort>(todayShort);
   const [subject, setSubject] = useState('');
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('10:00');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [room, setRoom] = useState('');
   const [kind, setKind] = useState<TimetableSlot['kind']>('Lecture');
 
@@ -46,8 +53,8 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
     setEditingSlotId(null);
     setSubject('');
     setRoom('');
-    setStartTime('09:00');
-    setEndTime('10:00');
+    setStartTime('');
+    setEndTime('');
     setKind('Lecture');
   };
 
@@ -55,8 +62,8 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
     setEditingSlotId(null);
     setDay(selectedDay !== 'ALL' ? selectedDay : todayShort);
     setSubject('');
-    setStartTime('09:00');
-    setEndTime('10:00');
+    setStartTime('');
+    setEndTime('');
     setRoom('');
     setKind('Lecture');
     setShowAdd(true);
@@ -66,8 +73,8 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
     setEditingSlotId(slot.id);
     setDay(slot.day);
     setSubject(slot.subject);
-    setStartTime(slot.startTime);
-    setEndTime(slot.endTime);
+    setStartTime(slot.startTime || '');
+    setEndTime(slot.endTime || '');
     setRoom(slot.room || '');
     setKind(slot.kind);
     setShowAdd(true);
@@ -79,8 +86,8 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
     const slotFields = {
       day,
       subject: subject.trim(),
-      startTime: startTime || '09:00',
-      endTime: endTime || '10:00',
+      startTime: startTime.trim(),
+      endTime: endTime.trim(),
       room: room.trim() || undefined,
       kind,
     };
@@ -92,7 +99,7 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
     const sorted = [...nextList].sort((a, b) => {
       const dayDiff = WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day);
       if (dayDiff !== 0) return dayDiff;
-      return a.startTime.localeCompare(b.startTime);
+      return (a.startTime || '99:99').localeCompare(b.startTime || '99:99');
     });
     onChangeSlots(sorted);
     closeSlotModal();
@@ -309,7 +316,7 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
                   darkMode ? 'text-slate-300' : 'text-slate-700'
                 }`}
               >
-                Start Time
+                Start Time <span className="opacity-60">(Optional)</span>
               </label>
               <input
                 type="time"
@@ -328,7 +335,7 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
                   darkMode ? 'text-slate-300' : 'text-slate-700'
                 }`}
               >
-                End Time
+                End Time <span className="opacity-60">(Optional)</span>
               </label>
               <input
                 type="time"
@@ -409,23 +416,43 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
         </form>
       </DashboardModal>
 
-      <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1">
-        {filteredSlots.map((slot) => {
-          const isNow =
-            slot.day === todayShort &&
-            nowHHMM >= slot.startTime &&
-            nowHHMM <= slot.endTime;
+      <div className="flex flex-col gap-2 relative flex-1 min-h-0 overflow-y-auto pr-1">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {filteredSlots.map((slot) => {
+            const isNow = Boolean(
+              slot.day === todayShort &&
+                slot.startTime &&
+                slot.endTime &&
+                nowHHMM >= slot.startTime &&
+                nowHHMM <= slot.endTime
+            );
+            const timeLabel =
+              slot.startTime && slot.endTime
+                ? `${slot.startTime}–${slot.endTime}`
+                : slot.startTime
+                ? `From ${slot.startTime}`
+                : slot.endTime
+                ? `Until ${slot.endTime}`
+                : 'Flexible';
 
-          return (
-            <div
-              key={slot.id}
-              className="group/item p-3 rounded-xl border transition liquid-glass-tile flex items-center justify-between gap-3"
-              style={isNow ? { borderColor: activePalette.primary } : {}}
-            >
+            return (
+              <motion.div
+                key={slot.id}
+                layout="position"
+                initial={CARD_ITEM_INITIAL}
+                animate={CARD_ITEM_ANIMATE}
+                exit={CARD_ITEM_EXIT}
+                transition={CARD_ITEM_TRANSITION}
+                className="dashboard-item-motion"
+              >
+                <div
+                  className="group/item p-3 rounded-xl border transition liquid-glass-tile flex items-center justify-between gap-3"
+                  style={isNow ? { borderColor: activePalette.primary } : {}}
+                >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="text-xs font-mono font-semibold tabular-nums shrink-0 w-24">
                   <div style={{ color: activePalette.primary }}>
-                    {slot.startTime}–{slot.endTime}
+                    {timeLabel}
                   </div>
                   <div className={darkMode ? 'text-slate-500' : 'text-slate-400'}>
                     {selectedDay === 'ALL' ? `${slot.day} · ${slot.kind}` : slot.kind}
@@ -467,15 +494,15 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
                 <button
                   type="button"
                   onClick={() => handleDeleteSlot(slot.id)}
-                  className={`p-1 rounded-lg opacity-0 pointer-events-none group-hover/item:opacity-100 group-hover/item:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
+                  className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
                     darkMode
-                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
-                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                      ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
                   }`}
                   title="Remove class block"
                   aria-label="Remove class block"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
@@ -492,8 +519,10 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
                 </button>
               </div>
             </div>
-          );
-        })}
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
 
         {filteredSlots.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center py-8 px-4 gap-3">

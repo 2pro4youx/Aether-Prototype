@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Workspace, AuditLog, ColorPalette } from '../types';
+import { GENERAL_SESSION_KEY } from '../utils/firebaseSync';
 
 interface AnalyticsViewProps {
   workspaces: Workspace[];
@@ -180,11 +181,14 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       });
 
       // Include general session if any seconds or interactions occurred without an active workspace
-      const generalSecs = workspaceSeconds['__general__'] || 0;
-      const generalInts = workspaceInteractions['__general__'] || 0;
+      const generalSecs =
+        (workspaceSeconds[GENERAL_SESSION_KEY] || 0) + (workspaceSeconds['__general__'] || 0);
+      const generalInts =
+        (workspaceInteractions[GENERAL_SESSION_KEY] || 0) +
+        (workspaceInteractions['__general__'] || 0);
       if (generalSecs > 0 || generalInts > 0 || items.length === 0) {
         items.push({
-          id: '__general__',
+          id: GENERAL_SESSION_KEY,
           name: 'General Session',
           subtitle: 'App-wide & Library',
           targetFolder: 'all',
@@ -197,7 +201,11 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       // Include any leftover tracked workspace IDs (e.g., deleted workspaces with recorded time)
       const knownIds = new Set(items.map((i) => i.id));
       Object.keys(workspaceSeconds).forEach((key) => {
-        if (!knownIds.has(key) && ((workspaceSeconds[key] || 0) > 0 || (workspaceInteractions[key] || 0) > 0)) {
+        if (
+          !knownIds.has(key) &&
+          key !== '__general__' &&
+          ((workspaceSeconds[key] || 0) > 0 || (workspaceInteractions[key] || 0) > 0)
+        ) {
           items.push({
             id: key,
             name: 'Archived Workspace',
@@ -258,8 +266,11 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       folderMap.set(fName, entry);
     });
 
-    const generalSecs = workspaceSeconds['__general__'] || 0;
-    const generalInts = workspaceInteractions['__general__'] || 0;
+    const generalSecs =
+      (workspaceSeconds[GENERAL_SESSION_KEY] || 0) + (workspaceSeconds['__general__'] || 0);
+    const generalInts =
+      (workspaceInteractions[GENERAL_SESSION_KEY] || 0) +
+      (workspaceInteractions['__general__'] || 0);
     if (generalSecs > 0 || generalInts > 0 || folderMap.size === 0) {
       folderMap.set('General Session', {
         seconds: generalSecs,
@@ -375,22 +386,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="pr-14 md:pr-0">
-          <div
-            className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
-            style={{ color: primaryAccent }}
-          >
-            <span
-              className="w-2 h-2 rounded-full animate-pulse"
-              style={{ backgroundColor: primaryAccent }}
-            />
-            <span>Live Session Analytics · {activePalette.name}</span>
-          </div>
           <h1
-            className={`text-3xl sm:text-4xl font-extrabold tracking-tight mt-1 ${
+            className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
           >
-            Learning Analytics &amp; Interaction Audits
+            Analytics and Audits
           </h1>
           <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Real-time session tracking across your workspaces, folders, and verified interaction logs.

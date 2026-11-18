@@ -1090,25 +1090,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* Top Welcome & Metaverse Edit Control */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="pr-14 md:pr-0">
-          <div
-            className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
-            style={{ color: activePalette.primary }}
-          >
-            <span>
-              {(() => {
-                const firstName = extractFirstName(userName);
-                return firstName
-                  ? `Welcome, ${firstName} · Neural Research Command · ${activePalette.name}`
-                  : `Neural Research Command · ${activePalette.name}`;
-              })()}
-            </span>
-          </div>
+          {(() => {
+            const firstName = extractFirstName(userName);
+            if (!firstName) return null;
+            return (
+              <div
+                className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-1"
+                style={{ color: activePalette.primary }}
+              >
+                <span>{`Welcome, ${firstName}`}</span>
+              </div>
+            );
+          })()}
           <h1
-            className={`text-3xl sm:text-4xl font-extrabold tracking-tight mt-1 ${
+            className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
           >
-            Student Knowledge Dashboard
+            Dashboard
           </h1>
           <p
             className={`text-sm mt-1 ${

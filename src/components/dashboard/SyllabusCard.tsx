@@ -1,7 +1,17 @@
 import React, { useState } from 'react';
-import { BookOpen, Plus, CheckCircle2, Circle, Trash2, Pencil } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { BookOpen, Plus, CheckCircle2, Circle, X, Pencil } from 'lucide-react';
 import { SyllabusCourse, ColorPalette } from '../../types';
 import { DashboardModal } from './DashboardModal';
+import {
+  CARD_ITEM_INITIAL,
+  CARD_ITEM_ANIMATE,
+  CARD_ITEM_EXIT,
+  CARD_ITEM_TRANSITION,
+  CARD_CHIP_INITIAL,
+  CARD_CHIP_ANIMATE,
+  CARD_CHIP_EXIT,
+} from './cardItemMotion';
 
 interface SyllabusCardProps {
   courses: SyllabusCourse[];
@@ -432,35 +442,46 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
 
       {courses.length > 0 && (
         <>
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 shrink-0">
-            {courses.map((c) => {
-              const active = activeCourse?.id === c.id;
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setSelectedCourseId(c.id)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border whitespace-nowrap transition flex items-center gap-1.5 ${
-                    active
-                      ? ''
-                      : darkMode
-                      ? 'bg-slate-900/30 border-white/10 text-slate-400 hover:text-white'
-                      : 'bg-white/40 border-slate-200 text-slate-600 hover:text-slate-900'
-                  }`}
-                  style={
-                    active
-                      ? {
-                          backgroundColor: `${activePalette.primary}20`,
-                          borderColor: `${activePalette.primary}60`,
-                          color: activePalette.primary,
-                        }
-                      : {}
-                  }
-                >
-                  <span>{c.code ? `${c.code} · ${c.name}` : c.name}</span>
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-1.5 relative overflow-x-auto pb-1 shrink-0">
+            <AnimatePresence mode="popLayout" initial={false}>
+              {courses.map((c) => {
+                const active = activeCourse?.id === c.id;
+                return (
+                  <motion.div
+                    key={c.id}
+                    layout="position"
+                    initial={CARD_CHIP_INITIAL}
+                    animate={CARD_CHIP_ANIMATE}
+                    exit={CARD_CHIP_EXIT}
+                    transition={CARD_ITEM_TRANSITION}
+                    className="dashboard-item-motion shrink-0"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCourseId(c.id)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border whitespace-nowrap transition flex items-center gap-1.5 ${
+                        active
+                          ? ''
+                          : darkMode
+                          ? 'bg-slate-900/30 border-white/10 text-slate-400 hover:text-white'
+                          : 'bg-white/40 border-slate-200 text-slate-600 hover:text-slate-900'
+                      }`}
+                      style={
+                        active
+                          ? {
+                              backgroundColor: `${activePalette.primary}20`,
+                              borderColor: `${activePalette.primary}60`,
+                              color: activePalette.primary,
+                            }
+                          : {}
+                      }
+                    >
+                      <span>{c.code ? `${c.code} · ${c.name}` : c.name}</span>
+                    </button>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
           </div>
 
           {activeCourse && (
@@ -485,15 +506,15 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
                 <button
                   type="button"
                   onClick={() => handleDeleteCourse(activeCourse.id)}
-                  className={`p-1 rounded-lg opacity-0 pointer-events-none group-hover/course:opacity-100 group-hover/course:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
+                  className={`p-1 rounded-lg opacity-60 group-hover/course:opacity-100 transition ${
                     darkMode
-                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
-                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                      ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
                   }`}
-                  title="Delete course"
-                  aria-label="Delete course"
+                  title="Remove course"
+                  aria-label="Remove course"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
@@ -533,15 +554,24 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
                 </button>
               </form>
 
-              <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto pr-1">
-                {visibleTopics.map((topic) => (
-                  <div
-                    key={topic.id}
-                    onClick={() => handleToggleTopic(activeCourse.id, topic.id)}
-                    className={`group/item flex items-center justify-between gap-2 px-3 py-2 rounded-xl border cursor-pointer transition liquid-glass-tile ${
-                      topic.completed ? 'opacity-65' : ''
-                    }`}
-                  >
+              <div className="flex flex-col gap-1.5 relative flex-1 min-h-0 overflow-y-auto pr-1">
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {visibleTopics.map((topic) => (
+                    <motion.div
+                      key={topic.id}
+                      layout="position"
+                      initial={CARD_ITEM_INITIAL}
+                      animate={CARD_ITEM_ANIMATE}
+                      exit={CARD_ITEM_EXIT}
+                      transition={CARD_ITEM_TRANSITION}
+                      className="dashboard-item-motion"
+                    >
+                      <div
+                        onClick={() => handleToggleTopic(activeCourse.id, topic.id)}
+                        className={`group/item flex items-center justify-between gap-2 px-3 py-2 rounded-xl border cursor-pointer transition liquid-glass-tile ${
+                          topic.completed ? 'opacity-65' : ''
+                        }`}
+                      >
                     <div className="flex items-center gap-2.5 min-w-0">
                       {topic.completed ? (
                         <CheckCircle2
@@ -570,13 +600,15 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
                           e.stopPropagation();
                           handleDeleteTopic(activeCourse.id, topic.id);
                         }}
-                        className={`p-1 rounded opacity-0 pointer-events-none group-hover/item:opacity-100 group-hover/item:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
-                          darkMode ? 'text-slate-500 hover:text-red-400' : 'text-slate-400 hover:text-red-600'
+                        className={`p-1 rounded opacity-60 group-hover/item:opacity-100 transition ${
+                          darkMode
+                            ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
                         }`}
-                        title="Delete topic"
-                        aria-label="Delete topic"
+                        title="Remove topic"
+                        aria-label="Remove topic"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <X className="w-3 h-3" />
                       </button>
                       <button
                         type="button"
@@ -600,7 +632,9 @@ export const SyllabusCard: React.FC<SyllabusCardProps> = ({
                       </button>
                     </div>
                   </div>
-                ))}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
                 {visibleTopics.length === 0 && (
                   <p className={`text-xs text-center py-6 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                     No topics added in {activeCourse.name} yet.

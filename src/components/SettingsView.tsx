@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  Settings,
   Sun,
   Moon,
   Palette,
@@ -64,7 +63,7 @@ interface SettingsViewProps {
   onChangeCursorColorAdapter: (adapter: number) => void;
   smoothScroll: boolean;
   onToggleSmoothScroll: (enabled: boolean) => void;
-  onSignOut?: () => void;
+  onSignOut?: () => void | Promise<void>;
   authenticatedEmail?: string;
   authenticatedName?: string;
   accountBaseName?: string;
@@ -75,6 +74,14 @@ interface SettingsViewProps {
       | Partial<GeminiPersonalizationConfig>
       | ((prev: GeminiPersonalizationConfig) => GeminiPersonalizationConfig)
   ) => void;
+  cloudSyncStatus?: 'idle' | 'syncing' | 'synced' | 'error';
+  cloudSyncError?: string | null;
+  lastCloudSyncAt?: string | null;
+  onForceCloudSync?: () => Promise<void>;
+  onConnectGoogleAccount?: () => Promise<{ ok: boolean; error?: string }>;
+  isSigningOut?: boolean;
+  workspaceCount?: number;
+  folderCount?: number;
 }
 
 interface PrecisionCursorSectionProps {
@@ -618,9 +625,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   isGuestSession = false,
   personalization: controlledPersonalization,
   onUpdatePersonalization,
+  cloudSyncStatus = 'idle',
+  cloudSyncError = null,
+  lastCloudSyncAt = null,
+  onForceCloudSync,
+  onConnectGoogleAccount,
+  isSigningOut = false,
+  workspaceCount = 0,
+  folderCount = 1,
 }) => {
   type SettingsTabId = 'general' | 'gemini-model' | 'gemini-personalization';
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabId>('general');
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [googleConnectError, setGoogleConnectError] = useState<string | null>(null);
+  const [confirmGuestSignOut, setConfirmGuestSignOut] = useState(false);
   const [internalPersonalization, setInternalPersonalization] = useState<GeminiPersonalizationConfig>(() =>
     getGeminiPersonalization()
   );
@@ -752,15 +770,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Title */}
       <div className="pr-14 md:pr-0 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <div
-            className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
-            style={{ color: activePalette.primary }}
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span>System & Visual Customization</span>
-          </div>
           <h1
-            className={`text-3xl sm:text-4xl font-extrabold tracking-tight mt-1 ${
+            className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
           >
@@ -2442,42 +2453,193 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {activeSettingsTab !== 'gemini-personalization' && (
       <>
       {/* Authenticated Account & Session Management */}
-      <div className="p-5 rounded-2xl liquid-glass flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className={`text-xs space-y-1 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-          <div className="flex items-center gap-2">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: activePalette.primary }}
-            />
-            <p className={`text-sm font-bold ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>
-              Authenticated Studio Session
+      <div className="p-5 rounded-2xl liquid-glass flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className={`text-xs space-y-1.5 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{
+                  backgroundColor: isGuestSession
+                    ? '#f59e0b'
+                    : cloudSyncStatus === 'error'
+                    ? '#f43f5e'
+                    : cloudSyncStatus === 'synced'
+                    ? '#10b981'
+                    : activePalette.primary,
+                }}
+              />
+              <p className={`text-sm font-bold ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>
+                Authenticated Studio Session
+              </p>
+
+              {!isGuestSession ? (
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono border ${
+                    cloudSyncStatus === 'error'
+                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                      : cloudSyncStatus === 'syncing'
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                      : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                  }`}
+                >
+                  {cloudSyncStatus === 'syncing' ? (
+                    <>
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                      <span>Syncing to Cloud...</span>
+                    </>
+                  ) : cloudSyncStatus === 'error' ? (
+                    <>
+                      <AlertCircle className="w-2.5 h-2.5" />
+                      <span>Cloud Sync Issue</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-2.5 h-2.5" />
+                      <span>
+                        Cloud Synced{lastCloudSyncAt ? ` · ${lastCloudSyncAt}` : ''}
+                      </span>
+                    </>
+                  )}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono border bg-amber-500/10 text-amber-400 border-amber-500/30">
+                  Local Browser Only (Guest)
+                </span>
+              )}
+            </div>
+
+            <p>
+              Connected as{' '}
+              <span className={`font-mono font-semibold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                {authenticatedEmail
+                  ? authenticatedName
+                    ? `${authenticatedName} (${authenticatedEmail})`
+                    : authenticatedEmail
+                  : authenticatedName
+                  ? `${authenticatedName} · Guest Session`
+                  : 'Guest Session'}
+              </span>
             </p>
+
+            {isGuestSession && (
+              <p className="text-[11px] leading-relaxed text-amber-400/90">
+                Guest sessions only stay in this browser and reset if you sign out. Connect your Google mail account below to keep all workspaces, folders, sources &amp; chats synced across sign-outs and devices.
+              </p>
+            )}
+
+            {!isGuestSession && cloudSyncStatus === 'error' && cloudSyncError && (
+              <p className="text-[11px] font-mono text-rose-400">
+                {cloudSyncError}
+              </p>
+            )}
           </div>
-          <p>
-            Connected as{' '}
-            <span className={`font-mono font-semibold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-              {authenticatedEmail
-                ? authenticatedName
-                  ? `${authenticatedName} (${authenticatedEmail})`
-                  : authenticatedEmail
-                : authenticatedName
-                ? `${authenticatedName} · Guest Session`
-                : 'Guest Session'}
-            </span>
-          </p>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {isGuestSession && onConnectGoogleAccount && (
+              <button
+                type="button"
+                disabled={isConnectingGoogle}
+                onClick={async () => {
+                  setIsConnectingGoogle(true);
+                  setGoogleConnectError(null);
+                  const res = await onConnectGoogleAccount();
+                  if (!res.ok && res.error) {
+                    setGoogleConnectError(res.error);
+                  }
+                  setIsConnectingGoogle(false);
+                }}
+                style={{
+                  background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                  color: '#0f172a',
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer hover:brightness-105 disabled:opacity-50"
+              >
+                {isConnectingGoogle ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Connecting Google...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Connect Google Mail to Sync</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {!isGuestSession && onForceCloudSync && (
+              <button
+                type="button"
+                disabled={cloudSyncStatus === 'syncing'}
+                onClick={() => void onForceCloudSync()}
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                  darkMode
+                    ? 'bg-slate-900/70 hover:bg-white/10 text-slate-200 border-white/15'
+                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+                }`}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+                <span>{cloudSyncStatus === 'error' ? 'Retry Sync' : 'Sync Now'}</span>
+              </button>
+            )}
+
+            {onSignOut && (
+              <button
+                type="button"
+                disabled={isSigningOut}
+                onClick={() => {
+                  if (isGuestSession && (workspaceCount > 0 || folderCount > 1) && !confirmGuestSignOut) {
+                    setConfirmGuestSignOut(true);
+                    return;
+                  }
+                  setConfirmGuestSignOut(false);
+                  void onSignOut();
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-60 ${
+                  confirmGuestSignOut
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500'
+                    : darkMode
+                    ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/30'
+                    : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                }`}
+              >
+                {isSigningOut ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving &amp; Signing Out...</span>
+                  </>
+                ) : confirmGuestSignOut ? (
+                  <span>Confirm Wipe &amp; Sign Out</span>
+                ) : (
+                  <span>Sign Out &amp; Disconnect</span>
+                )}
+              </button>
+            )}
+          </div>
         </div>
-        {onSignOut && (
-          <button
-            type="button"
-            onClick={onSignOut}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 shadow-sm cursor-pointer ${
-              darkMode
-                ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/30'
-                : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
-            }`}
-          >
-            <span>Sign Out & Disconnect</span>
-          </button>
+
+        {confirmGuestSignOut && (
+          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-rose-300">
+            <span>
+              You are in Guest mode with {workspaceCount} {workspaceCount === 1 ? 'workspace' : 'workspaces'}. Signing out clears local browser data — click &ldquo;Connect Google Mail to Sync&rdquo; first to keep them.
+            </span>
+            <button
+              type="button"
+              onClick={() => setConfirmGuestSignOut(false)}
+              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold shrink-0 cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {googleConnectError && (
+          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs font-mono text-rose-300 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+            <span>{googleConnectError}</span>
+          </div>
         )}
       </div>
 

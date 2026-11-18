@@ -2064,3 +2064,23 @@ html:not(.lenis) {
     opacity: 0 !important;
   }
 }
+
+/* Dashboard Card Items: optimized GPU rearranging & blur-out exit compositing */
+.dashboard-item-motion {
+  transform-origin: center top;
+  will-change: transform;
+}
+
+.dashboard-item-motion[style*="position: absolute"] {
+  pointer-events: none !important;
+  will-change: transform, opacity, filter;
+  z-index: 0 !important;
+}
+
+/* Suppress nested backdrop-filter while an item is blurring out to avoid double-pass offscreen rasterization */
+.dashboard-item-motion[style*="position: absolute"] .liquid-glass-tile {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  transition: none !important;
+}
+

@@ -31,7 +31,7 @@ interface AuthOnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete: (authData?: { email: string; apiKey: string; uid?: string; displayName?: string; photoURL?: string; isGuest?: boolean }) => void;
-  onGoogleAuthenticated?: (user: User) => Promise<{ syncedGeminiKey?: string } | void>;
+  onGoogleAuthenticated?: (user: User) => Promise<{ syncedGeminiKey?: string; error?: string } | void>;
   activePalette: ColorPalette;
   darkMode: boolean;
 }
@@ -78,6 +78,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
   const [guestNameInput, setGuestNameInput] = useState('');
   const [guestNameError, setGuestNameError] = useState<string | null>(null);
   const [cloudRestoredKey, setCloudRestoredKey] = useState<string | null>(null);
+  const [cloudSyncNotice, setCloudSyncNotice] = useState<string | null>(null);
 
   // Gemini API Key state
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -138,6 +139,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
         setKeyStatus(null);
       }
       setCloudRestoredKey(null);
+      setCloudSyncNotice(null);
     }
   }, [isOpen]);
 
@@ -171,9 +173,13 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
       );
 
       let syncedKey = '';
+      setCloudSyncNotice(null);
       if (onGoogleAuthenticated) {
         const hydration = await onGoogleAuthenticated(user);
         syncedKey = hydration?.syncedGeminiKey?.trim() || '';
+        if (hydration?.error) {
+          setCloudSyncNotice(hydration.error);
+        }
       }
       if (!syncedKey) {
         syncedKey = getRememberedGoogleApiKey(user.uid);
@@ -588,6 +594,13 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
                 </div>
               ) : null}
             </div>
+
+            {cloudSyncNotice && (
+              <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/35 text-xs font-mono text-amber-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                <span>Cloud sync warning: {cloudSyncNotice}</span>
+              </div>
+            )}
 
             <div className="space-y-1">
               <h3 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">

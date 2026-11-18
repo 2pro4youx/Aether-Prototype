@@ -130,6 +130,10 @@ export interface NotebookSource {
   words: number;
   selected: boolean;
   dateAdded: string;
+  lastInteractedAt?: number;
+  isExpired?: boolean;
+  expiredAt?: number;
+  expiredReason?: 'inactivity' | 'manual';
   dataUrl?: string;
   mimeType?: string;
   isImage?: boolean;

@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   FileSpreadsheet,
   Plus,
   Upload,
-  Trash2,
   X,
   Loader2,
   Calendar,
@@ -13,6 +13,12 @@ import {
 import { ExamScheduleEntry, ColorPalette } from '../../types';
 import { DashboardModal } from './DashboardModal';
 import { decodeExamScheduleImage } from '../../utils/geminiClient';
+import {
+  CARD_ITEM_INITIAL,
+  CARD_ITEM_ANIMATE,
+  CARD_ITEM_EXIT,
+  CARD_ITEM_TRANSITION,
+} from './cardItemMotion';
 
 interface ExamScheduleCardProps {
   exams: ExamScheduleEntry[];
@@ -372,7 +378,7 @@ export const ExamScheduleCard: React.FC<ExamScheduleCardProps> = ({
                   darkMode ? 'text-slate-300' : 'text-slate-700'
                 }`}
               >
-                Exam Date
+                Exam Date <span className="opacity-60">(Optional)</span>
               </label>
               <input
                 type="date"
@@ -391,13 +397,13 @@ export const ExamScheduleCard: React.FC<ExamScheduleCardProps> = ({
                   darkMode ? 'text-slate-300' : 'text-slate-700'
                 }`}
               >
-                Time Window
+                Time Window <span className="opacity-60">(Optional)</span>
               </label>
               <input
                 type="text"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                placeholder="09:00 - 12:00"
+                placeholder="Optional (e.g. 09:00 - 12:00)"
                 className={`w-full px-3 py-2 rounded-xl text-xs border focus:outline-none ${
                   darkMode
                     ? 'bg-slate-950 border-white/10 text-slate-100 placeholder-slate-500'
@@ -471,14 +477,21 @@ export const ExamScheduleCard: React.FC<ExamScheduleCardProps> = ({
         </form>
       </DashboardModal>
 
-      <div className="space-y-2.5 flex-1 min-h-0 overflow-y-auto pr-1">
-        {visibleExams.map((ex) => {
-          const daysLeft = getDaysUntilExam(ex.date);
-          return (
-            <div
-              key={ex.id}
-              className="group/item p-3.5 rounded-xl border transition liquid-glass-tile flex items-start justify-between gap-3"
-            >
+      <div className="flex flex-col gap-2.5 relative flex-1 min-h-0 overflow-y-auto pr-1">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {visibleExams.map((ex) => {
+            const daysLeft = getDaysUntilExam(ex.date);
+            return (
+              <motion.div
+                key={ex.id}
+                layout="position"
+                initial={CARD_ITEM_INITIAL}
+                animate={CARD_ITEM_ANIMATE}
+                exit={CARD_ITEM_EXIT}
+                transition={CARD_ITEM_TRANSITION}
+                className="dashboard-item-motion"
+              >
+                <div className="group/item p-3.5 rounded-xl border transition liquid-glass-tile flex items-start justify-between gap-3">
               <div className="space-y-1 min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-bold truncate" style={{ color: activePalette.primary }}>
@@ -535,15 +548,15 @@ export const ExamScheduleCard: React.FC<ExamScheduleCardProps> = ({
                 <button
                   type="button"
                   onClick={() => handleDeleteExam(ex.id)}
-                  className={`p-1 rounded-lg opacity-0 pointer-events-none group-hover/item:opacity-100 group-hover/item:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
+                  className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
                     darkMode
-                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
-                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                      ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
                   }`}
                   title="Remove exam"
                   aria-label="Remove exam"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
@@ -560,8 +573,10 @@ export const ExamScheduleCard: React.FC<ExamScheduleCardProps> = ({
                 </button>
               </div>
             </div>
-          );
-        })}
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
 
         {visibleExams.length === 0 && !isDecoding && (
           <div className="flex flex-col items-center justify-center text-center py-8 px-4 gap-3">

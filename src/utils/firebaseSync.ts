@@ -6,10 +6,12 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
+  query,
   serverTimestamp,
   setDoc,
   Unsubscribe,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
@@ -92,6 +94,36 @@ export interface LoadedCloudState {
 }
 
 const VALID_ID_REGEX = /^[a-zA-Z0-9_\-]+$/;
+const textEncoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+
+function utf8ByteLength(str: string): number {
+  if (textEncoder) {
+    return textEncoder.encode(str).length;
+  }
+  return str.length * 2;
+}
+
+export function formatCloudSyncError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err || 'Unknown sync error');
+  try {
+    const parsed = JSON.parse(raw) as { error?: string; operationType?: string; path?: string };
+    if (parsed?.error) {
+      if (parsed.error.includes('permission-denied') || parsed.error.includes('Missing or insufficient permissions')) {
+        return `Firestore permission denied on ${parsed.path || 'user data'}.`;
+      }
+      if (parsed.error.includes('offline')) {
+        return 'Device appears offline — changes will retry when reconnected.';
+      }
+      return parsed.error;
+    }
+  } catch {
+    // Plain error string
+  }
+  if (raw.includes('offline')) {
+    return 'Device appears offline — changes will retry when reconnected.';
+  }
+  return raw.slice(0, 180);
+}
 
 export function sanitizeFirestoreId(raw: string, prefix = 'id'): string {
   const cleaned = String(raw || '')
@@ -103,6 +135,34 @@ export function sanitizeFirestoreId(raw: string, prefix = 'id'): string {
   return `${prefix}-${Date.now()}`;
 }
 
+export const GENERAL_SESSION_KEY = 'general_session';
+
+export function migrateAnalyticsRecord(record: unknown): Record<string, number> {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return {};
+  const result: Record<string, number> = {};
+  for (const [rawKey, rawVal] of Object.entries(record as Record<string, unknown>)) {
+    const num = typeof rawVal === 'number' && Number.isFinite(rawVal) ? rawVal : 0;
+    const safeKey =
+      rawKey === '__general__'
+        ? GENERAL_SESSION_KEY
+        : rawKey.startsWith('__') && rawKey.endsWith('__')
+        ? rawKey.replace(/^_+/, '').replace(/_+$/, '') || 'field'
+        : rawKey || 'empty_key';
+    result[safeKey] = (result[safeKey] || 0) + num;
+  }
+  return result;
+}
+
+function sanitizeFirestoreObjectKey(key: string): string {
+  if (!key) return 'empty_key';
+  if (key === '__general__') return GENERAL_SESSION_KEY;
+  if (key.startsWith('__') && key.endsWith('__')) {
+    const trimmed = key.replace(/^_+/, '').replace(/_+$/, '');
+    return trimmed || 'reserved_field';
+  }
+  return key;
+}
+
 export function stripUndefined<T>(value: T): T {
   if (Array.isArray(value)) {
     return value.map((item) => stripUndefined(item)) as unknown as T;
@@ -111,7 +171,17 @@ export function stripUndefined<T>(value: T): T {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       if (v !== undefined) {
-        out[k] = stripUndefined(v);
+        const safeKey = sanitizeFirestoreObjectKey(k);
+        const sanitizedVal = stripUndefined(v);
+        if (
+          safeKey !== k &&
+          typeof out[safeKey] === 'number' &&
+          typeof sanitizedVal === 'number'
+        ) {
+          out[safeKey] = (out[safeKey] as number) + sanitizedVal;
+        } else if (!(safeKey in out) || safeKey === k) {
+          out[safeKey] = sanitizedVal;
+        }
       }
     }
     return out as T;
@@ -124,6 +194,18 @@ function clampString(val: unknown, maxLen: number, fallback = ''): string {
   return str.slice(0, maxLen);
 }
 
+function trimAttachmentDataUrls<T extends { dataUrl?: string }>(
+  attachments: T[] | undefined,
+  maxDataUrlLen: number
+): T[] | undefined {
+  if (!Array.isArray(attachments)) return attachments;
+  return attachments.map((att) =>
+    att?.dataUrl && att.dataUrl.length > maxDataUrlLen
+      ? { ...att, dataUrl: undefined }
+      : att
+  );
+}
+
 export function serializeWorkspaceForFirestore(uid: string, ws: Workspace) {
   const safeId = sanitizeFirestoreId(ws.id, 'ws');
   const safeName = clampString(ws.name?.trim() || 'Untitled Workspace', 200, 'Untitled Workspace');
@@ -131,8 +213,8 @@ export function serializeWorkspaceForFirestore(uid: string, ws: Workspace) {
 
   let sources = Array.isArray(ws.sources) ? stripUndefined(ws.sources).slice(0, 200) : [];
   let notebooks = Array.isArray(ws.notebooks) ? stripUndefined(ws.notebooks).slice(0, 50) : [];
-  const conversations = Array.isArray(ws.conversations) ? stripUndefined(ws.conversations).slice(0, 100) : [];
-  const chatMessages = Array.isArray(ws.chatMessages) ? stripUndefined(ws.chatMessages).slice(0, 300) : [];
+  let conversations = Array.isArray(ws.conversations) ? stripUndefined(ws.conversations).slice(0, 100) : [];
+  let chatMessages = Array.isArray(ws.chatMessages) ? stripUndefined(ws.chatMessages).slice(-300) : [];
 
   const buildPayload = () => {
     const base: Record<string, unknown> = {
@@ -167,27 +249,99 @@ export function serializeWorkspaceForFirestore(uid: string, ws: Workspace) {
   };
 
   let payload = buildPayload();
-  // Guard Firestore 1MB document limit by trimming huge inline base64 dataUrl blobs if needed
-  if (JSON.stringify(payload).length > 820_000) {
-    sources = sources.map((s) =>
-      s.dataUrl && s.dataUrl.length > 100_000 ? { ...s, dataUrl: undefined } : s
+  // Stage 1: Trim large inline binary dataUrl blobs when approaching Firestore's 1 MiB document limit
+  if (utf8ByteLength(JSON.stringify(payload)) > 800_000) {
+    sources = stripUndefined(
+      sources.map((s) =>
+        s.dataUrl && s.dataUrl.length > 50_000 ? { ...s, dataUrl: undefined } : s
+      )
     );
-    sources = stripUndefined(sources);
-    notebooks = notebooks.map((nb) => ({
-      ...nb,
-      sections: (nb.sections || []).map((sec) => ({
-        ...sec,
-        pages: (sec.pages || []).map((page) => ({
-          ...page,
-          blocks: (page.blocks || []).map((b) => ({
-            ...b,
-            imageUrl: b.imageUrl && b.imageUrl.length > 150_000 ? undefined : b.imageUrl,
-            sideImageUrl: b.sideImageUrl && b.sideImageUrl.length > 150_000 ? undefined : b.sideImageUrl,
+    chatMessages = stripUndefined(
+      chatMessages.map((msg) => ({
+        ...msg,
+        attachments: trimAttachmentDataUrls(msg.attachments, 35_000),
+      }))
+    );
+    conversations = stripUndefined(
+      conversations.map((conv) => ({
+        ...conv,
+        messages: (conv.messages || []).map((msg) => ({
+          ...msg,
+          attachments: trimAttachmentDataUrls(msg.attachments, 35_000),
+        })),
+      }))
+    );
+    notebooks = stripUndefined(
+      notebooks.map((nb) => ({
+        ...nb,
+        sections: (nb.sections || []).map((sec) => ({
+          ...sec,
+          pages: (sec.pages || []).map((page) => ({
+            ...page,
+            blocks: (page.blocks || []).map((b) => ({
+              ...b,
+              imageUrl: b.imageUrl && b.imageUrl.length > 100_000 ? undefined : b.imageUrl,
+              sideImageUrl: b.sideImageUrl && b.sideImageUrl.length > 100_000 ? undefined : b.sideImageUrl,
+            })),
           })),
         })),
-      })),
+      }))
+    );
+    payload = buildPayload();
+  }
+
+  // Stage 2: If many medium dataUrls still keep payload > 850KB, strip remaining base64 blobs
+  if (utf8ByteLength(JSON.stringify(payload)) > 850_000) {
+    sources = stripUndefined(
+      sources.map((s) => (s.dataUrl ? { ...s, dataUrl: undefined } : s))
+    );
+    chatMessages = stripUndefined(
+      chatMessages.map((msg) => ({
+        ...msg,
+        attachments: trimAttachmentDataUrls(msg.attachments, 0),
+      }))
+    );
+    conversations = stripUndefined(
+      conversations.map((conv) => ({
+        ...conv,
+        messages: (conv.messages || []).map((msg) => ({
+          ...msg,
+          attachments: trimAttachmentDataUrls(msg.attachments, 0),
+        })),
+      }))
+    );
+    notebooks = stripUndefined(
+      notebooks.map((nb) => ({
+        ...nb,
+        sections: (nb.sections || []).map((sec) => ({
+          ...sec,
+          pages: (sec.pages || []).map((page) => ({
+            ...page,
+            blocks: (page.blocks || []).map((b) => ({
+              ...b,
+              imageUrl: b.imageUrl?.startsWith('data:') ? undefined : b.imageUrl,
+              sideImageUrl: b.sideImageUrl?.startsWith('data:') ? undefined : b.sideImageUrl,
+            })),
+          })),
+        })),
+      }))
+    );
+    payload = buildPayload();
+  }
+
+  // Stage 3: If pure text/history still exceeds 880KB, clamp verbose source fullContent & oldest messages
+  if (utf8ByteLength(JSON.stringify(payload)) > 880_000) {
+    sources = stripUndefined(
+      sources.map((s) => ({
+        ...s,
+        fullContent: typeof s.fullContent === 'string' ? s.fullContent.slice(0, 12_000) : s.fullContent,
+      }))
+    );
+    chatMessages = chatMessages.slice(-120);
+    conversations = conversations.slice(0, 50).map((conv) => ({
+      ...conv,
+      messages: (conv.messages || []).slice(-80),
     }));
-    notebooks = stripUndefined(notebooks);
     payload = buildPayload();
   }
 
@@ -271,14 +425,22 @@ export async function loadUserCloudData(
 
   let wsSnap;
   try {
-    wsSnap = await getDocs(collection(db, 'users', user.uid, 'workspaces'));
+    const wsQuery = query(
+      collection(db, 'users', user.uid, 'workspaces'),
+      where('uid', '==', user.uid)
+    );
+    wsSnap = await getDocs(wsQuery);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, workspacesPath);
   }
 
   let stateSnap;
   try {
-    stateSnap = await getDocs(collection(db, 'users', user.uid, 'appState'));
+    const stateQuery = query(
+      collection(db, 'users', user.uid, 'appState'),
+      where('uid', '==', user.uid)
+    );
+    stateSnap = await getDocs(stateQuery);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, appStatePath);
   }
@@ -304,11 +466,11 @@ export async function loadUserCloudData(
   stateSnap.forEach((docSnap) => {
     const key = docSnap.id as AppStateKey;
     const raw = docSnap.data() as Record<string, unknown>;
-    const payload = (raw.payload || {}) as Record<string, unknown>;
+    const payload = stripUndefined((raw.payload || {}) as Record<string, unknown>);
     knownStateKeys.add(key);
 
     if (writtenHashes) {
-      writtenHashes.set(`state:${key}`, JSON.stringify(stripUndefined(payload)));
+      writtenHashes.set(`state:${key}`, JSON.stringify(payload));
     }
 
     if (key === 'dashboard') {
@@ -347,9 +509,6 @@ export async function upsertWorkspaceDoc(
   if (writtenHashes && writtenHashes.get(`ws:${safeId}`) === hash) {
     return;
   }
-  if (writtenHashes) {
-    writtenHashes.set(`ws:${safeId}`, hash);
-  }
 
   const path = `users/${uid}/workspaces/${safeId}`;
   const docRef = doc(db, 'users', uid, 'workspaces', safeId);
@@ -361,6 +520,9 @@ export async function upsertWorkspaceDoc(
         ...mutableFields,
         updatedAt: serverTimestamp(),
       });
+      if (writtenHashes) {
+        writtenHashes.set(`ws:${safeId}`, hash);
+      }
       return;
     } catch (error: unknown) {
       const code = (error as { code?: string })?.code;
@@ -377,6 +539,9 @@ export async function upsertWorkspaceDoc(
       updatedAt: serverTimestamp(),
     });
     knownWorkspaceIds.add(safeId);
+    if (writtenHashes) {
+      writtenHashes.set(`ws:${safeId}`, hash);
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
@@ -406,13 +571,27 @@ export async function upsertAppStateDoc(
   knownStateKeys: Set<AppStateKey>,
   writtenHashes?: Map<string, string>
 ): Promise<void> {
-  const sanitizedPayload = stripUndefined(rawPayload) as Record<string, unknown>;
-  const hash = JSON.stringify(sanitizedPayload);
+  let sanitizedPayload = stripUndefined(rawPayload) as Record<string, unknown>;
+  let hash = JSON.stringify(sanitizedPayload);
+
+  if (utf8ByteLength(hash) > 850_000) {
+    if (stateKey === 'analytics' && Array.isArray(sanitizedPayload.auditLogs)) {
+      sanitizedPayload = {
+        ...sanitizedPayload,
+        auditLogs: (sanitizedPayload.auditLogs as unknown[]).slice(0, 40),
+      };
+      hash = JSON.stringify(sanitizedPayload);
+    } else if (stateKey === 'floatingChat' && Array.isArray(sanitizedPayload.messages)) {
+      sanitizedPayload = {
+        ...sanitizedPayload,
+        messages: (sanitizedPayload.messages as unknown[]).slice(-60),
+      };
+      hash = JSON.stringify(sanitizedPayload);
+    }
+  }
+
   if (writtenHashes && writtenHashes.get(`state:${stateKey}`) === hash) {
     return;
-  }
-  if (writtenHashes) {
-    writtenHashes.set(`state:${stateKey}`, hash);
   }
 
   const path = `users/${uid}/appState/${stateKey}`;
@@ -424,6 +603,9 @@ export async function upsertAppStateDoc(
         payload: sanitizedPayload,
         updatedAt: serverTimestamp(),
       });
+      if (writtenHashes) {
+        writtenHashes.set(`state:${stateKey}`, hash);
+      }
       return;
     } catch (error: unknown) {
       const code = (error as { code?: string })?.code;
@@ -442,6 +624,9 @@ export async function upsertAppStateDoc(
       updatedAt: serverTimestamp(),
     });
     knownStateKeys.add(stateKey);
+    if (writtenHashes) {
+      writtenHashes.set(`state:${stateKey}`, hash);
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
@@ -458,13 +643,18 @@ export function subscribeToUserCloudData(
     onAnalyticsRemoteChange: (data: AnalyticsStatePayload) => void;
     onPreferencesRemoteChange: (data: PreferencesStatePayload) => void;
     onFloatingChatRemoteChange: (data: FloatingChatStatePayload) => void;
+    onError?: (err: Error) => void;
   }
 ): Unsubscribe {
   const wsPath = `users/${uid}/workspaces`;
   const statePath = `users/${uid}/appState`;
 
-  const unsubWorkspaces = onSnapshot(
+  const wsQuery = query(
     collection(db, 'users', uid, 'workspaces'),
+    where('uid', '==', uid)
+  );
+  const unsubWorkspaces = onSnapshot(
+    wsQuery,
     (snapshot) => {
       if (snapshot.metadata.hasPendingWrites) return;
       let hasActualRemoteDelta = false;
@@ -497,12 +687,20 @@ export function subscribeToUserCloudData(
       }
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, wsPath);
+      try {
+        handleFirestoreError(error, OperationType.LIST, wsPath);
+      } catch (wrapped) {
+        callbacks.onError?.(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
+      }
     }
   );
 
-  const unsubState = onSnapshot(
+  const stateQuery = query(
     collection(db, 'users', uid, 'appState'),
+    where('uid', '==', uid)
+  );
+  const unsubState = onSnapshot(
+    stateQuery,
     (snapshot) => {
       if (snapshot.metadata.hasPendingWrites) return;
 
@@ -529,7 +727,11 @@ export function subscribeToUserCloudData(
       });
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, statePath);
+      try {
+        handleFirestoreError(error, OperationType.LIST, statePath);
+      } catch (wrapped) {
+        callbacks.onError?.(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
+      }
     }
   );
 

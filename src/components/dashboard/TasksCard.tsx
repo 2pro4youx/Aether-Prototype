@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, CheckCircle2, Circle, Trash2, Clock, Pencil } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Plus, CheckCircle2, Circle, X, Clock, Pencil } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { TaskItem, ColorPalette } from '../../types';
 import { DashboardModal } from './DashboardModal';
+import {
+  CARD_ITEM_INITIAL,
+  CARD_ITEM_ANIMATE,
+  CARD_ITEM_EXIT,
+  CARD_ITEM_TRANSITION,
+} from './cardItemMotion';
 
 interface TasksCardProps {
   tasks: TaskItem[];
@@ -338,21 +345,30 @@ export const TasksCard: React.FC<TasksCardProps> = ({
       </div>
 
       {/* Task List */}
-      <div className="space-y-2.5 flex-1 min-h-0 overflow-y-auto pr-1">
-        {filteredTasks.map((task) => {
-          const countdown = task.dueAt
-            ? formatTimeRemaining(task.dueAt, nowMs, task.completed)
-            : { label: 'No time until completion', tone: 'normal' as const };
+      <div className="flex flex-col gap-2.5 relative flex-1 min-h-0 overflow-y-auto pr-1">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {filteredTasks.map((task) => {
+            const countdown = task.dueAt
+              ? formatTimeRemaining(task.dueAt, nowMs, task.completed)
+              : { label: 'No time until completion', tone: 'normal' as const };
 
-          return (
-            <div
-              key={task.id}
-              onClick={() => handleTaskCheck(task.id, task.completed)}
-              className={`group/item flex items-start justify-between gap-3 p-3.5 rounded-xl border transition cursor-pointer select-none liquid-glass-tile ${
-                task.completed ? 'opacity-65' : ''
-              }`}
-              style={!task.completed ? { borderColor: `${activePalette.primary}25` } : {}}
-            >
+            return (
+              <motion.div
+                key={task.id}
+                layout="position"
+                initial={CARD_ITEM_INITIAL}
+                animate={CARD_ITEM_ANIMATE}
+                exit={CARD_ITEM_EXIT}
+                transition={CARD_ITEM_TRANSITION}
+                className="dashboard-item-motion"
+              >
+                <div
+                  onClick={() => handleTaskCheck(task.id, task.completed)}
+                  className={`group/item flex items-start justify-between gap-3 p-3.5 rounded-xl border transition cursor-pointer select-none liquid-glass-tile ${
+                    task.completed ? 'opacity-65' : ''
+                  }`}
+                  style={!task.completed ? { borderColor: `${activePalette.primary}25` } : {}}
+                >
               <div className="flex items-start gap-3 flex-1 min-w-0">
                 <button
                   type="button"
@@ -430,15 +446,15 @@ export const TasksCard: React.FC<TasksCardProps> = ({
                     e.stopPropagation();
                     onDeleteTask(task.id);
                   }}
-                  className={`p-1 rounded-lg opacity-0 pointer-events-none group-hover/item:opacity-100 group-hover/item:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
+                  className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
                     darkMode
-                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
-                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                      ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
                   }`}
-                  title="Delete task"
-                  aria-label="Delete task"
+                  title="Remove task"
+                  aria-label="Remove task"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
@@ -458,8 +474,10 @@ export const TasksCard: React.FC<TasksCardProps> = ({
                 </button>
               </div>
             </div>
-          );
-        })}
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
 
         {filteredTasks.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center py-10 px-4 gap-3">
@@ -585,7 +603,9 @@ export const TasksCard: React.FC<TasksCardProps> = ({
                 }`}
               >
                 <Clock className="w-3.5 h-3.5" style={{ color: activePalette.primary }} />
-                <span>Time until completion</span>
+                <span>
+                  Time until completion <span className="opacity-60">(Optional)</span>
+                </span>
               </span>
               <button
                 type="button"

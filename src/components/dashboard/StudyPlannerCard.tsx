@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
-import { Clock, Plus, Trash2, Pencil, ArrowUpRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Clock, Plus, X, Pencil, ArrowUpRight } from 'lucide-react';
 import { PlannerEntry, ColorPalette } from '../../types';
 import { DashboardModal } from './DashboardModal';
+import {
+  CARD_ITEM_INITIAL,
+  CARD_ITEM_ANIMATE,
+  CARD_ITEM_EXIT,
+  CARD_ITEM_TRANSITION,
+} from './cardItemMotion';
 
 interface StudyPlannerCardProps {
   planners: PlannerEntry[];
@@ -71,8 +78,8 @@ export const StudyPlannerCard: React.FC<StudyPlannerCardProps> = ({
     setEditingPlannerId(p.id);
     setTitle(p.title);
     setSubject(p.subject);
-    setTimeSlot(p.timeSlot);
-    setDate(p.date);
+    setTimeSlot(p.timeSlot === 'Flexible' ? '' : p.timeSlot);
+    setDate(p.date === 'Ongoing' ? '' : p.date);
     setMilestone(p.milestone);
     setShowAdd(true);
   };
@@ -225,13 +232,13 @@ export const StudyPlannerCard: React.FC<StudyPlannerCardProps> = ({
                   darkMode ? 'text-slate-300' : 'text-slate-700'
                 }`}
               >
-                Time Slot
+                Time Slot <span className="opacity-60">(Optional)</span>
               </label>
               <input
                 type="text"
                 value={timeSlot}
                 onChange={(e) => setTimeSlot(e.target.value)}
-                placeholder="09:00 - 11:00"
+                placeholder="Optional (e.g. 09:00 - 11:00)"
                 className={`w-full px-3 py-2 rounded-xl text-xs border focus:outline-none ${
                   darkMode
                     ? 'bg-slate-950 border-white/10 text-slate-100 placeholder-slate-500'
@@ -245,13 +252,13 @@ export const StudyPlannerCard: React.FC<StudyPlannerCardProps> = ({
                   darkMode ? 'text-slate-300' : 'text-slate-700'
                 }`}
               >
-                Target Date
+                Target Date <span className="opacity-60">(Optional)</span>
               </label>
               <input
                 type="text"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                placeholder="e.g. Nov 18"
+                placeholder="Optional (e.g. Nov 18)"
                 className={`w-full px-3 py-2 rounded-xl text-xs border focus:outline-none ${
                   darkMode
                     ? 'bg-slate-950 border-white/10 text-slate-100 placeholder-slate-500'
@@ -305,12 +312,19 @@ export const StudyPlannerCard: React.FC<StudyPlannerCardProps> = ({
         </form>
       </DashboardModal>
 
-      <div className="space-y-3 flex-1 min-h-0 overflow-y-auto pr-1">
-        {filtered.map((p) => (
-          <div
-            key={p.id}
-            className="p-4 rounded-xl border space-y-2.5 transition group/item liquid-glass-tile"
-          >
+      <div className="flex flex-col gap-3 relative flex-1 min-h-0 overflow-y-auto pr-1">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {filtered.map((p) => (
+            <motion.div
+              key={p.id}
+              layout="position"
+              initial={CARD_ITEM_INITIAL}
+              animate={CARD_ITEM_ANIMATE}
+              exit={CARD_ITEM_EXIT}
+              transition={CARD_ITEM_TRANSITION}
+              className="dashboard-item-motion"
+            >
+              <div className="p-4 rounded-xl border space-y-2.5 transition group/item liquid-glass-tile">
             <div className="flex items-start justify-between gap-2">
               <div className="space-y-0.5 min-w-0">
                 <h4
@@ -335,15 +349,15 @@ export const StudyPlannerCard: React.FC<StudyPlannerCardProps> = ({
                 <button
                   type="button"
                   onClick={() => onDeletePlanner(p.id)}
-                  className={`p-1 rounded-lg opacity-0 pointer-events-none group-hover/item:opacity-100 group-hover/item:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto transition ${
+                  className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
                     darkMode
-                      ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'
-                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                      ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
                   }`}
-                  title="Delete study plan"
-                  aria-label="Delete study plan"
+                  title="Remove study plan"
+                  aria-label="Remove study plan"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
@@ -397,7 +411,9 @@ export const StudyPlannerCard: React.FC<StudyPlannerCardProps> = ({
               <span className="font-mono tabular-nums">{p.date}</span>
             </div>
           </div>
-        ))}
+            </motion.div>
+          ))}
+        </AnimatePresence>
 
         {filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center py-10 px-4 gap-3">

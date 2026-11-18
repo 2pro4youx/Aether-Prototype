@@ -186,22 +186,12 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       {/* Top Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="pr-14 md:pr-0">
-          <div
-            className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
-            style={{ color: activePalette.primary }}
-          >
-            <span
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: activePalette.primary }}
-            />
-            <span>Curated Knowledge Archive · {activePalette.name}</span>
-          </div>
           <h1
-            className={`text-3xl sm:text-4xl font-extrabold tracking-tight mt-1 ${
+            className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${
               darkMode ? 'text-slate-100' : 'text-slate-900'
             }`}
           >
-            My Study Library
+            Library
           </h1>
           <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
             Categorized research repositories, synchronized workspaces, OneNote canvases, and planners.
