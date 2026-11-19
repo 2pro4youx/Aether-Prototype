@@ -900,7 +900,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Theme: Dark or Light Mode */}
-      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4 smooth-scroll-contain">
+      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 md:gap-4">
           <div className="space-y-0.5">
             <h3
@@ -964,7 +964,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Curated Color Palettes + Make Your Own Custom Theme */}
-      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4 smooth-scroll-contain">
+      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4">
         <div className="flex flex-row items-center justify-between gap-2">
           <div className="space-y-0.5 min-w-0">
             <h3
@@ -1456,7 +1456,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       />
 
       {/* Smooth Scrolling Support (Momentum & Inertia) */}
-      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4 smooth-scroll-contain">
+      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4">
         <div className="flex flex-row items-center justify-between gap-3">
           <div className="space-y-0.5 min-w-0">
             <h3
@@ -1580,7 +1580,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {activeSettingsTab === 'gemini-model' && (
       <div className="space-y-3.5 md:space-y-8 onenote-page-content-reveal">
       {/* Gemini AI Model Changer & Thinking Mode */}
-      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-3.5 md:gap-5 smooth-scroll-contain">
+      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-3.5 md:gap-5">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 md:gap-3">
           <div className="space-y-0.5">
             <h3

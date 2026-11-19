@@ -870,9 +870,12 @@ export default function App() {
     return saved !== null ? JSON.parse(saved) : true;
   });
 
+  const lastLocalPaletteChangeAtRef = useRef<number>(0);
+
   const handleToggleDarkMode = useCallback(
     (newDark: boolean) => {
       if (newDark === darkMode) return;
+      lastLocalPaletteChangeAtRef.current = Date.now();
 
       // Flowy blur veil when toggling light/dark theme (theme swaps right at the 20% frost crest)
       setTransitionNonce((c) => c + 1);
@@ -917,6 +920,7 @@ export default function App() {
 
   const handleSelectPalette = useCallback((id: ColorPaletteId) => {
     if (id === activePaletteId) return;
+    lastLocalPaletteChangeAtRef.current = Date.now();
     const nextPalette =
       id === 'custom'
         ? buildCustomPalette(customPaletteConfig)
@@ -945,8 +949,14 @@ export default function App() {
     }
   }, [activePaletteId, customPaletteConfig]);
 
+  const handleLanderPaletteChange = useCallback((id: ColorPaletteId) => {
+    lastLocalPaletteChangeAtRef.current = Date.now();
+    setActivePaletteId(id);
+  }, []);
+
   const handleUpdateCustomPalette = useCallback(
     (updates: Partial<CustomPaletteConfig>, activate: boolean = true) => {
+      lastLocalPaletteChangeAtRef.current = Date.now();
       setCustomPaletteConfig((prev) => ({ ...prev, ...updates }));
       if (activate && activePaletteId !== 'custom') {
         setActivePaletteId('custom');
@@ -1259,9 +1269,12 @@ export default function App() {
     );
 
     const hex = activePalette.primary.replace('#', '');
-    const r = parseInt(hex.substring(0, 2), 16) || 245;
-    const g = parseInt(hex.substring(2, 4), 16) || 158;
-    const b = parseInt(hex.substring(4, 6), 16) || 11;
+    const pr = parseInt(hex.substring(0, 2), 16);
+    const pg = parseInt(hex.substring(2, 4), 16);
+    const pb = parseInt(hex.substring(4, 6), 16);
+    const r = Number.isNaN(pr) ? 245 : pr;
+    const g = Number.isNaN(pg) ? 158 : pg;
+    const b = Number.isNaN(pb) ? 11 : pb;
     const shadowColor = activePalette.id === 'black-night'
       ? 'rgba(0, 0, 0, 0.98)'
       : `rgba(${r}, ${g}, ${b}, ${darkMode ? 0.35 : 0.2})`;
@@ -1408,21 +1421,29 @@ export default function App() {
       clickedCardRef.current = null;
     };
 
+    const resolveTargetElement = (t: EventTarget | null): HTMLElement | null => {
+      if (!t) return null;
+      if (t instanceof HTMLElement) return t;
+      if (t instanceof Element) return t as unknown as HTMLElement;
+      return (t as Node).parentElement || null;
+    };
+
     const handlePointerMove = (e: MouseEvent | PointerEvent) => {
-      if (activeTabRef.current === 'lander') {
+      if ('pointerType' in e && e.pointerType === 'touch') {
         return;
       }
 
+      const isLander = activeTabRef.current === 'lander';
+      const targetElem = resolveTargetElement(e.target);
+
       // Windows Start Menu hit animation: maintain & transfer pressed state as user hovers while holding left click
-      if ((e.buttons & 1) && !isRightClickHeldRef.current) {
+      if (!isLander && (e.buttons & 1) && !isRightClickHeldRef.current) {
         const isInteractiveInput = Boolean(
-          (e.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable="true"]')
+          targetElem?.closest?.('input, textarea, [contenteditable="true"]')
         );
         const tileUnderCursor = isInteractiveInput
           ? null
-          : ((e.target as HTMLElement | null)?.closest?.(
-              '.liquid-glass-tile'
-            ) as HTMLElement | null);
+          : (targetElem?.closest?.('.liquid-glass-tile') as HTMLElement | null);
 
         if (tileUnderCursor !== pressedTileRef.current) {
           if (pressedTileRef.current) {
@@ -1444,7 +1465,7 @@ export default function App() {
       }
 
       // 1. Right-Click Drag Opacity Adjustment (Up = increase, Down = decrease)
-      if (isRightClickHeldRef.current) {
+      if (!isLander && isRightClickHeldRef.current) {
         if (e.buttons !== undefined && !(e.buttons & 2)) {
           finishRightClick(e);
           return;
@@ -1507,7 +1528,7 @@ export default function App() {
           const pos = lastPointerPosRef.current;
           if (!pos) return;
 
-          const targetEl = pos.target as HTMLElement | null;
+          const targetEl = resolveTargetElement(pos.target);
           if (!targetEl) return;
 
           // O(1) single-lookup for closest tile, card, or button under cursor
@@ -1516,12 +1537,9 @@ export default function App() {
           ) as HTMLElement | null;
 
           if (activeHoverTileRef.current && activeHoverTileRef.current !== tile) {
-            if (!tile || !activeHoverTileRef.current.contains(tile)) {
-              activeHoverTileRef.current.style.setProperty('--tilt-x', '0deg');
-              activeHoverTileRef.current.style.setProperty('--tilt-y', '0deg');
-              activeHoverTileRef.current.style.setProperty('--pointer-x', '-999px');
-              activeHoverTileRef.current.style.setProperty('--pointer-y', '-999px');
-            }
+            // Reset only 3D tilt on exit; leave --pointer-x/--pointer-y in place so CSS opacity fades out without streaking to -999px
+            activeHoverTileRef.current.style.setProperty('--tilt-x', '0deg');
+            activeHoverTileRef.current.style.setProperty('--tilt-y', '0deg');
           }
           activeHoverTileRef.current = tile;
 
@@ -1529,7 +1547,7 @@ export default function App() {
             const rect = tile.getBoundingClientRect();
             const x = pos.clientX - rect.left;
             const y = pos.clientY - rect.top;
-            const ratio = Math.max(0, Math.min(1, x / rect.width));
+            const ratio = rect.width > 0 ? Math.max(0, Math.min(1, x / rect.width)) : 0.5;
 
             tile.style.setProperty('--pointer-x', `${Math.round(x)}px`);
             tile.style.setProperty('--pointer-y', `${Math.round(y)}px`);
@@ -1537,7 +1555,8 @@ export default function App() {
 
             // 3D Fluent Tilt Displacement: only takes place when the user is HOLDING left click
             const isLeftClickHeld = Boolean(
-              ((pos.buttons ?? 0) & 1) &&
+              activeTabRef.current !== 'lander' &&
+                ((pos.buttons ?? 0) & 1) &&
                 tile.classList.contains('card-pressed')
             );
 
@@ -1552,15 +1571,8 @@ export default function App() {
               const normX = Math.max(-1, Math.min(1, (x - centerX) / (centerX || 1)));
               const normY = Math.max(-1, Math.min(1, (y - centerY) / (centerY || 1)));
 
-              // 3D tile tilt: 0.5deg
               const maxAngle = 0.5;
-
-              // Cursor at top (normY < 0) -> top lifts up (+Z) -> negative rotateX
-              // Cursor at bottom (normY > 0) -> bottom lifts up (+Z) -> positive rotateX
               const tiltX = Math.round(normY * maxAngle * 1000) / 1000;
-
-              // Cursor at right (normX > 0) -> right lifts up (+Z) -> negative rotateY
-              // Cursor at left (normX < 0) -> left lifts up (+Z) -> positive rotateY
               const tiltY = Math.round(-normX * maxAngle * 1000) / 1000;
 
               tile.style.setProperty('--tilt-x', `${tiltX}deg`);
@@ -1572,13 +1584,24 @@ export default function App() {
 
             // Propagate to outer card if hovering inside an inner sub-tile
             const parentCard = tile.parentElement?.closest?.('.liquid-glass') as HTMLElement | null;
-            activeParentCardRef.current = parentCard && parentCard !== tile ? parentCard : null;
+            const nextParent = parentCard && parentCard !== tile ? parentCard : null;
+            if (activeParentCardRef.current && activeParentCardRef.current !== nextParent) {
+              activeParentCardRef.current.style.setProperty('--tilt-x', '0deg');
+              activeParentCardRef.current.style.setProperty('--tilt-y', '0deg');
+            }
+            activeParentCardRef.current = nextParent;
             if (activeParentCardRef.current) {
               const pRect = activeParentCardRef.current.getBoundingClientRect();
-              activeParentCardRef.current.style.setProperty('--pointer-x', `${Math.round(pos.clientX - pRect.left)}px`);
-              activeParentCardRef.current.style.setProperty('--pointer-y', `${Math.round(pos.clientY - pRect.top)}px`);
+              const px = pos.clientX - pRect.left;
+              const py = pos.clientY - pRect.top;
+              const pRatio = pRect.width > 0 ? Math.max(0, Math.min(1, px / pRect.width)) : 0.5;
+              activeParentCardRef.current.style.setProperty('--pointer-x', `${Math.round(px)}px`);
+              activeParentCardRef.current.style.setProperty('--pointer-y', `${Math.round(py)}px`);
+              activeParentCardRef.current.style.setProperty('--pointer-ratio', `${Math.round(pRatio * 1000) / 1000}`);
             }
-          } else {
+          } else if (activeParentCardRef.current) {
+            activeParentCardRef.current.style.setProperty('--tilt-x', '0deg');
+            activeParentCardRef.current.style.setProperty('--tilt-y', '0deg');
             activeParentCardRef.current = null;
           }
         });
@@ -1637,7 +1660,7 @@ export default function App() {
           const rect = tile.getBoundingClientRect();
           const x = pos.clientX - rect.left;
           const y = pos.clientY - rect.top;
-          const ratio = Math.max(0, Math.min(1, x / rect.width));
+          const ratio = rect.width > 0 ? Math.max(0, Math.min(1, x / rect.width)) : 0.5;
 
           tile.style.setProperty('--pointer-x', `${Math.round(x)}px`);
           tile.style.setProperty('--pointer-y', `${Math.round(y)}px`);
@@ -1731,6 +1754,10 @@ export default function App() {
         activeHoverTileRef.current.style.setProperty('--tilt-x', '0deg');
         activeHoverTileRef.current.style.setProperty('--tilt-y', '0deg');
       }
+      if (activeParentCardRef.current) {
+        activeParentCardRef.current.style.setProperty('--tilt-x', '0deg');
+        activeParentCardRef.current.style.setProperty('--tilt-y', '0deg');
+      }
       document.querySelectorAll<HTMLElement>('.card-pressed').forEach((el) => {
         el.classList.remove('card-pressed');
         el.style.setProperty('--tilt-x', '0deg');
@@ -1739,7 +1766,17 @@ export default function App() {
     };
 
     const handleContextMenu = (e: MouseEvent) => {
-      const targetEl = e.target as HTMLElement | null;
+      const targetEl = resolveTargetElement(e.target);
+      const isInput = targetEl?.closest?.('input, textarea');
+
+      // On Lander, prevent native menu without stopping propagation so PolygonCanvas handles theme-flip contextmenu fallback cleanly
+      if (activeTabRef.current === 'lander') {
+        if (!isInput) {
+          e.preventDefault();
+        }
+        return;
+      }
+
       const isTable = Boolean(
         targetEl?.closest?.('.onenote-table-block, [data-table-block]')
       );
@@ -1750,7 +1787,6 @@ export default function App() {
       }
 
       // Allow right-click on Dashboard cards to reach React's onContextMenu (delete confirmation modal)
-      const isInput = targetEl?.closest?.('input, textarea');
       const isDashboardCard = Boolean(targetEl?.closest?.('[data-dashboard-card]'));
       if (isDashboardCard && !hasDraggedRef.current && !isInput) {
         e.preventDefault();
@@ -1771,6 +1807,7 @@ export default function App() {
     window.addEventListener('pointerup', handlePointerUp, { capture: true });
     window.addEventListener('pointercancel', handlePointerCancel, { capture: true });
     window.addEventListener('blur', handlePointerCancel);
+    document.addEventListener('mouseleave', handlePointerCancel);
     window.addEventListener('contextmenu', handleContextMenu, { capture: true });
 
     return () => {
@@ -1780,6 +1817,7 @@ export default function App() {
       window.removeEventListener('pointerup', handlePointerUp, { capture: true });
       window.removeEventListener('pointercancel', handlePointerCancel, { capture: true });
       window.removeEventListener('blur', handlePointerCancel);
+      document.removeEventListener('mouseleave', handlePointerCancel);
       window.removeEventListener('contextmenu', handleContextMenu, { capture: true });
       if (scrollEndTimer) clearTimeout(scrollEndTimer);
       if (hideHudTimerRef.current) clearTimeout(hideHudTimerRef.current);
@@ -1960,10 +1998,15 @@ export default function App() {
 
   const applyPreferencesRemote = useCallback((p: PreferencesStatePayload) => {
     isApplyingRemoteRef.current = true;
-    if (typeof p.darkMode === 'boolean') setDarkMode(p.darkMode);
-    if (typeof p.activePaletteId === 'string') setActivePaletteId(p.activePaletteId);
-    if (p.customPaletteConfig && typeof p.customPaletteConfig.primary === 'string') {
-      setCustomPaletteConfig(p.customPaletteConfig);
+    const hasRecentLocalThemeEdit =
+      Boolean(pendingSyncTimersRef.current.preferences) ||
+      Date.now() - lastLocalPaletteChangeAtRef.current < 6000;
+    if (!hasRecentLocalThemeEdit) {
+      if (typeof p.darkMode === 'boolean') setDarkMode(p.darkMode);
+      if (typeof p.activePaletteId === 'string') setActivePaletteId(p.activePaletteId);
+      if (p.customPaletteConfig && typeof p.customPaletteConfig.primary === 'string') {
+        setCustomPaletteConfig(p.customPaletteConfig);
+      }
     }
     if (typeof p.selectedModel === 'string' && p.selectedModel) setSelectedModel(p.selectedModel);
     if (typeof p.enableThinking === 'boolean') setEnableThinking(p.enableThinking);
@@ -3653,12 +3696,12 @@ export default function App() {
     <div
       className={`relative ${
         activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-[100dvh] md:h-screen overflow-hidden' : 'min-h-[100dvh] md:min-h-screen overflow-x-clip'
-      } flex flex-col font-sans transition-colors duration-300 ${
+      } flex flex-col font-sans ${activeTab === 'lander' ? '' : 'transition-colors duration-300'} ${
         darkMode ? 'dark text-slate-100' : 'text-slate-900'
       }`}
       style={{
-        backgroundColor: darkMode ? activePalette.bgDark : '#f8fafc',
-        color: darkMode ? '#f8fafc' : '#0f172a',
+        backgroundColor: activeTab === 'lander' || darkMode ? activePalette.bgDark : '#f8fafc',
+        color: activeTab === 'lander' || darkMode ? '#f8fafc' : '#0f172a',
       }}
     >
       {/* Dynamic theme-reactive Topographic Background Canvas Layer fitted to entire screen (skipped on lander) */}
@@ -3811,7 +3854,7 @@ export default function App() {
                     }
                   }}
                   activePalette={activePalette}
-                  onPaletteChange={setActivePaletteId}
+                  onPaletteChange={handleLanderPaletteChange}
                 />
               )}
 

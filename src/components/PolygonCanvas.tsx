@@ -79,15 +79,22 @@ const QUALITY_PRESETS: Record<QualityTier, QualityConfig> = {
 };
 
 const PALETTE_RGB_CACHE = new Map<string, RGB>();
+const parseHexChannel = (hexSlice: string, fallback: number): number => {
+  const val = parseInt(hexSlice, 16);
+  return Number.isNaN(val) ? fallback : val;
+};
 const parseHexCached = (hex: string): RGB => {
   const key = hex || '#f59e0b';
   let cached = PALETTE_RGB_CACHE.get(key);
   if (cached) return cached;
-  const clean = key.replace('#', '');
+  let clean = key.replace('#', '').trim();
+  if (clean.length === 3) {
+    clean = clean[0] + clean[0] + clean[1] + clean[1] + clean[2] + clean[2];
+  }
   cached = {
-    r: parseInt(clean.substring(0, 2), 16) || 245,
-    g: parseInt(clean.substring(2, 4), 16) || 158,
-    b: parseInt(clean.substring(4, 6), 16) || 11,
+    r: parseHexChannel(clean.substring(0, 2), 245),
+    g: parseHexChannel(clean.substring(2, 4), 158),
+    b: parseHexChannel(clean.substring(4, 6), 11),
   };
   PALETTE_RGB_CACHE.set(key, cached);
   return cached;
@@ -151,16 +158,32 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
   const onPaletteChangeRef = useRef(onPaletteChange);
   onPaletteChangeRef.current = onPaletteChange;
 
+  const getPaletteSignature = (p: ColorPalette) =>
+    `${p.id}|${p.primary}|${p.accent}|${p.bgDark}`;
+
   const [displayPalette, setDisplayPalette] = useState<ColorPalette>(
     () => activePalette || PALETTES[0]
   );
   const [isTextBlurred, setIsTextBlurred] = useState(false);
   const textBlurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textUnblurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeWaveCountRef = useRef(0);
+  const isWaveBlurPendingRef = useRef(false);
+  const pendingCommitPaletteIdRef = useRef<ColorPaletteId | null>(null);
 
   useEffect(() => {
-    if (activePalette) {
-      activePaletteRef.current = activePalette;
+    if (!activePalette) return;
+    activePaletteRef.current = activePalette;
+
+    if (pendingCommitPaletteIdRef.current === activePalette.id) {
+      pendingCommitPaletteIdRef.current = null;
+    }
+
+    if (
+      activeWaveCountRef.current === 0 &&
+      !isWaveBlurPendingRef.current &&
+      pendingCommitPaletteIdRef.current === null
+    ) {
       setDisplayPalette(activePalette);
     }
   }, [activePalette]);
@@ -278,6 +301,7 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
     };
 
     let currentPalette: ColorPalette = activePaletteRef.current;
+    let currentPaletteSig = getPaletteSignature(currentPalette);
 
     // Unlimited stackable animations (NO queue caps or throttles)
     const activeBursts: ClickBurst[] = [];
@@ -455,6 +479,8 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
         fromBg: parseHexCached(fromPal.bgDark || '#06090e'),
         toBg: parseHexCached(toPal.bgDark || '#06090e'),
       });
+      activeWaveCountRef.current = activeWaves.length;
+      pendingCommitPaletteIdRef.current = null;
 
       // Immediate physical shockwave burst at click location
       activeBursts.push({
@@ -467,6 +493,7 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
       });
 
       // Blur in and out text animation to gracefully hide the color transition
+      isWaveBlurPendingRef.current = true;
       setIsTextBlurred(true);
       if (textBlurTimerRef.current) clearTimeout(textBlurTimerRef.current);
       if (textUnblurTimerRef.current) clearTimeout(textUnblurTimerRef.current);
@@ -474,9 +501,10 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
       textBlurTimerRef.current = setTimeout(() => {
         setDisplayPalette(toPal);
         textUnblurTimerRef.current = setTimeout(() => {
+          isWaveBlurPendingRef.current = false;
           setIsTextBlurred(false);
         }, 90);
-      }, 280);
+      }, 260);
     };
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -499,9 +527,11 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
 
     // Track whether pointerdown(button=2) just handled the current right-click so contextmenu doesn't fire a duplicate wave for the same click
     let handledRightPointerDown = false;
+    let rightPointerResetTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handlePointerDown = (e: MouseEvent | PointerEvent) => {
-      if ((e.target as HTMLElement | null)?.closest?.('button, a, input, select')) {
+      const targetEl = e.target instanceof Element ? e.target : (e.target as Node | null)?.parentElement;
+      if (targetEl?.closest?.('button, a, input, select, nav, [role="dialog"]')) {
         return;
       }
 
@@ -509,6 +539,10 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
         e.preventDefault();
         e.stopPropagation();
         handledRightPointerDown = true;
+        if (rightPointerResetTimer) clearTimeout(rightPointerResetTimer);
+        rightPointerResetTimer = setTimeout(() => {
+          handledRightPointerDown = false;
+        }, 120);
         triggerThemeFlipWave(e.clientX, e.clientY);
       } else if (e.button === 0) {
         lastDragX = (e.clientX - cachedRectLeft) * cachedScaleX;
@@ -522,9 +556,14 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
       e.stopPropagation();
       if (handledRightPointerDown) {
         handledRightPointerDown = false;
+        if (rightPointerResetTimer) {
+          clearTimeout(rightPointerResetTimer);
+          rightPointerResetTimer = null;
+        }
         return;
       }
-      if ((e.target as HTMLElement | null)?.closest?.('button, a, input, select')) {
+      const targetEl = e.target instanceof Element ? e.target : (e.target as Node | null)?.parentElement;
+      if (targetEl?.closest?.('button, a, input, select, nav, [role="dialog"]')) {
         return;
       }
       triggerThemeFlipWave(e.clientX, e.clientY);
@@ -532,6 +571,10 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
 
     const handleBlur = () => {
       handledRightPointerDown = false;
+      if (rightPointerResetTimer) {
+        clearTimeout(rightPointerResetTimer);
+        rightPointerResetTimer = null;
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
@@ -677,9 +720,16 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
       animationFrameId = requestAnimationFrame(render);
       if (document.hidden) return;
 
-      // Sync external palette change when resting
-      if (activeWaves.length === 0 && currentPalette.id !== activePaletteRef.current.id) {
-        currentPalette = activePaletteRef.current;
+      // Sync external palette change ONLY when resting & no wave commit is in flight
+      const incoming = activePaletteRef.current;
+      const incomingSig = getPaletteSignature(incoming);
+      if (
+        activeWaves.length === 0 &&
+        pendingCommitPaletteIdRef.current === null &&
+        currentPaletteSig !== incomingSig
+      ) {
+        currentPalette = incoming;
+        currentPaletteSig = incomingSig;
       }
 
       // Frame-rate independent delta step (normalized so 1.0 = 60 FPS frame)
@@ -715,15 +765,26 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
         }
       }
 
-      // Progress unlimited stackable theme-flip waves
-      for (let i = activeWaves.length - 1; i >= 0; i--) {
+      // Progress unlimited stackable theme-flip waves chronologically.
+      // When any wave reaches maxRadius, it covers 100% of the canvas so all earlier waves (0..i) are visually eclipsed.
+      let highestFinishedIdx = -1;
+      for (let i = 0; i < activeWaves.length; i++) {
         const w = activeWaves[i];
         w.radius += w.speed * stepFactor;
         if (w.radius >= w.maxRadius) {
-          currentPalette = w.toPalette;
-          activeWaves.splice(i, 1);
-          if (activeWaves.length === 0) {
-            onPaletteChangeRef.current?.(w.toPalette.id);
+          highestFinishedIdx = i;
+        }
+      }
+      if (highestFinishedIdx >= 0) {
+        const winningWave = activeWaves[highestFinishedIdx];
+        currentPalette = winningWave.toPalette;
+        currentPaletteSig = getPaletteSignature(currentPalette);
+        activeWaves.splice(0, highestFinishedIdx + 1);
+        activeWaveCountRef.current = activeWaves.length;
+        if (activeWaves.length === 0) {
+          if (activePaletteRef.current.id !== currentPalette.id) {
+            pendingCommitPaletteIdRef.current = currentPalette.id;
+            onPaletteChangeRef.current?.(currentPalette.id);
           }
         }
       }
@@ -1160,8 +1221,13 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
       window.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('blur', handleBlur);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (rightPointerResetTimer) clearTimeout(rightPointerResetTimer);
       if (textBlurTimerRef.current) clearTimeout(textBlurTimerRef.current);
       if (textUnblurTimerRef.current) clearTimeout(textUnblurTimerRef.current);
+      activeWaveCountRef.current = 0;
+      isWaveBlurPendingRef.current = false;
+      pendingCommitPaletteIdRef.current = null;
+      setIsTextBlurred(false);
       if (gl) {
         if (glTriBuf) gl.deleteBuffer(glTriBuf);
         if (glWireBuf) gl.deleteBuffer(glWireBuf);
@@ -1173,7 +1239,7 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
 
   return (
     <div
-      className="relative w-full h-[100dvh] md:h-screen overflow-hidden select-none transition-colors duration-300"
+      className="dark relative w-full h-[100dvh] md:h-screen overflow-hidden select-none"
       style={{ backgroundColor: displayPalette?.bgDark || '#06090e' }}
     >
       {/* Hardware-accelerated Simulation Canvas */}
@@ -1187,8 +1253,8 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
 
       {/* Floating Canvas Resolution / Performance Switcher */}
       <div
-        className={`absolute bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-2 max-w-[calc(100vw-1.5rem)] hero-text-blur-wrapper ${
-          isTextBlurred ? 'hero-text-blurred' : 'hero-text-focused'
+        className={`absolute bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-2 max-w-[calc(100vw-1.5rem)] transition-opacity duration-300 ${
+          isTextBlurred ? 'opacity-70' : 'opacity-100'
         }`}
       >
         <div className="relative">
@@ -1288,7 +1354,7 @@ export const PolygonCanvas: React.FC<PolygonCanvasProps> = ({
           <div className="pt-4 flex flex-wrap items-center justify-center gap-4 pointer-events-auto">
             <button
               onClick={onEnterApp}
-              className="glow-button rounded-full shadow-2xl hover:scale-[1.03] active:scale-[0.97] transition-all duration-200 text-sm font-semibold"
+              className="glow-button rounded-full shadow-2xl hover:scale-[1.03] active:scale-[0.97] transition-[transform,scale,box-shadow] duration-200 text-sm font-semibold"
               style={{
                 ['--button-shine-left' as any]:
                   displayPalette?.id === 'black-night' ? '#27272a' : displayPalette?.primary || '#f59e0b',
