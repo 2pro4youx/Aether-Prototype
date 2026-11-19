@@ -174,6 +174,7 @@ export const AuthOnboardingModal: React.FC<AuthOnboardingModalProps> = ({
           email,
           name: displayName,
           photoURL: user.photoURL || undefined,
+          isGuest: false,
         })
       );
 

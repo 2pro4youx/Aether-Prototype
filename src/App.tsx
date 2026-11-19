@@ -29,9 +29,13 @@ import {
   GENERAL_SESSION_KEY,
   LoadedCloudState,
   PreferencesStatePayload,
+  clearSyncQuotaPause,
   deleteWorkspaceDoc,
   formatCloudSyncError,
+  isQuotaExceededError,
+  isSyncQuotaPaused,
   loadUserCloudData,
+  markSyncQuotaExceeded,
   migrateAnalyticsRecord,
   subscribeToUserCloudData,
   upsertAppStateDoc,
@@ -76,7 +80,7 @@ import {
 import { PolygonCanvas } from './components/PolygonCanvas';
 import { Header } from './components/Header';
 import { WorkspaceSelectorBar } from './components/WorkspaceSelectorBar';
-import { Dashboard, DEFAULT_DASHBOARD_CARDS } from './components/Dashboard';
+import { Dashboard, DEFAULT_DASHBOARD_CARDS, normalizeDashboardCards } from './components/Dashboard';
 import { NotebookLMView } from './components/NotebookLMView';
 import { OneNoteWorkspace } from './components/OneNoteWorkspace';
 import { GeminiWorkspace } from './components/GeminiWorkspace';
@@ -136,6 +140,15 @@ function getSavedAuthProfile(): SavedAuthProfile {
   }
 }
 
+function safeSetLocalStorage(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(() => auth.currentUser);
   const firebaseUserRef = useRef<User | null>(firebaseUser);
@@ -147,6 +160,8 @@ export default function App() {
   const isCloudSyncReadyRef = useRef(isCloudSyncReady);
   isCloudSyncReadyRef.current = isCloudSyncReady;
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const cloudSyncStatusRef = useRef(cloudSyncStatus);
+  cloudSyncStatusRef.current = cloudSyncStatus;
   const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -180,23 +195,42 @@ export default function App() {
   const hydratingUidRef = useRef<string | null>(null);
   const hydratingPromiseRef = useRef<Promise<{ syncedGeminiKey?: string; error?: string } | void> | null>(null);
   const isApplyingRemoteRef = useRef(false);
+  const remoteApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAnalyticsCloudSyncAtRef = useRef<number>(0);
   const isSigningOutRef = useRef(false);
   const prevSyncedWorkspaceIdsRef = useRef<Set<string>>(new Set());
   const pendingSyncTimersRef = useRef<{
     workspaces?: ReturnType<typeof setTimeout>;
     dashboard?: ReturnType<typeof setTimeout>;
     analytics?: ReturnType<typeof setTimeout>;
-    analyticsTicker?: ReturnType<typeof setTimeout>;
     preferences?: ReturnType<typeof setTimeout>;
     floatingChat?: ReturnType<typeof setTimeout>;
   }>({});
+
+  const scheduleClearApplyingRemote = useCallback(() => {
+    if (remoteApplyTimerRef.current) {
+      clearTimeout(remoteApplyTimerRef.current);
+    }
+    remoteApplyTimerRef.current = setTimeout(() => {
+      isApplyingRemoteRef.current = false;
+      remoteApplyTimerRef.current = null;
+    }, 80);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (remoteApplyTimerRef.current) {
+        clearTimeout(remoteApplyTimerRef.current);
+        remoteApplyTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const clearPendingSyncTimers = useCallback(() => {
     const timers = pendingSyncTimersRef.current;
     if (timers.workspaces) clearTimeout(timers.workspaces);
     if (timers.dashboard) clearTimeout(timers.dashboard);
     if (timers.analytics) clearTimeout(timers.analytics);
-    if (timers.analyticsTicker) clearTimeout(timers.analyticsTicker);
     if (timers.preferences) clearTimeout(timers.preferences);
     if (timers.floatingChat) clearTimeout(timers.floatingChat);
     pendingSyncTimersRef.current = {};
@@ -208,17 +242,32 @@ export default function App() {
     setLastCloudSyncAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   }, []);
 
-  const markCloudSyncError = useCallback((err: unknown) => {
-    const msg = formatCloudSyncError(err);
-    console.error('Firestore cloud sync write error:', err);
-    setCloudSyncStatus('error');
-    setCloudSyncError(msg);
-  }, []);
+  const markCloudSyncError = useCallback(
+    (err: unknown) => {
+      const msg = formatCloudSyncError(err);
+      console.error('Firestore cloud sync write error:', err);
+      if (isQuotaExceededError(err)) {
+        markSyncQuotaExceeded();
+        clearPendingSyncTimers();
+        if (cloudUnsubRef.current) {
+          cloudUnsubRef.current();
+          cloudUnsubRef.current = null;
+        }
+      }
+      setCloudSyncStatus('error');
+      setCloudSyncError(msg);
+    },
+    [clearPendingSyncTimers]
+  );
 
   const flushAllCloudSync = useCallback(
-    async (explicitUid?: string): Promise<boolean> => {
+    async (
+      explicitUid?: string,
+      options?: { force?: boolean; includeAnalytics?: boolean }
+    ): Promise<boolean> => {
       const uid = explicitUid || firebaseUserRef.current?.uid || auth.currentUser?.uid;
       if (!uid || !isCloudSyncReadyRef.current) return false;
+      if (!options?.force && isSyncQuotaPaused()) return false;
 
       clearPendingSyncTimers();
       setCloudSyncStatus('syncing');
@@ -228,18 +277,31 @@ export default function App() {
         const currentWorkspaces = workspacesRef.current;
         const currentIds = new Set(currentWorkspaces.map((w) => w.id));
         const ops: Promise<unknown>[] = [];
+        const opOpts = options?.force ? { force: true } : undefined;
 
         for (const prevId of prevSyncedWorkspaceIdsRef.current) {
           if (!currentIds.has(prevId)) {
             ops.push(
-              deleteWorkspaceDoc(uid, prevId, knownWorkspaceIdsRef.current, writtenHashesRef.current)
+              deleteWorkspaceDoc(
+                uid,
+                prevId,
+                knownWorkspaceIdsRef.current,
+                writtenHashesRef.current,
+                opOpts
+              )
             );
           }
         }
 
         for (const ws of currentWorkspaces) {
           ops.push(
-            upsertWorkspaceDoc(uid, ws, knownWorkspaceIdsRef.current, writtenHashesRef.current)
+            upsertWorkspaceDoc(
+              uid,
+              ws,
+              knownWorkspaceIdsRef.current,
+              writtenHashesRef.current,
+              opOpts
+            )
           );
         }
 
@@ -249,30 +311,41 @@ export default function App() {
             'dashboard',
             latestSlicesRef.current.dashboard,
             knownStateKeysRef.current,
-            writtenHashesRef.current
-          ),
-          upsertAppStateDoc(
-            uid,
-            'analytics',
-            latestSlicesRef.current.analytics,
-            knownStateKeysRef.current,
-            writtenHashesRef.current
+            writtenHashesRef.current,
+            opOpts
           ),
           upsertAppStateDoc(
             uid,
             'preferences',
             latestSlicesRef.current.preferences,
             knownStateKeysRef.current,
-            writtenHashesRef.current
+            writtenHashesRef.current,
+            opOpts
           ),
           upsertAppStateDoc(
             uid,
             'floatingChat',
             latestSlicesRef.current.floatingChat,
             knownStateKeysRef.current,
-            writtenHashesRef.current
+            writtenHashesRef.current,
+            opOpts
           )
         );
+
+        if (options?.includeAnalytics !== false) {
+          ops.push(
+            upsertAppStateDoc(
+              uid,
+              'analytics',
+              latestSlicesRef.current.analytics,
+              knownStateKeysRef.current,
+              writtenHashesRef.current,
+              opOpts
+            ).then(() => {
+              lastAnalyticsCloudSyncAtRef.current = Date.now();
+            })
+          );
+        }
 
         const results = await Promise.allSettled(ops);
         prevSyncedWorkspaceIdsRef.current = currentIds;
@@ -302,7 +375,7 @@ export default function App() {
 
       // Flush every pending workspace, folder, note, dashboard, and preference write to Firestore BEFORE signing out & clearing local cache
       const activeFbUser = firebaseUserRef.current || auth.currentUser;
-      if (activeFbUser) {
+      if (activeFbUser && !isSyncQuotaPaused()) {
         if (!isCloudSyncReadyRef.current) {
           // Ensure user profile & doc existence sets exist before flushing if hydration hadn't completed
           try {
@@ -454,7 +527,7 @@ export default function App() {
     }
   });
   useEffect(() => {
-    localStorage.setItem('aether_tasks', JSON.stringify(tasks));
+    safeSetLocalStorage('aether_tasks', JSON.stringify(tasks));
   }, [tasks]);
 
   const [planners, setPlanners] = useState<PlannerEntry[]>(() => {
@@ -466,7 +539,7 @@ export default function App() {
     }
   });
   useEffect(() => {
-    localStorage.setItem('aether_planners_v1', JSON.stringify(planners));
+    safeSetLocalStorage('aether_planners_v1', JSON.stringify(planners));
   }, [planners]);
 
   // Lifted Dashboard Card Layout, Curriculum & Calendar states for unified cross-device cloud sync
@@ -474,18 +547,7 @@ export default function App() {
     try {
       const saved = localStorage.getItem('aether_dashboard_cards_v1');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const isLegacyDefault =
-            parsed.length === 1 &&
-            parsed[0]?.id === 'card-tasks-default' &&
-            parsed[0]?.type === 'tasks' &&
-            parsed[0]?.colSpan === 7 &&
-            parsed[0]?.widthPct === 58.33 &&
-            parsed[0]?.height === 460 &&
-            !parsed[0]?.title;
-          if (!isLegacyDefault) return parsed;
-        }
+        return normalizeDashboardCards(JSON.parse(saved));
       }
     } catch {
       // fallback
@@ -509,7 +571,7 @@ export default function App() {
     }
   });
   useEffect(() => {
-    localStorage.setItem('aether_syllabus_v1', JSON.stringify(syllabusCourses));
+    safeSetLocalStorage('aether_syllabus_v1', JSON.stringify(syllabusCourses));
   }, [syllabusCourses]);
 
   const [examSchedules, setExamSchedules] = useState<ExamScheduleEntry[]>(() => {
@@ -521,7 +583,7 @@ export default function App() {
     }
   });
   useEffect(() => {
-    localStorage.setItem('aether_exam_schedule_v1', JSON.stringify(examSchedules));
+    safeSetLocalStorage('aether_exam_schedule_v1', JSON.stringify(examSchedules));
   }, [examSchedules]);
 
   const [timetableSlots, setTimetableSlots] = useState<TimetableSlot[]>(() => {
@@ -533,7 +595,7 @@ export default function App() {
     }
   });
   useEffect(() => {
-    localStorage.setItem('aether_timetable_v1', JSON.stringify(timetableSlots));
+    safeSetLocalStorage('aether_timetable_v1', JSON.stringify(timetableSlots));
   }, [timetableSlots]);
 
   const [localCalendarEvents, setLocalCalendarEvents] = useState<CalendarEventEntry[]>(() => {
@@ -545,7 +607,7 @@ export default function App() {
     }
   });
   useEffect(() => {
-    localStorage.setItem('aether_local_calendar_v1', JSON.stringify(localCalendarEvents));
+    safeSetLocalStorage('aether_local_calendar_v1', JSON.stringify(localCalendarEvents));
   }, [localCalendarEvents]);
 
   // Lifted Floating Gemini Neural Assistant conversation history
@@ -580,20 +642,27 @@ export default function App() {
       if (currentUser && nextKey) {
         setRememberedGoogleApiKey(currentUser.uid, nextKey);
         latestSlicesRef.current.preferences.geminiApiKey = nextKey;
-        if (knownStateKeysRef.current.has('preferences') || hydratingUidRef.current === currentUser.uid) {
+        if (
+          !isSyncQuotaPaused() &&
+          (knownStateKeysRef.current.has('preferences') || hydratingUidRef.current === currentUser.uid)
+        ) {
           void upsertAppStateDoc(
             currentUser.uid,
             'preferences',
             latestSlicesRef.current.preferences,
             knownStateKeysRef.current,
             writtenHashesRef.current
-          ).catch(() => {});
+          ).catch((err) => {
+            if (isQuotaExceededError(err)) {
+              markCloudSyncError(err);
+            }
+          });
         }
       }
     };
     window.addEventListener('aether-gemini-key-updated', handleKeyUpdate);
     return () => window.removeEventListener('aether-gemini-key-updated', handleKeyUpdate);
-  }, []);
+  }, [markCloudSyncError]);
 
   // Reactive Gemini Personalization state (custom name, functional memory slider + learned facts, instructions)
   const [geminiPersonalization, setGeminiPersonalizationState] = useState<GeminiPersonalizationConfig>(() =>
@@ -680,7 +749,7 @@ export default function App() {
   }, [activeWorkspaceId, workspaces]);
 
   useEffect(() => {
-    localStorage.setItem('aether_active_workspace_v2', activeWorkspaceId);
+    safeSetLocalStorage('aether_active_workspace_v2', activeWorkspaceId);
   }, [activeWorkspaceId]);
 
   const activeWorkspace = useMemo(() => {
@@ -696,16 +765,24 @@ export default function App() {
   const geminiConversations = activeWorkspace?.conversations || [];
 
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(() => {
-    const saved = localStorage.getItem('aether_library_v2');
-    return saved ? JSON.parse(saved) : INITIAL_LIBRARY;
+    try {
+      const saved = localStorage.getItem('aether_library_v2');
+      return saved ? JSON.parse(saved) : INITIAL_LIBRARY;
+    } catch {
+      return INITIAL_LIBRARY;
+    }
   });
   const [folders, setFolders] = useState<string[]>(() => {
-    const saved = localStorage.getItem('aether_folders_v3');
-    return saved ? JSON.parse(saved) : ['Assorted Workspaces'];
+    try {
+      const saved = localStorage.getItem('aether_folders_v3');
+      return saved ? JSON.parse(saved) : ['Assorted Workspaces'];
+    } catch {
+      return ['Assorted Workspaces'];
+    }
   });
 
   useEffect(() => {
-    localStorage.setItem('aether_folders_v3', JSON.stringify(folders));
+    safeSetLocalStorage('aether_folders_v3', JSON.stringify(folders));
   }, [folders]);
 
   // One-time clean slate migration: purge all dummy workspaces, folders, sources, and cached library items
@@ -774,15 +851,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('aether_workspace_seconds_v1', JSON.stringify(workspaceSeconds));
+    safeSetLocalStorage('aether_workspace_seconds_v1', JSON.stringify(workspaceSeconds));
   }, [workspaceSeconds]);
 
   useEffect(() => {
-    localStorage.setItem('aether_workspace_interactions_v1', JSON.stringify(workspaceInteractions));
+    safeSetLocalStorage('aether_workspace_interactions_v1', JSON.stringify(workspaceInteractions));
   }, [workspaceInteractions]);
 
   useEffect(() => {
-    localStorage.setItem('aether_audit_logs_v2', JSON.stringify(auditLogs));
+    safeSetLocalStorage('aether_audit_logs_v2', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
   const [libraryFolderSignal, setLibraryFolderSignal] = useState<{ folder: string; nonce: number } | null>(null);
@@ -1715,10 +1792,6 @@ export default function App() {
 
   // Sync persistence
   useEffect(() => {
-    localStorage.setItem('aether_tasks', JSON.stringify(tasks));
-  }, [tasks]);
-
-  useEffect(() => {
     try {
       localStorage.setItem('aether_sources', JSON.stringify(sources));
     } catch {
@@ -1749,7 +1822,11 @@ export default function App() {
   }, [geminiConversations]);
 
   useEffect(() => {
-    localStorage.setItem('aether_library_v2', JSON.stringify(libraryItems));
+    try {
+      localStorage.setItem('aether_library_v2', JSON.stringify(libraryItems));
+    } catch (err) {
+      console.warn('Library localStorage quota exceeded; keeping items in memory.', err);
+    }
   }, [libraryItems]);
 
   // Refs to detect meaningful deltas in chats and OneNote for live audit logging
@@ -1850,15 +1927,7 @@ export default function App() {
   const applyDashboardRemote = useCallback((d: DashboardStatePayload) => {
     isApplyingRemoteRef.current = true;
     if (Array.isArray(d.cards) && d.cards.length > 0) {
-      const isLegacyDefault =
-        d.cards.length === 1 &&
-        d.cards[0]?.id === 'card-tasks-default' &&
-        d.cards[0]?.type === 'tasks' &&
-        d.cards[0]?.colSpan === 7 &&
-        d.cards[0]?.widthPct === 58.33 &&
-        d.cards[0]?.height === 460 &&
-        !d.cards[0]?.title;
-      setDashboardCards(isLegacyDefault ? DEFAULT_DASHBOARD_CARDS : d.cards);
+      setDashboardCards(normalizeDashboardCards(d.cards));
     }
     if (Array.isArray(d.tasks)) setTasks(d.tasks);
     if (Array.isArray(d.planners)) setPlanners(d.planners);
@@ -1866,10 +1935,8 @@ export default function App() {
     if (Array.isArray(d.examSchedules)) setExamSchedules(d.examSchedules);
     if (Array.isArray(d.timetableSlots)) setTimetableSlots(d.timetableSlots);
     if (Array.isArray(d.localCalendarEvents)) setLocalCalendarEvents(d.localCalendarEvents);
-    queueMicrotask(() => {
-      isApplyingRemoteRef.current = false;
-    });
-  }, []);
+    scheduleClearApplyingRemote();
+  }, [scheduleClearApplyingRemote]);
 
   const applyAnalyticsRemote = useCallback((a: AnalyticsStatePayload) => {
     isApplyingRemoteRef.current = true;
@@ -1888,10 +1955,8 @@ export default function App() {
     if (typeof a.activeWorkspaceId === 'string' && a.activeWorkspaceId) {
       setActiveWorkspaceId(a.activeWorkspaceId);
     }
-    queueMicrotask(() => {
-      isApplyingRemoteRef.current = false;
-    });
-  }, []);
+    scheduleClearApplyingRemote();
+  }, [scheduleClearApplyingRemote]);
 
   const applyPreferencesRemote = useCallback((p: PreferencesStatePayload) => {
     isApplyingRemoteRef.current = true;
@@ -1934,20 +1999,16 @@ export default function App() {
         return merged;
       });
     }
-    queueMicrotask(() => {
-      isApplyingRemoteRef.current = false;
-    });
-  }, []);
+    scheduleClearApplyingRemote();
+  }, [scheduleClearApplyingRemote]);
 
   const applyFloatingChatRemote = useCallback((f: FloatingChatStatePayload) => {
     isApplyingRemoteRef.current = true;
     if (Array.isArray(f.messages) && f.messages.length > 0) {
       setFloatingChatMessages(f.messages);
     }
-    queueMicrotask(() => {
-      isApplyingRemoteRef.current = false;
-    });
-  }, []);
+    scheduleClearApplyingRemote();
+  }, [scheduleClearApplyingRemote]);
 
   const applyLoadedCloudState = useCallback(
     (loaded: LoadedCloudState, options?: { mergeLocal?: boolean }) => {
@@ -2022,15 +2083,32 @@ export default function App() {
       if (loaded.dashboard) applyDashboardRemote(loaded.dashboard);
       if (loaded.preferences) applyPreferencesRemote(loaded.preferences);
       if (loaded.floatingChat) applyFloatingChatRemote(loaded.floatingChat);
-      queueMicrotask(() => {
-        isApplyingRemoteRef.current = false;
-      });
+      scheduleClearApplyingRemote();
     },
-    [applyAnalyticsRemote, applyDashboardRemote, applyPreferencesRemote, applyFloatingChatRemote]
+    [
+      applyAnalyticsRemote,
+      applyDashboardRemote,
+      applyPreferencesRemote,
+      applyFloatingChatRemote,
+      scheduleClearApplyingRemote,
+    ]
   );
 
   const hydrateAndSubscribeUser = useCallback(
-    async (user: User): Promise<{ syncedGeminiKey?: string; error?: string } | void> => {
+    async (
+      user: User,
+      options?: { force?: boolean }
+    ): Promise<{ syncedGeminiKey?: string; error?: string } | void> => {
+      if (options?.force) {
+        clearSyncQuotaPause();
+      } else if (isSyncQuotaPaused()) {
+        const msg = formatCloudSyncError(new Error('resource-exhausted'));
+        setIsCloudSyncReady(false);
+        setCloudSyncStatus('error');
+        setCloudSyncError(msg);
+        return { error: msg };
+      }
+
       if (hydratingUidRef.current === user.uid && hydratingPromiseRef.current) {
         return hydratingPromiseRef.current;
       }
@@ -2081,7 +2159,7 @@ export default function App() {
               );
             }
 
-            if (cloudPrune.changed || cloudPrune.normalized) {
+            if (cloudPrune.changed) {
               for (const ws of cloudPrune.workspaces) {
                 await upsertWorkspaceDoc(
                   user.uid,
@@ -2168,6 +2246,7 @@ export default function App() {
             );
           }
 
+          lastAnalyticsCloudSyncAtRef.current = Date.now();
           setIsCloudSyncReady(true);
           markCloudSyncOk();
 
@@ -2199,9 +2278,7 @@ export default function App() {
                 if (wsFolders.length > 0) {
                   setFolders((prev) => Array.from(new Set([...prev, ...wsFolders])));
                 }
-                queueMicrotask(() => {
-                  isApplyingRemoteRef.current = false;
-                });
+                scheduleClearApplyingRemote();
               },
               onDashboardRemoteChange: applyDashboardRemote,
               onAnalyticsRemoteChange: applyAnalyticsRemote,
@@ -2218,7 +2295,7 @@ export default function App() {
           if (effectiveGeminiKey) {
             setRememberedGoogleApiKey(user.uid, effectiveGeminiKey);
             setActiveGeminiApiKey(effectiveGeminiKey);
-            if (!cloudKey && loaded.hasCloudData) {
+            if (!cloudKey && loaded.hasCloudData && !isSyncQuotaPaused()) {
               await upsertAppStateDoc(
                 user.uid,
                 'preferences',
@@ -2237,6 +2314,9 @@ export default function App() {
           };
         } catch (err) {
           console.error('Firebase cloud sync hydration error:', err);
+          if (isQuotaExceededError(err)) {
+            markSyncQuotaExceeded();
+          }
           // Reset hydration lock so transient errors can be retried cleanly
           hydratingUidRef.current = null;
           hydratingPromiseRef.current = null;
@@ -2262,10 +2342,11 @@ export default function App() {
       applyFloatingChatRemote,
       markCloudSyncError,
       markCloudSyncOk,
+      scheduleClearApplyingRemote,
     ]
   );
 
-  // Firebase Auth listener: restores Google session & cloud data across refreshes/devices
+  // Firebase Auth listener: restores Google session & auto-syncs cloud data on startup/reload
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (isSigningOutRef.current) return;
@@ -2273,8 +2354,8 @@ export default function App() {
       if (user) {
         const email = user.email || `${user.uid}@gmail.com`;
         const displayName = user.displayName || email.split('@')[0] || 'Aether Learner';
-        const result = await hydrateAndSubscribeUser(user);
-        localStorage.setItem(
+        const result = await hydrateAndSubscribeUser(user, { force: true });
+        safeSetLocalStorage(
           'aether_auth_user',
           JSON.stringify({
             uid: user.uid,
@@ -2308,7 +2389,16 @@ export default function App() {
         hydratingPromiseRef.current = null;
         setIsCloudSyncReady(false);
         setCloudSyncStatus('idle');
+        setCloudSyncError(null);
         setGoogleCalendarAccessToken(null);
+
+        // If saved profile was a Google account (e.g. from another project/expired session) rather than Guest,
+        // prompt re-authentication on the Lander page without wiping any local user data
+        const saved = getSavedAuthProfile();
+        if (!saved.isGuest && saved.email) {
+          setIsAuthenticated(false);
+          setActiveTab('lander');
+        }
       }
     });
 
@@ -2371,8 +2461,8 @@ export default function App() {
       const email = user.email || `${user.uid}@gmail.com`;
       const displayName = user.displayName || email.split('@')[0] || 'Aether Learner';
       setFirebaseUser(user);
-      const hydration = await hydrateAndSubscribeUser(user);
-      localStorage.setItem(
+      const hydration = await hydrateAndSubscribeUser(user, { force: true });
+      safeSetLocalStorage(
         'aether_auth_user',
         JSON.stringify({
           uid: user.uid,
@@ -2409,38 +2499,83 @@ export default function App() {
   const handleForceCloudSync = useCallback(async () => {
     const activeFbUser = firebaseUserRef.current || auth.currentUser;
     if (!activeFbUser) return;
-    if (!isCloudSyncReadyRef.current) {
-      await hydrateAndSubscribeUser(activeFbUser);
+    clearSyncQuotaPause();
+    if (!isCloudSyncReadyRef.current || !cloudUnsubRef.current) {
+      await hydrateAndSubscribeUser(activeFbUser, { force: true });
       return;
     }
-    await flushAllCloudSync(activeFbUser.uid);
+    await flushAllCloudSync(activeFbUser.uid, { force: true });
   }, [flushAllCloudSync, hydrateAndSubscribeUser]);
 
-  // Flush pending writes when hiding tab or navigating away so recent workspaces/folders never drop
+  // Flush pending writes when hiding tab & auto-retry sync when returning online/foregrounded
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden' && firebaseUserRef.current && isCloudSyncReadyRef.current) {
-        void flushAllCloudSync(firebaseUserRef.current.uid);
+    const maybeFlushOnHide = () => {
+      if (!firebaseUserRef.current || !isCloudSyncReadyRef.current || isSyncQuotaPaused()) return;
+      const timers = pendingSyncTimersRef.current;
+      const hasNonTimerPending = Boolean(
+        timers.workspaces ||
+          timers.dashboard ||
+          timers.analytics ||
+          timers.preferences ||
+          timers.floatingChat
+      );
+      const analyticsDue = Date.now() - lastAnalyticsCloudSyncAtRef.current >= 60_000;
+      if (!hasNonTimerPending && !analyticsDue) return;
+      void flushAllCloudSync(firebaseUserRef.current.uid, {
+        includeAnalytics: analyticsDue,
+      });
+    };
+
+    const maybeRetryAutoSync = (forceOnReconnect: boolean) => {
+      const user = firebaseUserRef.current || auth.currentUser;
+      if (!user || isSigningOutRef.current) return;
+      if (!forceOnReconnect && isSyncQuotaPaused()) return;
+      if (!isCloudSyncReadyRef.current || cloudSyncStatusRef.current === 'error') {
+        if (forceOnReconnect) clearSyncQuotaPause();
+        if (!isCloudSyncReadyRef.current || !cloudUnsubRef.current) {
+          void hydrateAndSubscribeUser(user, { force: forceOnReconnect });
+        } else {
+          void flushAllCloudSync(user.uid, { force: forceOnReconnect });
+        }
       }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        maybeFlushOnHide();
+      } else if (document.visibilityState === 'visible') {
+        maybeRetryAutoSync(false);
+      }
+    };
+    const handleOnline = () => {
+      maybeRetryAutoSync(true);
     };
     const handlePageHide = () => {
-      if (firebaseUserRef.current && isCloudSyncReadyRef.current) {
-        void flushAllCloudSync(firebaseUserRef.current.uid);
-      }
+      maybeFlushOnHide();
     };
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
     window.addEventListener('pagehide', handlePageHide);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [flushAllCloudSync]);
+  }, [flushAllCloudSync, hydrateAndSubscribeUser]);
 
   // Continuous debounced Cloud Sync: Workspaces (notes, sources, NotebookLM chats, Gemini conversations)
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
+    if (
+      !firebaseUser ||
+      !isCloudSyncReady ||
+      isApplyingRemoteRef.current ||
+      isSigningOutRef.current ||
+      isSyncQuotaPaused()
+    )
+      return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
+      if (isSyncQuotaPaused()) return;
       const currentIds = new Set(workspaces.map((w) => w.id));
       const ops: Promise<unknown>[] = [];
       for (const prevId of prevSyncedWorkspaceIdsRef.current) {
@@ -2460,10 +2595,12 @@ export default function App() {
       if (ops.length > 0) {
         setCloudSyncStatus('syncing');
         void Promise.all(ops)
-          .then(() => markCloudSyncOk())
+          .then(() => {
+            if (!isSyncQuotaPaused()) markCloudSyncOk();
+          })
           .catch((err) => markCloudSyncError(err));
       }
-    }, 650);
+    }, 3000);
     pendingSyncTimersRef.current.workspaces = timer;
     return () => {
       clearTimeout(timer);
@@ -2475,9 +2612,17 @@ export default function App() {
 
   // Continuous debounced Cloud Sync: Dashboard cards, tasks, planners, syllabus, exams, timetable, calendar
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
+    if (
+      !firebaseUser ||
+      !isCloudSyncReady ||
+      isApplyingRemoteRef.current ||
+      isSigningOutRef.current ||
+      isSyncQuotaPaused()
+    )
+      return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
+      if (isSyncQuotaPaused()) return;
       setCloudSyncStatus('syncing');
       void upsertAppStateDoc(
         uid,
@@ -2494,9 +2639,11 @@ export default function App() {
         knownStateKeysRef.current,
         writtenHashesRef.current
       )
-        .then(() => markCloudSyncOk())
+        .then(() => {
+          if (!isSyncQuotaPaused()) markCloudSyncOk();
+        })
         .catch((err) => markCloudSyncError(err));
-    }, 550);
+    }, 2000);
     pendingSyncTimersRef.current.dashboard = timer;
     return () => {
       clearTimeout(timer);
@@ -2520,17 +2667,25 @@ export default function App() {
 
   // Continuous debounced Cloud Sync: Folders, Library, Active Workspace & Study Analytics
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
+    if (
+      !firebaseUser ||
+      !isCloudSyncReady ||
+      isApplyingRemoteRef.current ||
+      isSigningOutRef.current ||
+      isSyncQuotaPaused()
+    )
+      return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
+      if (isSyncQuotaPaused()) return;
       setCloudSyncStatus('syncing');
       void upsertAppStateDoc(
         uid,
         'analytics',
         {
-          dailyStudySeconds,
-          workspaceSeconds,
-          workspaceInteractions,
+          dailyStudySeconds: latestSlicesRef.current.analytics.dailyStudySeconds,
+          workspaceSeconds: latestSlicesRef.current.analytics.workspaceSeconds,
+          workspaceInteractions: latestSlicesRef.current.analytics.workspaceInteractions,
           auditLogs: auditLogs.slice(0, 150),
           folders,
           libraryItems,
@@ -2539,9 +2694,12 @@ export default function App() {
         knownStateKeysRef.current,
         writtenHashesRef.current
       )
-        .then(() => markCloudSyncOk())
+        .then(() => {
+          lastAnalyticsCloudSyncAtRef.current = Date.now();
+          if (!isSyncQuotaPaused()) markCloudSyncOk();
+        })
         .catch((err) => markCloudSyncError(err));
-    }, 700);
+    }, 5000);
     pendingSyncTimersRef.current.analytics = timer;
     return () => {
       clearTimeout(timer);
@@ -2560,33 +2718,48 @@ export default function App() {
     markCloudSyncOk,
   ]);
 
-  // Study timer metrics synced at a lower cadence (10s) to conserve Firestore write quota
+  // Study timer metrics synced every 60s to prevent continuous Firestore write amplification
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
+    if (!firebaseUser || !isCloudSyncReady || isSyncQuotaPaused()) return;
     const uid = firebaseUser.uid;
-    const timer = setTimeout(() => {
+    const interval = setInterval(() => {
+      if (
+        isApplyingRemoteRef.current ||
+        isSigningOutRef.current ||
+        isSyncQuotaPaused() ||
+        document.visibilityState === 'hidden'
+      ) {
+        return;
+      }
+      if (Date.now() - lastAnalyticsCloudSyncAtRef.current < 55_000) return;
       void upsertAppStateDoc(
         uid,
         'analytics',
         latestSlicesRef.current.analytics,
         knownStateKeysRef.current,
         writtenHashesRef.current
-      ).catch((err) => markCloudSyncError(err));
-    }, 10000);
-    pendingSyncTimersRef.current.analyticsTicker = timer;
-    return () => {
-      clearTimeout(timer);
-      if (pendingSyncTimersRef.current.analyticsTicker === timer) {
-        pendingSyncTimersRef.current.analyticsTicker = undefined;
-      }
-    };
-  }, [dailyStudySeconds, workspaceSeconds, workspaceInteractions, firebaseUser, isCloudSyncReady, markCloudSyncError]);
+      )
+        .then(() => {
+          lastAnalyticsCloudSyncAtRef.current = Date.now();
+        })
+        .catch((err) => markCloudSyncError(err));
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [firebaseUser, isCloudSyncReady, markCloudSyncError]);
 
   // Continuous debounced Cloud Sync: Theme, Palette, Cursor, Model & API Key Preferences
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
+    if (
+      !firebaseUser ||
+      !isCloudSyncReady ||
+      isApplyingRemoteRef.current ||
+      isSigningOutRef.current ||
+      isSyncQuotaPaused()
+    )
+      return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
+      if (isSyncQuotaPaused()) return;
       setCloudSyncStatus('syncing');
       void upsertAppStateDoc(
         uid,
@@ -2610,9 +2783,11 @@ export default function App() {
         knownStateKeysRef.current,
         writtenHashesRef.current
       )
-        .then(() => markCloudSyncOk())
+        .then(() => {
+          if (!isSyncQuotaPaused()) markCloudSyncOk();
+        })
         .catch((err) => markCloudSyncError(err));
-    }, 500);
+    }, 2000);
     pendingSyncTimersRef.current.preferences = timer;
     return () => {
       clearTimeout(timer);
@@ -2640,9 +2815,17 @@ export default function App() {
 
   // Continuous debounced Cloud Sync: Floating Gemini Neural Assistant chats
   useEffect(() => {
-    if (!firebaseUser || !isCloudSyncReady || isApplyingRemoteRef.current || isSigningOutRef.current) return;
+    if (
+      !firebaseUser ||
+      !isCloudSyncReady ||
+      isApplyingRemoteRef.current ||
+      isSigningOutRef.current ||
+      isSyncQuotaPaused()
+    )
+      return;
     const uid = firebaseUser.uid;
     const timer = setTimeout(() => {
+      if (isSyncQuotaPaused()) return;
       setCloudSyncStatus('syncing');
       void upsertAppStateDoc(
         uid,
@@ -2651,9 +2834,11 @@ export default function App() {
         knownStateKeysRef.current,
         writtenHashesRef.current
       )
-        .then(() => markCloudSyncOk())
+        .then(() => {
+          if (!isSyncQuotaPaused()) markCloudSyncOk();
+        })
         .catch((err) => markCloudSyncError(err));
-    }, 600);
+    }, 2500);
     pendingSyncTimersRef.current.floatingChat = timer;
     return () => {
       clearTimeout(timer);
@@ -3613,9 +3798,12 @@ export default function App() {
         <main key={activeTab} className={`flex-1 w-full tab-content-reveal ${activeTab === 'notebooklm' || activeTab === 'lander' ? 'h-full overflow-hidden flex flex-col' : 'min-h-[100dvh] md:min-h-screen'}`}>
               {activeTab === 'lander' && (
                 <PolygonCanvas
-                  isLoggedIn={isAuthenticated || Boolean(firebaseUser)}
+                  isLoggedIn={Boolean(firebaseUser) || (isAuthenticated && Boolean(authProfile.isGuest))}
                   onEnterApp={() => {
-                    if (isAuthenticated || (firebaseUser && getActiveGeminiApiKey())) {
+                    if (
+                      (firebaseUser && getActiveGeminiApiKey()) ||
+                      (isAuthenticated && authProfile.isGuest && getActiveGeminiApiKey())
+                    ) {
                       setIsAuthenticated(true);
                       setActiveTab('dashboard');
                     } else {
@@ -3880,7 +4068,7 @@ export default function App() {
       <AuthOnboardingModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        onGoogleAuthenticated={hydrateAndSubscribeUser}
+        onGoogleAuthenticated={(user) => hydrateAndSubscribeUser(user, { force: true })}
         onComplete={(authData) => {
           if (authData?.apiKey) {
             const cleanKey = authData.apiKey.trim();

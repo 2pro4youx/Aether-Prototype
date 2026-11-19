@@ -43,6 +43,7 @@ import {
   resolvePreferredNames,
   setGeminiPersonalization,
 } from '../utils/personalization';
+import { getQuotaUpgradeUrl, isQuotaExceededError } from '../utils/firebaseSync';
 
 interface SettingsViewProps {
   darkMode: boolean;
@@ -2493,7 +2494,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   ) : cloudSyncStatus === 'error' ? (
                     <>
                       <AlertCircle className="w-2.5 h-2.5" />
-                      <span>Cloud Sync Issue</span>
+                      <span>
+                        {cloudSyncError && isQuotaExceededError(cloudSyncError)
+                          ? 'Sync Paused (Quota)'
+                          : 'Cloud Sync Issue'}
+                      </span>
                     </>
                   ) : (
                     <>
@@ -2531,9 +2536,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
 
             {!isGuestSession && cloudSyncStatus === 'error' && cloudSyncError && (
-              <p className="text-[11px] font-mono text-rose-400">
-                {cloudSyncError}
-              </p>
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-mono text-rose-400 leading-relaxed">
+                  {cloudSyncError}
+                </p>
+                {isQuotaExceededError(cloudSyncError) && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                    <a
+                      href={getQuotaUpgradeUrl()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-semibold text-amber-400 hover:text-amber-300 underline underline-offset-2"
+                    >
+                      <span>Open Firestore Console</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                    <a
+                      href="https://firebase.google.com/pricing#cloud-firestore"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`inline-flex items-center gap-1 underline underline-offset-2 ${
+                        darkMode ? 'text-slate-300 hover:text-white' : 'text-slate-700 hover:text-slate-900'
+                      }`}
+                    >
+                      <span>View Quota &amp; Plans</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

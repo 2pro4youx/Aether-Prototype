@@ -13,6 +13,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
+import firebaseConfig from '../../firebase-applet-config.json';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
   AuditLog,
@@ -103,7 +104,91 @@ function utf8ByteLength(str: string): number {
   return str.length * 2;
 }
 
+const LEGACY_QUOTA_COOLDOWN_STORAGE_KEY = 'aether_firestore_quota_paused_until_v1';
+const DEFAULT_QUOTA_COOLDOWN_MS = 15 * 60 * 1000;
+let memoryQuotaPausedUntil = 0;
+
+// Clear any legacy cross-reload cooldown so every app start/reload attempts fresh auto-sync
+try {
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(LEGACY_QUOTA_COOLDOWN_STORAGE_KEY);
+  }
+} catch {
+  // ignore sessionStorage errors
+}
+
+function extractRawErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err || 'Unknown sync error');
+  try {
+    const parsed = JSON.parse(raw) as { error?: string };
+    if (parsed?.error) return String(parsed.error);
+  } catch {
+    // Plain error string
+  }
+  return raw;
+}
+
+export function isQuotaExceededError(err: unknown): boolean {
+  const code = String((err as { code?: string })?.code || '').toLowerCase();
+  if (code.includes('resource-exhausted')) return true;
+  const msg = extractRawErrorMessage(err).toLowerCase();
+  return (
+    msg.includes('quota exceeded') ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('quota metric') ||
+    msg.includes('free daily read units') ||
+    msg.includes('free daily write units') ||
+    msg.includes('too many requests')
+  );
+}
+
+export function isOfflineSyncError(err: unknown): boolean {
+  const code = String((err as { code?: string })?.code || '').toLowerCase();
+  if (code.includes('unavailable') || code.includes('network-request-failed')) return true;
+  const msg = extractRawErrorMessage(err).toLowerCase();
+  return (
+    msg.includes('offline') ||
+    msg.includes('failed to get document because the client is offline') ||
+    msg.includes('network-request-failed') ||
+    msg.includes('failed to fetch')
+  );
+}
+
+export function getQuotaUpgradeUrl(): string {
+  const cfg = firebaseConfig as { projectId?: string; firestoreDatabaseId?: string };
+  const projectId = cfg.projectId || 'daw-9be97';
+  const dbId = cfg.firestoreDatabaseId || '(default)';
+  return `https://console.firebase.google.com/project/${encodeURIComponent(
+    projectId
+  )}/firestore/databases/${encodeURIComponent(dbId)}/data?openUpgradeDialog=true`;
+}
+
+export function getSyncQuotaPausedUntil(): number {
+  return memoryQuotaPausedUntil;
+}
+
+export function isSyncQuotaPaused(): boolean {
+  return Date.now() < memoryQuotaPausedUntil;
+}
+
+export function markSyncQuotaExceeded(cooldownMs = DEFAULT_QUOTA_COOLDOWN_MS): number {
+  const until = Date.now() + cooldownMs;
+  memoryQuotaPausedUntil = until;
+  return until;
+}
+
+export function clearSyncQuotaPause(): void {
+  memoryQuotaPausedUntil = 0;
+}
+
 export function formatCloudSyncError(err: unknown): string {
+  if (isQuotaExceededError(err)) {
+    return 'Firestore daily free-tier quota exceeded. Changes remain saved locally; cloud auto-sync is paused and quota resets tomorrow.';
+  }
+  if (isOfflineSyncError(err)) {
+    return 'Device appears offline — changes are saved locally and will auto-sync when reconnected.';
+  }
   const raw = err instanceof Error ? err.message : String(err || 'Unknown sync error');
   try {
     const parsed = JSON.parse(raw) as { error?: string; operationType?: string; path?: string };
@@ -111,16 +196,16 @@ export function formatCloudSyncError(err: unknown): string {
       if (parsed.error.includes('permission-denied') || parsed.error.includes('Missing or insufficient permissions')) {
         return `Firestore permission denied on ${parsed.path || 'user data'}.`;
       }
-      if (parsed.error.includes('offline')) {
-        return 'Device appears offline — changes will retry when reconnected.';
+      if (parsed.error.toLowerCase().includes('offline')) {
+        return 'Device appears offline — changes are saved locally and will auto-sync when reconnected.';
       }
       return parsed.error;
     }
   } catch {
     // Plain error string
   }
-  if (raw.includes('offline')) {
-    return 'Device appears offline — changes will retry when reconnected.';
+  if (raw.toLowerCase().includes('offline')) {
+    return 'Device appears offline — changes are saved locally and will auto-sync when reconnected.';
   }
   return raw.slice(0, 180);
 }
@@ -378,6 +463,7 @@ export async function ensureUserProfile(user: User): Promise<void> {
   try {
     existingSnap = await getDoc(userRef);
   } catch (error) {
+    if (isQuotaExceededError(error)) markSyncQuotaExceeded();
     handleFirestoreError(error, OperationType.GET, path);
   }
 
@@ -395,9 +481,20 @@ export async function ensureUserProfile(user: User): Promise<void> {
     try {
       await setDoc(userRef, profileCreate);
     } catch (error) {
+      if (isQuotaExceededError(error)) markSyncQuotaExceeded();
       handleFirestoreError(error, OperationType.CREATE, path);
     }
   } else {
+    const existingData = existingSnap.data() as Record<string, unknown> | undefined;
+    const needsProfileUpdate =
+      existingData?.email !== email ||
+      existingData?.displayName !== displayName ||
+      (photoURL ? existingData?.photoURL !== photoURL : false);
+
+    if (!needsProfileUpdate) {
+      return;
+    }
+
     const profileUpdate: Record<string, unknown> = {
       email,
       displayName,
@@ -409,6 +506,7 @@ export async function ensureUserProfile(user: User): Promise<void> {
     try {
       await updateDoc(userRef, profileUpdate);
     } catch (error) {
+      if (isQuotaExceededError(error)) markSyncQuotaExceeded();
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
   }
@@ -431,6 +529,7 @@ export async function loadUserCloudData(
     );
     wsSnap = await getDocs(wsQuery);
   } catch (error) {
+    if (isQuotaExceededError(error)) markSyncQuotaExceeded();
     handleFirestoreError(error, OperationType.LIST, workspacesPath);
   }
 
@@ -442,6 +541,7 @@ export async function loadUserCloudData(
     );
     stateSnap = await getDocs(stateQuery);
   } catch (error) {
+    if (isQuotaExceededError(error)) markSyncQuotaExceeded();
     handleFirestoreError(error, OperationType.LIST, appStatePath);
   }
 
@@ -502,8 +602,13 @@ export async function upsertWorkspaceDoc(
   uid: string,
   ws: Workspace,
   knownWorkspaceIds: Set<string>,
-  writtenHashes?: Map<string, string>
+  writtenHashes?: Map<string, string>,
+  options?: { force?: boolean }
 ): Promise<void> {
+  if (!options?.force && isSyncQuotaPaused()) {
+    return;
+  }
+
   const { safeId, payload } = serializeWorkspaceForFirestore(uid, ws);
   const hash = JSON.stringify(payload);
   if (writtenHashes && writtenHashes.get(`ws:${safeId}`) === hash) {
@@ -525,6 +630,10 @@ export async function upsertWorkspaceDoc(
       }
       return;
     } catch (error: unknown) {
+      if (isQuotaExceededError(error)) {
+        markSyncQuotaExceeded();
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
       const code = (error as { code?: string })?.code;
       if (code !== 'not-found') {
         handleFirestoreError(error, OperationType.UPDATE, path);
@@ -543,6 +652,7 @@ export async function upsertWorkspaceDoc(
       writtenHashes.set(`ws:${safeId}`, hash);
     }
   } catch (error) {
+    if (isQuotaExceededError(error)) markSyncQuotaExceeded();
     handleFirestoreError(error, OperationType.CREATE, path);
   }
 }
@@ -551,8 +661,12 @@ export async function deleteWorkspaceDoc(
   uid: string,
   workspaceId: string,
   knownWorkspaceIds: Set<string>,
-  writtenHashes?: Map<string, string>
+  writtenHashes?: Map<string, string>,
+  options?: { force?: boolean }
 ): Promise<void> {
+  if (!options?.force && isSyncQuotaPaused()) {
+    return;
+  }
   const safeId = sanitizeFirestoreId(workspaceId, 'ws');
   const path = `users/${uid}/workspaces/${safeId}`;
   try {
@@ -560,6 +674,7 @@ export async function deleteWorkspaceDoc(
     knownWorkspaceIds.delete(safeId);
     writtenHashes?.delete(`ws:${safeId}`);
   } catch (error) {
+    if (isQuotaExceededError(error)) markSyncQuotaExceeded();
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
@@ -569,8 +684,13 @@ export async function upsertAppStateDoc(
   stateKey: AppStateKey,
   rawPayload: unknown,
   knownStateKeys: Set<AppStateKey>,
-  writtenHashes?: Map<string, string>
+  writtenHashes?: Map<string, string>,
+  options?: { force?: boolean }
 ): Promise<void> {
+  if (!options?.force && isSyncQuotaPaused()) {
+    return;
+  }
+
   let sanitizedPayload = stripUndefined(rawPayload) as Record<string, unknown>;
   let hash = JSON.stringify(sanitizedPayload);
 
@@ -608,6 +728,10 @@ export async function upsertAppStateDoc(
       }
       return;
     } catch (error: unknown) {
+      if (isQuotaExceededError(error)) {
+        markSyncQuotaExceeded();
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
       const code = (error as { code?: string })?.code;
       if (code !== 'not-found') {
         handleFirestoreError(error, OperationType.UPDATE, path);
@@ -628,6 +752,7 @@ export async function upsertAppStateDoc(
       writtenHashes.set(`state:${stateKey}`, hash);
     }
   } catch (error) {
+    if (isQuotaExceededError(error)) markSyncQuotaExceeded();
     handleFirestoreError(error, OperationType.CREATE, path);
   }
 }
@@ -687,6 +812,7 @@ export function subscribeToUserCloudData(
       }
     },
     (error) => {
+      if (isQuotaExceededError(error)) markSyncQuotaExceeded();
       try {
         handleFirestoreError(error, OperationType.LIST, wsPath);
       } catch (wrapped) {
@@ -727,6 +853,7 @@ export function subscribeToUserCloudData(
       });
     },
     (error) => {
+      if (isQuotaExceededError(error)) markSyncQuotaExceeded();
       try {
         handleFirestoreError(error, OperationType.LIST, statePath);
       } catch (wrapped) {

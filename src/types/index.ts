@@ -58,6 +58,7 @@ export interface PlannerEntry {
 }
 
 export type DashboardCardType =
+  | 'study_matrix'
   | 'tasks'
   | 'planner'
   | 'syllabus'
@@ -72,6 +73,8 @@ export interface DashboardCardInstance {
   colSpan: number; // legacy 4 to 12 fallback in 12-col desktop grid
   widthPct?: number; // continuous percentage width (25 to 100) for smooth horizontal resize
   height: number; // card height in px
+  mobileHeight?: number; // independent card height on mobile viewports (< 768px)
+  pinned?: boolean; // locks card position & size in place
   isolated?: boolean; // when true, card starts blank and stores items independently from primary cards
   tasks?: TaskItem[];
   planners?: PlannerEntry[];

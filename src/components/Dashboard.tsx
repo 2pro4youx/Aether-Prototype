@@ -11,6 +11,8 @@ import {
   CalendarRange,
   Pencil,
   Trash2,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -32,7 +34,7 @@ import { ExamScheduleCard } from './dashboard/ExamScheduleCard';
 import { TimetableCard } from './dashboard/TimetableCard';
 import { CalendarCard } from './dashboard/CalendarCard';
 import { DashboardModal } from './dashboard/DashboardModal';
-import { resizeLenis } from '../hooks/useSmoothScroll';
+import { resizeLenis, getLenis } from '../hooks/useSmoothScroll';
 import { extractFirstName } from '../utils/personalization';
 
 interface DashboardProps {
@@ -72,6 +74,7 @@ interface DashboardProps {
 }
 
 const DEFAULT_CARD_TITLES: Record<DashboardCardType, string> = {
+  study_matrix: 'Annual Study Activity & Hours Matrix',
   tasks: 'Tasks',
   planner: 'Study Planner',
   syllabus: 'Syllabus Tracker',
@@ -79,6 +82,13 @@ const DEFAULT_CARD_TITLES: Record<DashboardCardType, string> = {
   timetable: 'Weekly Timetable',
   calendar: 'Calendar',
 };
+
+export function isCardPinned(card: Pick<DashboardCardInstance, 'type' | 'pinned'>): boolean {
+  if (card.type === 'study_matrix') {
+    return card.pinned !== false;
+  }
+  return Boolean(card.pinned);
+}
 
 function getCardDisplayTitle(card: DashboardCardInstance): string {
   return card.title?.trim() || DEFAULT_CARD_TITLES[card.type] || 'Dashboard Card';
@@ -91,6 +101,13 @@ function getCardWidthPct(card: DashboardCardInstance): number {
   return clamp(Math.floor(((card.colSpan || 6) / 12) * 10000) / 100, 25, 100);
 }
 
+function getMobileCardHeight(card: DashboardCardInstance): number {
+  if (typeof card.mobileHeight === 'number' && !Number.isNaN(card.mobileHeight)) {
+    return clamp(card.mobileHeight, 200, 920);
+  }
+  return Math.min(card.height, card.type === 'calendar' ? 400 : 325);
+}
+
 const CARD_CATALOG: Array<{
   type: DashboardCardType;
   title: string;
@@ -100,6 +117,15 @@ const CARD_CATALOG: Array<{
   defaultHeight: number;
   icon: React.FC<{ className?: string; style?: React.CSSProperties }>;
 }> = [
+  {
+    type: 'study_matrix',
+    title: 'Annual Study Matrix',
+    description: '365-day study hours heatmap with streak metrics and default position pin.',
+    defaultColSpan: 12,
+    defaultWidthPct: 100,
+    defaultHeight: 290,
+    icon: Calendar,
+  },
   {
     type: 'tasks',
     title: 'Tasks',
@@ -156,7 +182,17 @@ const CARD_CATALOG: Array<{
   },
 ];
 
+export const DEFAULT_STUDY_MATRIX_CARD: DashboardCardInstance = {
+  id: 'card-study-matrix-default',
+  type: 'study_matrix',
+  colSpan: 12,
+  widthPct: 100,
+  height: 290,
+  pinned: true,
+};
+
 export const DEFAULT_DASHBOARD_CARDS: DashboardCardInstance[] = [
+  DEFAULT_STUDY_MATRIX_CARD,
   {
     id: 'card-tasks-default',
     type: 'tasks',
@@ -172,6 +208,43 @@ export const DEFAULT_DASHBOARD_CARDS: DashboardCardInstance[] = [
     height: 460,
   },
 ];
+
+export function normalizeDashboardCards(rawCards: unknown): DashboardCardInstance[] {
+  if (!Array.isArray(rawCards) || rawCards.length === 0) {
+    return DEFAULT_DASHBOARD_CARDS;
+  }
+
+  const parsed = rawCards as DashboardCardInstance[];
+  const isLegacyDefault =
+    parsed.length === 1 &&
+    parsed[0]?.id === 'card-tasks-default' &&
+    parsed[0]?.type === 'tasks' &&
+    parsed[0]?.colSpan === 7 &&
+    parsed[0]?.widthPct === 58.33 &&
+    parsed[0]?.height === 460 &&
+    !parsed[0]?.title;
+  if (isLegacyDefault) {
+    return DEFAULT_DASHBOARD_CARDS;
+  }
+
+  let matrixExplicitlyDeleted = false;
+  try {
+    matrixExplicitlyDeleted = localStorage.getItem('aether_study_matrix_deleted_v1') === '1';
+  } catch {
+    matrixExplicitlyDeleted = false;
+  }
+
+  const hasMatrix = parsed.some((c) => c?.type === 'study_matrix');
+  if (!hasMatrix && !matrixExplicitlyDeleted) {
+    return [DEFAULT_STUDY_MATRIX_CARD, ...parsed];
+  }
+
+  return parsed.map((c) =>
+    c?.type === 'study_matrix' && typeof c.pinned !== 'boolean'
+      ? { ...c, pinned: true }
+      : c
+  );
+}
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -336,23 +409,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
   }, [onMetaverseEditChange]);
 
-  // Modular Dashboard Cards layout (default: Tasks & Weekly Timetable side by side)
+  // Modular Dashboard Cards layout (default: Pinned Study Matrix, Tasks & Weekly Timetable)
   const [internalCards, setInternalCards] = useState<DashboardCardInstance[]>(() => {
     try {
       const saved = localStorage.getItem('aether_dashboard_cards_v1');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const isLegacyDefault =
-            parsed.length === 1 &&
-            parsed[0]?.id === 'card-tasks-default' &&
-            parsed[0]?.type === 'tasks' &&
-            parsed[0]?.colSpan === 7 &&
-            parsed[0]?.widthPct === 58.33 &&
-            parsed[0]?.height === 460 &&
-            !parsed[0]?.title;
-          if (!isLegacyDefault) return parsed;
-        }
+        return normalizeDashboardCards(JSON.parse(saved));
       }
     } catch {
       // fallback to default
@@ -407,7 +469,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
   useEffect(() => {
     if (onUpdateSyllabusCourses) return;
-    localStorage.setItem('aether_syllabus_v1', JSON.stringify(syllabusCourses));
+    try {
+      localStorage.setItem('aether_syllabus_v1', JSON.stringify(syllabusCourses));
+    } catch {
+      // ignore quota issues
+    }
   }, [syllabusCourses, onUpdateSyllabusCourses]);
 
   const [internalExamSchedules, setInternalExamSchedules] = useState<ExamScheduleEntry[]>(() => {
@@ -434,7 +500,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
   useEffect(() => {
     if (onUpdateExamSchedules) return;
-    localStorage.setItem('aether_exam_schedule_v1', JSON.stringify(examSchedules));
+    try {
+      localStorage.setItem('aether_exam_schedule_v1', JSON.stringify(examSchedules));
+    } catch {
+      // ignore quota issues
+    }
   }, [examSchedules, onUpdateExamSchedules]);
 
   const [internalTimetableSlots, setInternalTimetableSlots] = useState<TimetableSlot[]>(() => {
@@ -461,7 +531,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
   useEffect(() => {
     if (onUpdateTimetableSlots) return;
-    localStorage.setItem('aether_timetable_v1', JSON.stringify(timetableSlots));
+    try {
+      localStorage.setItem('aether_timetable_v1', JSON.stringify(timetableSlots));
+    } catch {
+      // ignore quota issues
+    }
   }, [timetableSlots, onUpdateTimetableSlots]);
 
   const [internalLocalCalendarEvents, setInternalLocalCalendarEvents] = useState<CalendarEventEntry[]>(() => {
@@ -491,7 +565,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
   useEffect(() => {
     if (onUpdateLocalCalendarEvents) return;
-    localStorage.setItem('aether_local_calendar_v1', JSON.stringify(localCalendarEvents));
+    try {
+      localStorage.setItem('aether_local_calendar_v1', JSON.stringify(localCalendarEvents));
+    } catch {
+      // ignore quota issues
+    }
   }, [localCalendarEvents, onUpdateLocalCalendarEvents]);
 
   // Drag-and-drop card reordering (no drag icon)
@@ -564,13 +642,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
     if (!isMetaverseEdit || cards.length === 0) return 0;
     let maxB = 0;
     for (const card of cards) {
+      if (isMobileViewport && card.type === 'study_matrix') continue;
       const r = freeLayoutMap[card.id];
       if (r) {
         maxB = Math.max(maxB, r.y + r.h);
       }
     }
     return Math.max(240, maxB);
-  }, [isMetaverseEdit, cards, freeLayoutMap]);
+  }, [isMetaverseEdit, isMobileViewport, cards, freeLayoutMap]);
 
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
@@ -598,6 +677,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     let fallbackY = 0;
 
     cards.forEach((card, index) => {
+      if (isMobileViewport && card.type === 'study_matrix') return;
       const matched = packedLayout?.rects.find((r) => r.card.id === card.id);
       if (matched) {
         initialMap[card.id] = {
@@ -608,13 +688,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
         };
       } else {
         const w = Math.max(240, Math.round(cw));
+        const h = isMobileViewport ? getMobileCardHeight(card) : card.height;
         initialMap[card.id] = {
           x: 0,
           y: fallbackY,
           w,
-          h: card.height,
+          h,
         };
-        fallbackY += card.height + CARD_GAP;
+        fallbackY += h + CARD_GAP;
       }
       initialZ[card.id] = index + 1;
     });
@@ -632,18 +713,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const cw = gridRef.current?.clientWidth || gridWidth || 1200;
     const virtualWidth = Math.max(320, cw + CARD_GAP);
 
-    const cardsWithRects = cards.map((card, idx) => {
+    const movableWithRects: Array<{ card: DashboardCardInstance; rect: FreeCardRect }> = [];
+    const pinnedAtIndex = new Map<number, DashboardCardInstance>();
+
+    cards.forEach((card, idx) => {
+      if (isCardPinned(card) || (isMobileViewport && card.type === 'study_matrix')) {
+        pinnedAtIndex.set(idx, card);
+        return;
+      }
       const fallbackW = clamp((getCardWidthPct(card) / 100) * virtualWidth - CARD_GAP, 220, cw);
+      const fallbackH = isMobileViewport ? getMobileCardHeight(card) : card.height;
       const rect = freeLayoutMap[card.id] ?? {
         x: 0,
-        y: idx * (card.height + CARD_GAP),
+        y: idx * (fallbackH + CARD_GAP),
         w: fallbackW,
-        h: card.height,
+        h: fallbackH,
       };
-      return { card, rect };
+      movableWithRects.push({ card, rect });
     });
 
-    cardsWithRects.sort((a, b) => {
+    movableWithRects.sort((a, b) => {
       const rowA = Math.round(a.rect.y / 48);
       const rowB = Math.round(b.rect.y / 48);
       if (rowA !== rowB) return rowA - rowB;
@@ -651,10 +740,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return a.rect.y - b.rect.y;
     });
 
-    const fittedCards: DashboardCardInstance[] = cardsWithRects.map(({ card, rect }) => {
+    const fittedMovable: DashboardCardInstance[] = movableWithRects.map(({ card, rect }) => {
+      if (isMobileViewport) {
+        const snappedMobileHeight = clamp(Math.round(rect.h / 20) * 20, 200, 920);
+        return {
+          ...card,
+          mobileHeight: snappedMobileHeight,
+        };
+      }
       const rawWidthPct = clamp(((rect.w + CARD_GAP) / virtualWidth) * 100, 25, 100);
       const { widthPct, colSpan } = snapToClosestRatio(rawWidthPct);
-      const snappedHeight = clamp(Math.round(rect.h / 20) * 20, 280, 920);
+      const minH = card.type === 'study_matrix' ? 220 : 280;
+      const snappedHeight = clamp(Math.round(rect.h / 20) * 20, minH, 920);
       return {
         ...card,
         widthPct,
@@ -662,6 +759,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
         height: snappedHeight,
       };
     });
+
+    const fittedCards: DashboardCardInstance[] = [];
+    let movableCursor = 0;
+    for (let i = 0; i < cards.length; i++) {
+      const pinnedCard = pinnedAtIndex.get(i);
+      if (pinnedCard) {
+        fittedCards.push(pinnedCard);
+      } else if (movableCursor < fittedMovable.length) {
+        fittedCards.push(fittedMovable[movableCursor++]);
+      }
+    }
 
     setCards(fittedCards);
     setIsMetaverseEdit(false);
@@ -679,13 +787,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const startResize = (
-    e: React.PointerEvent,
+    e: React.PointerEvent<HTMLElement>,
     card: DashboardCardInstance,
     direction: ResizeDirection
   ) => {
-    if (e.button !== 0) return;
+    if ((e.pointerType === 'mouse' && e.button !== 0) || isCardPinned(card)) return;
     e.preventDefault();
     e.stopPropagation();
+
+    const captureTarget = e.currentTarget;
+    const pointerId = e.pointerId;
+    try {
+      captureTarget?.setPointerCapture?.(pointerId);
+    } catch {
+      // ignore if pointer capture is unsupported
+    }
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -697,6 +813,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     const prevBodyCursor = document.body.style.cursor;
     const prevUserSelect = document.body.style.userSelect;
+    const prevBodyTouchAction = document.body.style.touchAction;
+    const prevHtmlTouchAction = document.documentElement.style.touchAction;
     document.body.style.cursor =
       direction === 'n' || direction === 's'
         ? 'ns-resize'
@@ -706,15 +824,46 @@ export const Dashboard: React.FC<DashboardProps> = ({
         ? 'nesw-resize'
         : 'nwse-resize';
     document.body.style.userSelect = 'none';
+    document.body.style.touchAction = 'none';
+    document.documentElement.style.touchAction = 'none';
+
+    const lenis = getLenis();
+    lenis?.stop();
+
+    const preventTouchScroll = (touchEvent: TouchEvent) => {
+      if (touchEvent.cancelable) {
+        touchEvent.preventDefault();
+      }
+    };
+    window.addEventListener('touchmove', preventTouchScroll, { passive: false });
+
+    const cleanupCommon = () => {
+      try {
+        if (captureTarget?.hasPointerCapture?.(pointerId)) {
+          captureTarget.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // ignore
+      }
+      window.removeEventListener('touchmove', preventTouchScroll);
+      document.body.style.cursor = prevBodyCursor;
+      document.body.style.userSelect = prevUserSelect;
+      document.body.style.touchAction = prevBodyTouchAction;
+      document.documentElement.style.touchAction = prevHtmlTouchAction;
+      lenis?.start();
+      resizeLenis();
+      setResizingCardId(null);
+    };
 
     if (isMetaverseEdit) {
       bringCardToFront(card.id);
       const fallbackW = clamp((getCardWidthPct(card) / 100) * containerWidth - CARD_GAP, 220, rawGridW);
+      const fallbackH = isMobileViewport ? getMobileCardHeight(card) : card.height;
       const startRect: FreeCardRect = freeLayoutMap[card.id] ?? {
         x: 0,
         y: 0,
         w: fallbackW,
-        h: card.height,
+        h: fallbackH,
       };
       const minW = 220;
       const maxW = Math.max(rawGridW, 320);
@@ -763,6 +912,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       };
 
       const handlePointerMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId) return;
         latestClientX = moveEvent.clientX;
         latestClientY = moveEvent.clientY;
         if (rafId === null) {
@@ -770,14 +920,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
       };
 
-      const handlePointerUp = () => {
+      const handlePointerUp = (upEvent: PointerEvent) => {
+        if (upEvent.pointerId !== pointerId) return;
         if (rafId !== null) {
           window.cancelAnimationFrame(rafId);
           applyFreeResize();
         }
-        document.body.style.cursor = prevBodyCursor;
-        document.body.style.userSelect = prevUserSelect;
-        setResizingCardId(null);
+        cleanupCommon();
         window.removeEventListener('pointermove', handlePointerMove);
         window.removeEventListener('pointerup', handlePointerUp);
         window.removeEventListener('pointercancel', handlePointerUp);
@@ -791,7 +940,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     const startWidthPct = getCardWidthPct(card);
     const startWidthPx = (startWidthPct / 100) * containerWidth;
-    const startHeightPx = card.height;
+    const startHeightPx = isMobileViewport ? getMobileCardHeight(card) : card.height;
 
     let latestClientX = startX;
     let latestClientY = startY;
@@ -815,6 +964,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
           ? -rawDy
           : 0;
 
+      if (isMobileViewport) {
+        const nextMobileHeight = clamp(Math.round(startHeightPx + signedDy), 200, 920);
+        setCards((prev) =>
+          prev.map((c) => (c.id === card.id ? { ...c, mobileHeight: nextMobileHeight } : c))
+        );
+        return;
+      }
+
       const targetWidthPx = startWidthPx + signedDx;
       const nextWidthPct = clamp(
         Math.round(((targetWidthPx / containerWidth) * 100) * 100) / 100,
@@ -822,7 +979,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         100
       );
       const nextColSpan = clamp(Math.round((nextWidthPct / 100) * 12), 3, 12);
-      const nextHeight = clamp(Math.round(startHeightPx + signedDy), 280, 920);
+      const minHeight = card.type === 'study_matrix' ? 220 : 280;
+      const nextHeight = clamp(Math.round(startHeightPx + signedDy), minHeight, 920);
 
       setCards((prev) =>
         prev.map((c) =>
@@ -834,6 +992,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       latestClientX = moveEvent.clientX;
       latestClientY = moveEvent.clientY;
       if (rafId === null) {
@@ -841,14 +1000,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
       if (rafId !== null) {
         window.cancelAnimationFrame(rafId);
         applyResize();
       }
-      document.body.style.cursor = prevBodyCursor;
-      document.body.style.userSelect = prevUserSelect;
-      setResizingCardId(null);
+      cleanupCommon();
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerUp);
@@ -860,7 +1018,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const startFreeDrag = (e: React.PointerEvent, card: DashboardCardInstance) => {
-    if (!isMetaverseEdit || resizingCardId !== null || e.button !== 0) return;
+    if (
+      !isMetaverseEdit ||
+      isCardPinned(card) ||
+      resizingCardId !== null ||
+      (e.pointerType === 'mouse' && e.button !== 0)
+    ) {
+      return;
+    }
     const target = e.target as HTMLElement | null;
     if (
       target?.closest(
@@ -874,13 +1039,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     const startX = e.clientX;
     const startY = e.clientY;
+    const pointerId = e.pointerId;
     const rawGridW = gridRef.current?.clientWidth || gridWidth || 1200;
     const fallbackW = clamp((getCardWidthPct(card) / 100) * (rawGridW + CARD_GAP) - CARD_GAP, 220, rawGridW);
+    const fallbackH = isMobileViewport ? getMobileCardHeight(card) : card.height;
     const startRect: FreeCardRect = freeLayoutMap[card.id] ?? {
       x: 0,
       y: 0,
       w: fallbackW,
-      h: card.height,
+      h: fallbackH,
     };
 
     let hasActivatedDrag = false;
@@ -889,6 +1056,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
     let rafId: number | null = null;
     const prevCursor = document.body.style.cursor;
     const prevUserSelect = document.body.style.userSelect;
+    const prevBodyTouchAction = document.body.style.touchAction;
+    const prevHtmlTouchAction = document.documentElement.style.touchAction;
+    const lenis = getLenis();
+
+    const preventTouchScroll = (touchEvent: TouchEvent) => {
+      if (hasActivatedDrag && touchEvent.cancelable) {
+        touchEvent.preventDefault();
+      }
+    };
+    window.addEventListener('touchmove', preventTouchScroll, { passive: false });
 
     const applyFreeMove = () => {
       rafId = null;
@@ -909,6 +1086,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       latestClientX = moveEvent.clientX;
       latestClientY = moveEvent.clientY;
 
@@ -919,6 +1097,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         setActiveFreeDragId(card.id);
         document.body.style.cursor = 'grabbing';
         document.body.style.userSelect = 'none';
+        document.body.style.touchAction = 'none';
+        document.documentElement.style.touchAction = 'none';
+        lenis?.stop();
       }
 
       if (rafId === null) {
@@ -926,14 +1107,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
       if (rafId !== null) {
         window.cancelAnimationFrame(rafId);
         if (hasActivatedDrag) applyFreeMove();
       }
+      window.removeEventListener('touchmove', preventTouchScroll);
       if (hasActivatedDrag) {
         document.body.style.cursor = prevCursor;
         document.body.style.userSelect = prevUserSelect;
+        document.body.style.touchAction = prevBodyTouchAction;
+        document.documentElement.style.touchAction = prevHtmlTouchAction;
+        lenis?.start();
+        resizeLenis();
         setActiveFreeDragId(null);
       }
       window.removeEventListener('pointermove', handlePointerMove);
@@ -956,12 +1143,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const handleAddCard = (type: DashboardCardType) => {
     const meta = CARD_CATALOG.find((c) => c.type === type);
     if (!meta) return;
+    if (type === 'study_matrix') {
+      try {
+        localStorage.removeItem('aether_study_matrix_deleted_v1');
+      } catch {
+        // ignore storage restrictions
+      }
+    }
     const nextCard: DashboardCardInstance = {
       id: `card-${type}-${Date.now()}`,
       type,
       colSpan: meta.defaultColSpan,
       widthPct: meta.defaultWidthPct,
       height: meta.defaultHeight,
+      ...(type === 'study_matrix' ? { pinned: true } : {}),
       isolated: true,
       ...(type === 'tasks' ? { tasks: [] } : {}),
       ...(type === 'planner' ? { planners: [] } : {}),
@@ -1009,11 +1204,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }, 90);
   };
 
+  const handleToggleCardPin = (cardId: string) => {
+    setDragReadyCardId(null);
+    setDraggingCardId(null);
+    setCards((prev) =>
+      prev.map((c) => {
+        if (c.id !== cardId) return c;
+        const currentlyPinned = isCardPinned(c);
+        return { ...c, pinned: !currentlyPinned };
+      })
+    );
+  };
+
   const handleConfirmDeleteCard = () => {
     if (!cardPendingDelete) return;
     const idToDelete = cardPendingDelete.id;
+    const wasStudyMatrix = cardPendingDelete.type === 'study_matrix';
     setCardPendingDelete(null);
-    setCards((prev) => prev.filter((c) => c.id !== idToDelete));
+    setCards((prev) => {
+      const next = prev.filter((c) => c.id !== idToDelete);
+      if (wasStudyMatrix && !next.some((c) => c.type === 'study_matrix')) {
+        try {
+          localStorage.setItem('aether_study_matrix_deleted_v1', '1');
+        } catch {
+          // ignore storage restrictions
+        }
+      }
+      return next;
+    });
     setFreeLayoutMap((prev) => {
       if (!(idToDelete in prev)) return prev;
       const next = { ...prev };
@@ -1177,162 +1395,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </button>
       </div>
 
-      {/* Real-Time 365-Day Study Hours Heatmap Tile (Zero Dummy Data) */}
-      <div className="liquid-glass rounded-2xl p-3.5 md:p-6 shadow-xl flex flex-col gap-2.5 md:gap-4 overflow-hidden">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-4">
-          <div className="space-y-0.5 md:space-y-1">
-            <div className="flex items-center gap-1.5 md:gap-2">
-              <Calendar className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: activePalette.primary }} />
-              <h2
-                className={`text-sm md:text-lg font-bold ${
-                  darkMode ? 'text-slate-100' : 'text-slate-900'
-                }`}
-              >
-                Annual Study Activity & Hours Matrix
-              </h2>
-            </div>
-            <p
-              className={`hidden sm:block text-xs ${
-                darkMode ? 'text-slate-400' : 'text-slate-500'
-              }`}
-            >
-              Live 365-day learning ledger recording real workspace and study activity.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 md:gap-4 text-[11px] md:text-xs font-mono">
-            <div
-              className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg border flex items-center gap-1 ${
-                darkMode
-                  ? 'bg-slate-900/20 border-white/10 text-slate-300'
-                  : 'bg-white/25 border-slate-200/60 text-slate-700'
-              }`}
-            >
-              <span className="font-bold tabular-nums" style={{ color: activePalette.primary }}>
-                {totalHours}h
-              </span>{' '}
-              Total
-            </div>
-            <div
-              className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg border flex items-center gap-1 ${
-                darkMode
-                  ? 'bg-slate-900/20 border-white/10 text-slate-300'
-                  : 'bg-white/25 border-slate-200/60 text-slate-700'
-              }`}
-            >
-              <Flame className="w-3 h-3 md:w-3.5 md:h-3.5" style={{ color: activePalette.accent }} />
-              <span className="font-bold tabular-nums" style={{ color: activePalette.primary }}>
-                {currentStreak}
-              </span>{' '}
-              Day Streak
-            </div>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto pb-1 md:pb-2 pt-0.5 md:pt-1">
-          <div className="min-w-[640px] md:min-w-[760px]">
-            <div className="grid grid-flow-col grid-rows-7 gap-0.5 md:gap-1">
-              {studyDays.map((day) => {
-                let cellStyle: React.CSSProperties = {
-                  backgroundColor: darkMode
-                    ? 'rgba(255, 255, 255, 0.05)'
-                    : 'rgba(0, 0, 0, 0.06)',
-                  borderColor: darkMode
-                    ? 'rgba(255, 255, 255, 0.05)'
-                    : 'rgba(0, 0, 0, 0.08)',
-                };
-
-                if (day.count === 1) {
-                  cellStyle = {
-                    backgroundColor: `${activePalette.primary}35`,
-                    borderColor: `${activePalette.primary}50`,
-                  };
-                } else if (day.count === 2) {
-                  cellStyle = {
-                    backgroundColor: `${activePalette.primary}70`,
-                    borderColor: `${activePalette.primary}90`,
-                  };
-                } else if (day.count === 3) {
-                  cellStyle = {
-                    backgroundColor: activePalette.primary,
-                    borderColor: activePalette.primary,
-                    boxShadow: `0 0 8px ${activePalette.primary}40`,
-                  };
-                } else if (day.count === 4) {
-                  cellStyle = {
-                    background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
-                    borderColor: activePalette.accent,
-                    boxShadow: `0 0 10px ${activePalette.accent}60`,
-                  };
-                }
-
-                return (
-                  <div
-                    key={day.date}
-                    onMouseEnter={() => setHoveredDay(day)}
-                    onMouseLeave={() => setHoveredDay(null)}
-                    className="w-2.5 h-2.5 md:w-3.5 md:h-3.5 rounded-[2px] md:rounded-[3px] border transition-transform duration-150 hover:scale-125 cursor-pointer"
-                    style={cellStyle}
-                    title={`${day.date}: ${day.hours} study hours`}
-                  />
-                );
-              })}
-            </div>
-
-            <div
-              className={`flex items-center justify-between pt-2 md:pt-3 text-[10px] md:text-xs ${
-                darkMode ? 'text-slate-400' : 'text-slate-500'
-              }`}
-            >
-              <div className="min-h-[16px] md:min-h-[20px] font-mono">
-                {hoveredDay ? (
-                  <span style={{ color: activePalette.primary }} className="font-medium tabular-nums">
-                    {hoveredDay.date} — {hoveredDay.hours} hours logged (
-                    {hoveredDay.hours > 0 ? 'Active Session' : 'No Activity'})
-                  </span>
-                ) : (
-                  <>
-                    <span className="hidden md:inline">Hover over any tile to inspect daily study hours</span>
-                    <span className="md:hidden">Swipe horizontally · Tap tile for hours</span>
-                  </>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5 md:gap-2">
-                <span>Less</span>
-                <span
-                  className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
-                  style={{
-                    backgroundColor: darkMode
-                      ? 'rgba(255, 255, 255, 0.05)'
-                      : 'rgba(0, 0, 0, 0.06)',
-                  }}
-                />
-                <span
-                  className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
-                  style={{ backgroundColor: `${activePalette.primary}40` }}
-                />
-                <span
-                  className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
-                  style={{ backgroundColor: `${activePalette.primary}80` }}
-                />
-                <span
-                  className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
-                  style={{ backgroundColor: activePalette.primary }}
-                />
-                <span
-                  className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
-                  style={{
-                    background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
-                  }}
-                />
-                <span>More</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Modular Resizable & Drag-Reorderable Cards Grid (2D Corner-Fitting Packing in Normal Mode / Freeform Floating in Metaverse Edit) */}
       <div
         ref={gridRef}
@@ -1355,18 +1417,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
       >
         <AnimatePresence initial={false}>
           {cards.map((card, idx) => {
+            if (isMobileViewport && card.type === 'study_matrix') {
+              return null;
+            }
             const rect = !isMetaverseEdit ? packedLayout?.rects[idx] : undefined;
             const freeRect = isMetaverseEdit ? freeLayoutMap[card.id] : undefined;
             const widthPct = getCardWidthPct(card);
+            const isPinned = isCardPinned(card);
             const isDragging = draggingCardId === card.id || activeFreeDragId === card.id;
             const isResizing = resizingCardId === card.id;
             const isAnyResizing = resizingCardId !== null;
             const isActiveFreeAction = activeFreeDragId === card.id || (isMetaverseEdit && isResizing);
-            const rawDisplayHeight = freeRect ? freeRect.h : rect ? rect.h : card.height;
-            const displayHeight =
-              isMobileViewport && !isMetaverseEdit && !rect
-                ? Math.min(rawDisplayHeight, card.type === 'calendar' ? 400 : 325)
-                : rawDisplayHeight;
+            const displayHeight = freeRect
+              ? freeRect.h
+              : rect
+              ? rect.h
+              : isMobileViewport
+              ? getMobileCardHeight(card)
+              : card.height;
             const cardZIndex = isMetaverseEdit ? (freeZOrder[card.id] ?? idx + 1) : undefined;
 
             const positionedStyle: React.CSSProperties = freeRect
@@ -1442,14 +1510,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   e.stopPropagation();
                   setCardPendingDelete(card);
                 }}
-                draggable={!isMetaverseEdit && dragReadyCardId === card.id && resizingCardId === null}
+                draggable={!isMetaverseEdit && !isPinned && dragReadyCardId === card.id && resizingCardId === null}
                 onPointerDown={(e) => {
-                  if (isMetaverseEdit) {
+                  if (isMetaverseEdit && !isPinned) {
                     startFreeDrag(e, card);
                   }
                 }}
                 onPointerDownCapture={(e) => {
-                  if (isMetaverseEdit) return;
+                  if (isMetaverseEdit || isPinned) {
+                    setDragReadyCardId(null);
+                    return;
+                  }
                   const target = e.target as HTMLElement;
                   if (
                     target.closest(
@@ -1462,7 +1533,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   }
                 }}
                 onDragStart={(e: any) => {
-                  if (isMetaverseEdit || resizingCardId !== null) {
+                  if (isMetaverseEdit || isPinned || resizingCardId !== null) {
                     e.preventDefault();
                     return;
                   }
@@ -1473,16 +1544,42 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   }
                 }}
                 onDragOver={(e: any) => {
-                  if (isMetaverseEdit) return;
+                  if (isMetaverseEdit || isPinned) return;
                   e.preventDefault();
                   if (!draggingCardId || draggingCardId === card.id) return;
                   setCards((prev) => {
                     const fromIdx = prev.findIndex((c) => c.id === draggingCardId);
                     const toIdx = prev.findIndex((c) => c.id === card.id);
                     if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return prev;
-                    const next = [...prev];
-                    const [moved] = next.splice(fromIdx, 1);
-                    next.splice(toIdx, 0, moved);
+                    if (isCardPinned(prev[fromIdx]) || isCardPinned(prev[toIdx])) return prev;
+
+                    // Keep pinned cards anchored at their exact indices while reordering unpinned cards
+                    const pinnedAtIndex = new Map<number, DashboardCardInstance>();
+                    const unpinned: DashboardCardInstance[] = [];
+                    prev.forEach((item, index) => {
+                      if (isCardPinned(item)) {
+                        pinnedAtIndex.set(index, item);
+                      } else {
+                        unpinned.push(item);
+                      }
+                    });
+
+                    const uFrom = unpinned.findIndex((c) => c.id === draggingCardId);
+                    const uTo = unpinned.findIndex((c) => c.id === card.id);
+                    if (uFrom === -1 || uTo === -1 || uFrom === uTo) return prev;
+                    const [moved] = unpinned.splice(uFrom, 1);
+                    unpinned.splice(uTo, 0, moved);
+
+                    const next: DashboardCardInstance[] = [];
+                    let uCursor = 0;
+                    for (let i = 0; i < prev.length; i++) {
+                      const pinnedItem = pinnedAtIndex.get(i);
+                      if (pinnedItem) {
+                        next.push(pinnedItem);
+                      } else if (uCursor < unpinned.length) {
+                        next.push(unpinned[uCursor++]);
+                      }
+                    }
                     return next;
                   });
                 }}
@@ -1493,7 +1590,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 style={positionedStyle}
                 className={
                   isMetaverseEdit
-                    ? activeFreeDragId === card.id || isResizing
+                    ? isPinned
+                      ? 'cursor-default'
+                      : activeFreeDragId === card.id || isResizing
                       ? 'cursor-grabbing touch-none'
                       : 'cursor-grab touch-none'
                     : rect
@@ -1509,116 +1608,415 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     isResizing || activeFreeDragId === card.id ? 'select-none no-tilt' : ''
                   }`}
                 >
-                  {/* All 4 Corner Resize Hitzones (NW, NE, SW, SE) */}
-                  <div
-                    data-resize-corner="true"
-                    onPointerDown={(e) => startResize(e, card, 'nw')}
-                    className="group/corner absolute top-0 left-0 w-7 h-7 md:w-4 md:h-4 z-30 cursor-nwse-resize touch-none flex items-start justify-start p-1"
-                    title="Drag corner to resize"
-                  >
-                    <span
-                      className={`w-2 h-2 border-t-2 border-l-2 rounded-tl transition-opacity ${
-                        isMetaverseEdit
-                          ? 'opacity-45 group-hover/card:opacity-90'
-                          : 'opacity-0 group-hover/corner:opacity-80'
-                      }`}
-                      style={{ borderColor: activePalette.primary }}
-                    />
-                  </div>
-                  <div
-                    data-resize-corner="true"
-                    onPointerDown={(e) => startResize(e, card, 'ne')}
-                    className="group/corner absolute top-0 right-0 w-7 h-7 md:w-4 md:h-4 z-30 cursor-nesw-resize touch-none flex items-start justify-end p-1"
-                    title="Drag corner to resize"
-                  >
-                    <span
-                      className={`w-2 h-2 border-t-2 border-r-2 rounded-tr transition-opacity ${
-                        isMetaverseEdit
-                          ? 'opacity-45 group-hover/card:opacity-90'
-                          : 'opacity-0 group-hover/corner:opacity-80'
-                      }`}
-                      style={{ borderColor: activePalette.primary }}
-                    />
-                  </div>
-                  <div
-                    data-resize-corner="true"
-                    onPointerDown={(e) => startResize(e, card, 'sw')}
-                    className="group/corner absolute bottom-0 left-0 w-7 h-7 md:w-4 md:h-4 z-30 cursor-nesw-resize touch-none flex items-end justify-start p-1"
-                    title="Drag corner to resize"
-                  >
-                    <span
-                      className={`w-2 h-2 border-b-2 border-l-2 rounded-bl transition-opacity ${
-                        isMetaverseEdit
-                          ? 'opacity-45 group-hover/card:opacity-90'
-                          : 'opacity-0 group-hover/corner:opacity-80'
-                      }`}
-                      style={{ borderColor: activePalette.primary }}
-                    />
-                  </div>
-                  <div
-                    data-resize-corner="true"
-                    onPointerDown={(e) => startResize(e, card, 'se')}
-                    className="group/corner absolute bottom-0 right-0 w-7 h-7 md:w-4 md:h-4 z-30 cursor-nwse-resize touch-none flex items-end justify-end p-1"
-                    title="Drag corner to resize"
-                  >
-                    <span
-                      className={`w-2 h-2 border-b-2 border-r-2 rounded-br transition-opacity ${
-                        isMetaverseEdit
-                          ? 'opacity-45 group-hover/card:opacity-90'
-                          : 'opacity-0 group-hover/corner:opacity-80'
-                      }`}
-                      style={{ borderColor: activePalette.primary }}
-                    />
-                  </div>
+                  {/* All 4 Corner Resize Hitzones (disabled while card is pinned) */}
+                  {!isPinned && (
+                    <>
+                      <div
+                        data-resize-corner="true"
+                        data-lenis-prevent="true"
+                        onPointerDown={(e) => startResize(e, card, 'nw')}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="group/corner absolute top-0 left-0 w-10 h-10 md:w-4 md:h-4 z-30 cursor-nwse-resize touch-none flex items-start justify-start p-1.5 md:p-1"
+                        title="Drag corner to resize"
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 md:w-2 md:h-2 border-t-2 border-l-2 rounded-tl transition-opacity ${
+                            isMetaverseEdit
+                              ? 'opacity-55 group-hover/card:opacity-90'
+                              : 'opacity-40 md:opacity-0 md:group-hover/corner:opacity-80'
+                          }`}
+                          style={{ borderColor: activePalette.primary }}
+                        />
+                      </div>
+                      <div
+                        data-resize-corner="true"
+                        data-lenis-prevent="true"
+                        onPointerDown={(e) => startResize(e, card, 'ne')}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="group/corner absolute top-0 right-0 w-10 h-10 md:w-4 md:h-4 z-30 cursor-nesw-resize touch-none flex items-start justify-end p-1.5 md:p-1"
+                        title="Drag corner to resize"
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 md:w-2 md:h-2 border-t-2 border-r-2 rounded-tr transition-opacity ${
+                            isMetaverseEdit
+                              ? 'opacity-55 group-hover/card:opacity-90'
+                              : 'opacity-40 md:opacity-0 md:group-hover/corner:opacity-80'
+                          }`}
+                          style={{ borderColor: activePalette.primary }}
+                        />
+                      </div>
+                      <div
+                        data-resize-corner="true"
+                        data-lenis-prevent="true"
+                        onPointerDown={(e) => startResize(e, card, 'sw')}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="group/corner absolute bottom-0 left-0 w-10 h-10 md:w-4 md:h-4 z-30 cursor-nesw-resize touch-none flex items-end justify-start p-1.5 md:p-1"
+                        title="Drag corner to resize"
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 md:w-2 md:h-2 border-b-2 border-l-2 rounded-bl transition-opacity ${
+                            isMetaverseEdit
+                              ? 'opacity-55 group-hover/card:opacity-90'
+                              : 'opacity-40 md:opacity-0 md:group-hover/corner:opacity-80'
+                          }`}
+                          style={{ borderColor: activePalette.primary }}
+                        />
+                      </div>
+                      <div
+                        data-resize-corner="true"
+                        data-lenis-prevent="true"
+                        onPointerDown={(e) => startResize(e, card, 'se')}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="group/corner absolute bottom-0 right-0 w-10 h-10 md:w-4 md:h-4 z-30 cursor-nwse-resize touch-none flex items-end justify-end p-1.5 md:p-1"
+                        title="Drag corner to resize"
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 md:w-2 md:h-2 border-b-2 border-r-2 rounded-br transition-opacity ${
+                            isMetaverseEdit
+                              ? 'opacity-55 group-hover/card:opacity-90'
+                              : 'opacity-40 md:opacity-0 md:group-hover/corner:opacity-80'
+                          }`}
+                          style={{ borderColor: activePalette.primary }}
+                        />
+                      </div>
+                    </>
+                  )}
 
-                  {/* Pure Vertical & Horizontal Edge Resize Handles in Metaverse Edit */}
-                  {isMetaverseEdit && (
+                  {/* Mobile Bottom-Edge Vertical Resize Handle in Normal Mode */}
+                  {!isMetaverseEdit && isMobileViewport && !isPinned && (
+                    <div
+                      data-resize-edge="true"
+                      data-lenis-prevent="true"
+                      onPointerDown={(e) => startResize(e, card, 's')}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className="md:hidden absolute bottom-0 left-10 right-10 h-5 z-30 cursor-ns-resize touch-none flex items-end justify-center pb-1"
+                      title="Drag bottom edge to resize height"
+                    >
+                      <span
+                        className="w-10 h-1 rounded-full opacity-45"
+                        style={{ backgroundColor: activePalette.primary }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Pure Vertical & Horizontal Edge Resize Handles in Metaverse Edit (disabled while pinned) */}
+                  {isMetaverseEdit && !isPinned && (
                     <>
                       <div
                         data-resize-edge="true"
+                        data-lenis-prevent="true"
                         onPointerDown={(e) => startResize(e, card, 'n')}
-                        className="group/edge absolute top-0 left-7 right-7 md:left-5 md:right-5 h-4 md:h-2.5 z-30 cursor-ns-resize touch-none flex items-start justify-center"
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="group/edge absolute top-0 left-10 right-10 md:left-5 md:right-5 h-5 md:h-2.5 z-30 cursor-ns-resize touch-none flex items-start justify-center"
                         title="Drag top edge vertically"
                       >
                         <span
-                          className="mt-0.5 w-10 h-1 rounded-full opacity-0 group-hover/card:opacity-65 group-hover/edge:opacity-100 transition-opacity"
+                          className="mt-1 md:mt-0.5 w-10 h-1 rounded-full opacity-45 md:opacity-0 md:group-hover/card:opacity-65 md:group-hover/edge:opacity-100 transition-opacity"
                           style={{ backgroundColor: activePalette.primary }}
                         />
                       </div>
                       <div
                         data-resize-edge="true"
+                        data-lenis-prevent="true"
                         onPointerDown={(e) => startResize(e, card, 's')}
-                        className="group/edge absolute bottom-0 left-7 right-7 md:left-5 md:right-5 h-4 md:h-2.5 z-30 cursor-ns-resize touch-none flex items-end justify-center"
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="group/edge absolute bottom-0 left-10 right-10 md:left-5 md:right-5 h-5 md:h-2.5 z-30 cursor-ns-resize touch-none flex items-end justify-center"
                         title="Drag bottom edge vertically"
                       >
                         <span
-                          className="mb-0.5 w-10 h-1 rounded-full opacity-0 group-hover/card:opacity-65 group-hover/edge:opacity-100 transition-opacity"
+                          className="mb-1 md:mb-0.5 w-10 h-1 rounded-full opacity-45 md:opacity-0 md:group-hover/card:opacity-65 md:group-hover/edge:opacity-100 transition-opacity"
                           style={{ backgroundColor: activePalette.primary }}
                         />
                       </div>
                       <div
                         data-resize-edge="true"
+                        data-lenis-prevent="true"
                         onPointerDown={(e) => startResize(e, card, 'w')}
-                        className="group/edge absolute left-0 top-7 bottom-7 md:top-5 md:bottom-5 w-4 md:w-2.5 z-30 cursor-ew-resize touch-none flex items-center justify-start"
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="group/edge absolute left-0 top-10 bottom-10 md:top-5 md:bottom-5 w-5 md:w-2.5 z-30 cursor-ew-resize touch-none flex items-center justify-start"
                         title="Drag left edge horizontally"
                       >
                         <span
-                          className="ml-0.5 h-10 w-1 rounded-full opacity-0 group-hover/card:opacity-65 group-hover/edge:opacity-100 transition-opacity"
+                          className="ml-1 md:ml-0.5 h-10 w-1 rounded-full opacity-45 md:opacity-0 md:group-hover/card:opacity-65 md:group-hover/edge:opacity-100 transition-opacity"
                           style={{ backgroundColor: activePalette.primary }}
                         />
                       </div>
                       <div
                         data-resize-edge="true"
+                        data-lenis-prevent="true"
                         onPointerDown={(e) => startResize(e, card, 'e')}
-                        className="group/edge absolute right-0 top-7 bottom-7 md:top-5 md:bottom-5 w-4 md:w-2.5 z-30 cursor-ew-resize touch-none flex items-center justify-end"
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="group/edge absolute right-0 top-10 bottom-10 md:top-5 md:bottom-5 w-5 md:w-2.5 z-30 cursor-ew-resize touch-none flex items-center justify-end"
                         title="Drag right edge horizontally"
                       >
                         <span
-                          className="mr-0.5 h-10 w-1 rounded-full opacity-0 group-hover/card:opacity-65 group-hover/edge:opacity-100 transition-opacity"
+                          className="mr-1 md:mr-0.5 h-10 w-1 rounded-full opacity-45 md:opacity-0 md:group-hover/card:opacity-65 md:group-hover/edge:opacity-100 transition-opacity"
                           style={{ backgroundColor: activePalette.primary }}
                         />
                       </div>
                     </>
+                  )}
+
+                  {card.type === 'study_matrix' && (
+                    <div className="flex-1 min-h-0 flex flex-col justify-between gap-2.5 md:gap-4">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-4 pr-9 sm:pr-0">
+                        <div className="space-y-0.5 md:space-y-1 min-w-0">
+                          <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
+                            <Calendar
+                              className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0"
+                              style={{ color: activePalette.primary }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditTitle(card)}
+                              title="Click to rename card"
+                              className="min-w-0 text-left cursor-pointer hover:opacity-80 transition"
+                            >
+                              <h2
+                                className={`text-sm md:text-lg font-bold truncate ${
+                                  darkMode ? 'text-slate-100' : 'text-slate-900'
+                                }`}
+                              >
+                                {getCardDisplayTitle(card)}
+                              </h2>
+                            </button>
+                          </div>
+                          <p
+                            className={`hidden sm:block text-xs truncate ${
+                              darkMode ? 'text-slate-400' : 'text-slate-500'
+                            }`}
+                          >
+                            Live 365-day learning ledger recording real workspace and study activity.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 md:gap-2.5 text-[11px] md:text-xs font-mono shrink-0">
+                          <div
+                            className={`px-2 py-1 md:px-3 md:py-1.5 rounded-lg border flex items-center gap-1 ${
+                              darkMode
+                                ? 'bg-slate-900/20 border-white/10 text-slate-300'
+                                : 'bg-white/25 border-slate-200/60 text-slate-700'
+                            }`}
+                          >
+                            <span
+                              className="font-bold tabular-nums"
+                              style={{ color: activePalette.primary }}
+                            >
+                              {totalHours}h
+                            </span>{' '}
+                            Total
+                          </div>
+                          <div
+                            className={`px-2 py-1 md:px-3 md:py-1.5 rounded-lg border flex items-center gap-1 ${
+                              darkMode
+                                ? 'bg-slate-900/20 border-white/10 text-slate-300'
+                                : 'bg-white/25 border-slate-200/60 text-slate-700'
+                            }`}
+                          >
+                            <Flame
+                              className="w-3 h-3 md:w-3.5 md:h-3.5"
+                              style={{ color: activePalette.accent }}
+                            />
+                            <span
+                              className="font-bold tabular-nums"
+                              style={{ color: activePalette.primary }}
+                            >
+                              {currentStreak}
+                            </span>{' '}
+                            Day Streak
+                          </div>
+
+                          {/* Desktop Pin Lock Toggle */}
+                          <button
+                            type="button"
+                            data-no-drag="true"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleCardPin(card.id);
+                            }}
+                            aria-pressed={isPinned}
+                            title={
+                              isPinned
+                                ? 'Pinned in place — click to unpin and move/resize'
+                                : 'Unpinned — click to lock position in place'
+                            }
+                            className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-sans font-semibold transition cursor-pointer ${
+                              isPinned
+                                ? 'shadow-sm'
+                                : darkMode
+                                ? 'bg-slate-900/30 border-white/10 text-slate-400 hover:text-slate-200 hover:border-white/25'
+                                : 'bg-white/40 border-slate-300/70 text-slate-500 hover:text-slate-800 hover:bg-white/70'
+                            }`}
+                            style={
+                              isPinned
+                                ? {
+                                    backgroundColor: `${activePalette.primary}20`,
+                                    borderColor: `${activePalette.primary}60`,
+                                    color: activePalette.primary,
+                                  }
+                                : undefined
+                            }
+                          >
+                            {isPinned ? (
+                              <Pin className="w-3.5 h-3.5 shrink-0 fill-current" />
+                            ) : (
+                              <PinOff className="w-3.5 h-3.5 shrink-0" />
+                            )}
+                            <span>{isPinned ? 'Pinned' : 'Unlocked'}</span>
+                          </button>
+                        </div>
+
+                        {/* Mobile Top-Right Pin Toggle */}
+                        <button
+                          type="button"
+                          data-no-drag="true"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleCardPin(card.id);
+                          }}
+                          aria-pressed={isPinned}
+                          title={
+                            isPinned
+                              ? 'Pinned in place — tap to unpin and move'
+                              : 'Unpinned — tap to lock position'
+                          }
+                          className={`sm:hidden absolute top-3 right-3 z-20 w-7 h-7 rounded-lg border flex items-center justify-center transition cursor-pointer ${
+                            isPinned
+                              ? 'shadow-sm'
+                              : darkMode
+                              ? 'bg-slate-900/35 border-white/10 text-slate-400'
+                              : 'bg-white/50 border-slate-300/70 text-slate-500'
+                          }`}
+                          style={
+                            isPinned
+                              ? {
+                                  backgroundColor: `${activePalette.primary}22`,
+                                  borderColor: `${activePalette.primary}65`,
+                                  color: activePalette.primary,
+                                }
+                              : undefined
+                          }
+                        >
+                          {isPinned ? (
+                            <Pin className="w-3.5 h-3.5 fill-current" />
+                          ) : (
+                            <PinOff className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="overflow-x-auto pb-0.5 md:pb-1 pt-0.5 flex-1 min-h-0 flex flex-col justify-center">
+                        <div className="min-w-[640px] md:min-w-[760px]">
+                          <div className="grid grid-flow-col grid-rows-7 gap-0.5 md:gap-1">
+                            {studyDays.map((day) => {
+                              let cellStyle: React.CSSProperties = {
+                                backgroundColor: darkMode
+                                  ? 'rgba(255, 255, 255, 0.05)'
+                                  : 'rgba(0, 0, 0, 0.06)',
+                                borderColor: darkMode
+                                  ? 'rgba(255, 255, 255, 0.05)'
+                                  : 'rgba(0, 0, 0, 0.08)',
+                              };
+
+                              if (day.count === 1) {
+                                cellStyle = {
+                                  backgroundColor: `${activePalette.primary}35`,
+                                  borderColor: `${activePalette.primary}50`,
+                                };
+                              } else if (day.count === 2) {
+                                cellStyle = {
+                                  backgroundColor: `${activePalette.primary}70`,
+                                  borderColor: `${activePalette.primary}90`,
+                                };
+                              } else if (day.count === 3) {
+                                cellStyle = {
+                                  backgroundColor: activePalette.primary,
+                                  borderColor: activePalette.primary,
+                                  boxShadow: `0 0 8px ${activePalette.primary}40`,
+                                };
+                              } else if (day.count === 4) {
+                                cellStyle = {
+                                  background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                                  borderColor: activePalette.accent,
+                                  boxShadow: `0 0 10px ${activePalette.accent}60`,
+                                };
+                              }
+
+                              return (
+                                <div
+                                  key={day.date}
+                                  onMouseEnter={() => setHoveredDay(day)}
+                                  onMouseLeave={() => setHoveredDay(null)}
+                                  className="w-2.5 h-2.5 md:w-3.5 md:h-3.5 rounded-[2px] md:rounded-[3px] border transition-transform duration-150 hover:scale-125 cursor-pointer"
+                                  style={cellStyle}
+                                  title={`${day.date}: ${day.hours} study hours`}
+                                />
+                              );
+                            })}
+                          </div>
+
+                          <div
+                            className={`flex items-center justify-between pt-2 md:pt-2.5 text-[10px] md:text-xs ${
+                              darkMode ? 'text-slate-400' : 'text-slate-500'
+                            }`}
+                          >
+                            <div className="min-h-[16px] md:min-h-[20px] font-mono">
+                              {hoveredDay ? (
+                                <span
+                                  style={{ color: activePalette.primary }}
+                                  className="font-medium tabular-nums"
+                                >
+                                  {hoveredDay.date} — {hoveredDay.hours} hours logged (
+                                  {hoveredDay.hours > 0 ? 'Active Session' : 'No Activity'})
+                                </span>
+                              ) : (
+                                <>
+                                  <span className="hidden md:inline">
+                                    {isPinned
+                                      ? 'Hover over any tile to inspect daily study hours · Unpin to move or resize'
+                                      : 'Card unlocked — drag to reposition or resize from corners'}
+                                  </span>
+                                  <span className="md:hidden">
+                                    Swipe horizontally · Tap tile for hours
+                                  </span>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5 md:gap-2">
+                              <span>Less</span>
+                              <span
+                                className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
+                                style={{
+                                  backgroundColor: darkMode
+                                    ? 'rgba(255, 255, 255, 0.05)'
+                                    : 'rgba(0, 0, 0, 0.06)',
+                                }}
+                              />
+                              <span
+                                className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
+                                style={{ backgroundColor: `${activePalette.primary}40` }}
+                              />
+                              <span
+                                className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
+                                style={{ backgroundColor: `${activePalette.primary}80` }}
+                              />
+                              <span
+                                className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
+                                style={{ backgroundColor: activePalette.primary }}
+                              />
+                              <span
+                                className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-[2px] border"
+                                style={{
+                                  background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                                }}
+                              />
+                              <span>More</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   )}
 
                   {card.type === 'tasks' && (
@@ -1876,7 +2274,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               Add Dashboard Card
             </p>
             <p className={`hidden sm:block text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              Tasks · Study Planner · Syllabus · Exam Schedule · Timetable · Calendar
+              Study Matrix · Tasks · Study Planner · Syllabus · Exam Schedule · Timetable · Calendar
             </p>
           </div>
         </div>
@@ -1905,7 +2303,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         maxWidthClass="max-w-2xl"
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {CARD_CATALOG.map((item) => {
+          {CARD_CATALOG.filter((item) => !(isMobileViewport && item.type === 'study_matrix')).map((item) => {
             const Icon = item.icon;
             const countInGrid = cards.filter((c) => c.type === item.type).length;
             return (

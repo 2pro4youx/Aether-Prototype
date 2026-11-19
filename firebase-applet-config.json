@@ -1,11 +1,12 @@
 {
-  "projectId": "aether-app-514201",
-  "appId": "1:319606660096:web:ecc1fd980bd82d7d85cce5",
-  "apiKey": "AIzaSyAYv48BHgVc4hLtHhwb8QHeZ-DN2oFgnO4",
-  "authDomain": "aether-app-514201.firebaseapp.com",
-  "storageBucket": "aether-app-514201.firebasestorage.app",
-  "messagingSenderId": "319606660096",
-  "measurementId": "",
-  "oAuthClientId": "319606660096-5qc92tl653pao5umfksp1c45lji9iktn.apps.googleusercontent.com",
+  "projectId": "daw-9be97",
+  "appId": "1:24401002805:web:b422cc22c9b64b46e04c7c",
+  "apiKey": "AIzaSyDrVXzokOME8Z0pgcWfve0dZFDv481Kw0M",
+  "authDomain": "daw-9be97.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-aetherapp-f1c32f42-b539-4fab-b5a4-f7d942ef90cf",
+  "storageBucket": "daw-9be97.firebasestorage.app",
+  "messagingSenderId": "24401002805",
+  "measurementId": "G-K279YSJPWD",
+  "oAuthClientId": "24401002805-scpom0lvtj4ag64fkv0d7i4gl322h8rg.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }
