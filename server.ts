@@ -1,9 +1,10 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { GoogleGenAI, MediaResolution, ThinkingLevel, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { sanitizeDecodedTimetableSlots } from './src/utils/timetableParser';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1076,12 +1077,21 @@ app.post('/api/gemini/decode-exam-schedule', async (req, res) => {
 // Multimodal AI Timetable Photo Decoder Endpoint
 app.post('/api/gemini/decode-timetable', async (req, res) => {
   try {
-    const { imageDataUrl, mimeType: explicitMime } = req.body as {
+    const { imageDataUrl, mimeType: explicitMime, imageParts, isWidePanoramic } = req.body as {
       imageDataUrl?: string;
       mimeType?: string;
+      imageParts?: Array<{ dataUrl?: string; mimeType?: string; label?: string }>;
+      isWidePanoramic?: boolean;
     };
 
-    if (!imageDataUrl || typeof imageDataUrl !== 'string' || !imageDataUrl.includes('base64,')) {
+    const rawInputs =
+      Array.isArray(imageParts) && imageParts.length > 0
+        ? imageParts.filter((p) => p?.dataUrl && String(p.dataUrl).includes('base64,'))
+        : imageDataUrl && typeof imageDataUrl === 'string' && imageDataUrl.includes('base64,')
+        ? [{ dataUrl: imageDataUrl, mimeType: explicitMime, label: 'full' }]
+        : [];
+
+    if (rawInputs.length === 0) {
       return res.status(400).json({ error: 'A valid base64 imageDataUrl of the timetable is required.' });
     }
 
@@ -1092,11 +1102,25 @@ app.post('/api/gemini/decode-timetable', async (req, res) => {
       });
     }
 
-    const [header, base64Data] = imageDataUrl.split('base64,');
-    let mimeType = explicitMime || '';
-    if (!mimeType || !mimeType.includes('/')) {
-      const match = header.match(/data:([^;]+);/);
-      mimeType = match?.[1] || 'image/png';
+    const mediaParts: Array<{ inlineData?: { mimeType: string; data: string }; text?: string }> = [];
+    for (const part of rawInputs) {
+      const urlStr = String(part.dataUrl || '');
+      const [header, base64Data] = urlStr.split('base64,');
+      if (!base64Data) continue;
+      let mimeType = part.mimeType || explicitMime || '';
+      if (!mimeType || !mimeType.includes('/')) {
+        const match = header.match(/data:([^;]+);/);
+        mimeType = match?.[1] || 'image/png';
+      }
+      if (part.label && rawInputs.length > 1) {
+        mediaParts.push({ text: `[Image view: ${part.label}]` });
+      }
+      mediaParts.push({
+        inlineData: {
+          mimeType,
+          data: base64Data.trim(),
+        },
+      });
     }
 
     const ai = new GoogleGenAI({
@@ -1108,41 +1132,63 @@ app.post('/api/gemini/decode-timetable', async (req, res) => {
       },
     });
 
+    const multiViewNote =
+      rawInputs.length > 1 || isWidePanoramic
+        ? 'You are provided zoomed left and right views (each keeping the weekday/header labels on the left) plus the full overview so every small cell is legible. Align every class accurately to its row weekday and its column Start/End header times across the full table, and output each unique class ONCE without duplicates. '
+        : '';
+
     const extractionPrompt =
-      'Inspect this weekly timetable or class schedule image carefully. Extract every individual class, lecture, lab, tutorial, or study session block visible. ' +
-      'Map weekday to exactly one of Mon, Tue, Wed, Thu, Fri, Sat, Sun. ' +
-      'Convert startTime and endTime to 24-hour HH:MM format when visible (empty string if omitted). ' +
-      'Classify kind as one of Lecture, Lab, Tutorial, Study.';
+      'Inspect this weekly university/school timetable grid carefully and extract EVERY SINGLE scheduled class block across ALL days (Mon through Sun) and ALL time columns. ' +
+      'NEVER stop after 1 class or 1 day—scan every row and every column from start to finish! ' +
+      multiViewNote +
+      'STEP 1 — Read the Start/End time header row left-to-right into "timeColumns" with 1-based "colIndex", 24-hour "startTime" (HH:MM), "endTime" (HH:MM), and "isBreak" (true for Lunch/Break). ' +
+      'STEP 2 — For each weekday row (Mon, Tue, Wed, Thu, Fri, Sat, Sun), check EVERY time column left-to-right: ' +
+      '• SKIP/IGNORE free/empty slots that only show short slot codes (letters + 1-2 digits like A11, A13, A21, B11, B13, A23, C11, D24, E14, TA1, TAA1, L31+L32) or "Lunch"/"THEORY". ' +
+      '• EXTRACT every actual class cell (highlighted or containing a course code/title such as A11-MAT3003-LT-AB02-418-ALL, B21-EEE1001-LTP-AB-303-ALL, C13-SST1003-P-AB02-003-ALL, etc.). ' +
+      '• For slot-grid cells, copy the verbatim text into "rawCellText", DROP ALL slot codes (A11, A13, A21, B21, C13, E14, etc.), DROP type tags (LT, LTP, P, L, T) after mapping kind (P -> Lab, T -> Tutorial, LT/LTP/L -> Lecture), DROP trailing "-ALL", put ONLY the course code (e.g. MAT3003) in "subject", and put ONLY the room code (e.g. AB02-418, AB-303, CR-016) in "room". ' +
+      '• Make sure "colIndex", "startTime", and "endTime" match the exact vertical column the cell sits under.';
 
     const contents = {
       parts: [
-        {
-          inlineData: {
-            mimeType,
-            data: base64Data.trim(),
-          },
-        },
+        ...mediaParts,
         {
           text: extractionPrompt,
         },
       ],
     };
 
-    const config = {
+    const baseConfig: Record<string, any> = {
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
         properties: {
+          timeColumns: {
+            type: Type.ARRAY,
+            description: 'Ordered header time columns read left-to-right.',
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                colIndex: { type: Type.INTEGER, description: '1-based column index left-to-right' },
+                startTime: { type: Type.STRING, description: '24-hour HH:MM start time' },
+                endTime: { type: Type.STRING, description: '24-hour HH:MM end time' },
+                isBreak: { type: Type.BOOLEAN, description: 'True if Lunch or Break column' },
+              },
+              required: ['colIndex', 'startTime', 'endTime'],
+            },
+          },
           slots: {
             type: Type.ARRAY,
+            description: 'ALL non-empty scheduled classes across EVERY day and EVERY time column.',
             items: {
               type: Type.OBJECT,
               properties: {
                 day: { type: Type.STRING, description: 'Weekday short name: Mon, Tue, Wed, Thu, Fri, Sat, or Sun' },
-                subject: { type: Type.STRING, description: 'Course or subject name' },
-                startTime: { type: Type.STRING, description: '24-hour HH:MM start time if visible' },
-                endTime: { type: Type.STRING, description: '24-hour HH:MM end time if visible' },
-                room: { type: Type.STRING, description: 'Room or location if visible' },
+                colIndex: { type: Type.INTEGER, description: 'Matching 1-based colIndex from timeColumns' },
+                startTime: { type: Type.STRING, description: '24-hour HH:MM start time from column header' },
+                endTime: { type: Type.STRING, description: '24-hour HH:MM end time from column header' },
+                rawCellText: { type: Type.STRING, description: 'Exact verbatim text in the table cell' },
+                subject: { type: Type.STRING, description: 'Course code (e.g. MAT3003) or subject name ONLY' },
+                room: { type: Type.STRING, description: 'Room/location ONLY (e.g. AB02-418, AB-303)' },
                 kind: { type: Type.STRING, description: 'Lecture, Lab, Tutorial, or Study' },
               },
               required: ['day', 'subject', 'kind'],
@@ -1153,35 +1199,46 @@ app.post('/api/gemini/decode-timetable', async (req, res) => {
       },
     };
 
-    if (vertexKeyCache.get(apiKey) === 'aiplatform') {
-      const vertexResult = await callVertexExpressRest(apiKey, 'gemini-3.5-flash-lite', contents, config);
-      const rawVertex = vertexResult.text.trim();
-      let parsedVertex: { slots?: Array<Record<string, string>> } = { slots: [] };
+    const parsePayload = (raw: string) => {
+      let parsed: { timeColumns?: any[]; slots?: Array<Record<string, any>> } = { slots: [] };
       try {
-        parsedVertex = JSON.parse(rawVertex);
+        parsed = JSON.parse(raw);
       } catch {
-        const jsonMatch = rawVertex.match(/\{[\s\S]*\}/);
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          parsedVertex = JSON.parse(jsonMatch[0]);
+          parsed = JSON.parse(jsonMatch[0]);
         }
       }
+      return sanitizeDecodedTimetableSlots(parsed.slots, 'Mon', parsed.timeColumns);
+    };
+
+    if (vertexKeyCache.get(apiKey) === 'aiplatform') {
+      const vertexResult = await callVertexExpressRest(apiKey, 'gemini-4-hydrogen', contents, baseConfig);
       return res.json({
-        slots: Array.isArray(parsedVertex.slots) ? parsedVertex.slots : [],
+        slots: parsePayload(vertexResult.text.trim()),
         modelUsed: vertexResult.modelUsed,
       });
     }
 
-    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-4-hydrogen'];
+    const candidateModels = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'];
     let response: any = null;
     let modelUsed = candidateModels[0];
     let lastError: any = null;
 
     for (const modelName of candidateModels) {
+      const richConfig: Record<string, any> = {
+        ...baseConfig,
+        mediaResolution: MediaResolution.MEDIA_RESOLUTION_HIGH,
+        ...(modelName === 'gemini-4-hydrogen'
+          ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM } }
+          : {}),
+      };
+
       try {
         response = await ai.models.generateContent({
           model: modelName,
           contents,
-          config,
+          config: richConfig,
         });
         modelUsed = modelName;
         break;
@@ -1192,6 +1249,20 @@ app.post('/api/gemini/decode-timetable', async (req, res) => {
         if (isAuthErrorStatus(typeof status === 'number' ? status : undefined, msg)) {
           throw err;
         }
+        // Retry same model with plain baseConfig if mediaResolution/thinkingConfig isn't supported on that endpoint
+        if (status === 400 || msg.toLowerCase().includes('resolution') || msg.toLowerCase().includes('thinking')) {
+          try {
+            response = await ai.models.generateContent({
+              model: modelName,
+              contents,
+              config: baseConfig,
+            });
+            modelUsed = modelName;
+            break;
+          } catch (fallbackErr: any) {
+            lastError = fallbackErr;
+          }
+        }
       }
     }
 
@@ -1200,17 +1271,7 @@ app.post('/api/gemini/decode-timetable', async (req, res) => {
     }
 
     const rawText = (response.text ?? '{}').trim();
-    let parsed: { slots?: Array<Record<string, string>> } = { slots: [] };
-    try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[0]);
-      }
-    }
-
-    const slots = Array.isArray(parsed.slots) ? parsed.slots : [];
+    const slots = parsePayload(rawText);
     return res.json({ slots, modelUsed });
   } catch (err: unknown) {
     console.error('Timetable Decode Error:', err);

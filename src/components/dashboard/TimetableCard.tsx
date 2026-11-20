@@ -15,6 +15,11 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
+  ScanLine,
+  Tag,
+  ArrowRight,
+  Sparkles,
+  Utensils,
 } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../firebase';
@@ -132,9 +137,41 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
   const [kind, setKind] = useState<TimetableSlot['kind']>('Lecture');
 
   const [isDecoding, setIsDecoding] = useState(false);
+  const [decodingPhaseIdx, setDecodingPhaseIdx] = useState(0);
   const [decodeError, setDecodeError] = useState<string | null>(null);
   const [decodeInfo, setDecodeInfo] = useState<string | null>(null);
+  const [pendingDecodedSlots, setPendingDecodedSlots] = useState<TimetableSlot[] | null>(null);
+  const [courseAliases, setCourseAliases] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [lunchWindow, setLunchWindow] = useState<{ startTime: string; endTime: string }>(() => {
+    try {
+      const raw = localStorage.getItem('aether_timetable_lunch_window_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.startTime && parsed?.endTime) {
+          return {
+            startTime: String(parsed.startTime),
+            endTime: String(parsed.endTime),
+          };
+        }
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    return { startTime: '13:10', endTime: '13:15' };
+  });
+  const [showEditLunchModal, setShowEditLunchModal] = useState(false);
+  const [draftLunchStart, setDraftLunchStart] = useState(lunchWindow.startTime);
+  const [draftLunchEnd, setDraftLunchEnd] = useState(lunchWindow.endTime);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('aether_timetable_lunch_window_v1', JSON.stringify(lunchWindow));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [lunchWindow]);
 
   // Google Calendar & Tasks sync menu state
   const [showCalendarSyncModal, setShowCalendarSyncModal] = useState(false);
@@ -174,6 +211,17 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
       unsubAuth();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isDecoding) {
+      setDecodingPhaseIdx(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setDecodingPhaseIdx((prev) => (prev + 1) % 4);
+    }, 1350);
+    return () => window.clearInterval(timer);
+  }, [isDecoding]);
 
   const closeSlotModal = () => {
     setShowAdd(false);
@@ -263,29 +311,106 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
           'No timetable blocks could be detected in that photo. Try a clearer crop or add manually.'
         );
       } else {
-        const created: TimetableSlot[] = decodedList.map((item: any, idx: number) => ({
-          id: `tt-${Date.now()}-${idx}`,
-          day: normalizeWeekday(item.day, selectedDay),
-          subject: String(item.subject || 'Class').trim() || 'Class',
-          startTime: String(item.startTime || '').trim(),
-          endTime: String(item.endTime || '').trim(),
-          room: item.room ? String(item.room).trim() || undefined : undefined,
-          kind: normalizeSlotKind(item.kind),
-        }));
-
-        onChangeSlots(sortTimetableSlots([...slots, ...created]));
-        if (!created.some((s) => s.day === selectedDay) && created[0]) {
-          setSelectedDay(created[0].day);
-        }
-        setDecodeInfo(
-          `Decoded ${created.length} timetable ${created.length === 1 ? 'session' : 'sessions'} from photo.`
+        const existingKeys = new Set(
+          slots.map((s) => `${s.day}|${s.startTime}|${s.endTime}|${s.subject.trim().toUpperCase()}`)
         );
+        const created: TimetableSlot[] = decodedList
+          .map((item: any, idx: number) => ({
+            id: `tt-${Date.now()}-${idx}`,
+            day: normalizeWeekday(item.day, selectedDay),
+            subject: String(item.subject || 'Class').trim() || 'Class',
+            startTime: String(item.startTime || '').trim(),
+            endTime: String(item.endTime || '').trim(),
+            room: item.room ? String(item.room).trim() || undefined : undefined,
+            kind: normalizeSlotKind(item.kind),
+          }))
+          .filter(
+            (s) =>
+              !existingKeys.has(
+                `${s.day}|${s.startTime}|${s.endTime}|${s.subject.trim().toUpperCase()}`
+              )
+          );
+
+        if (created.length === 0) {
+          setDecodeInfo('All decoded courses from this photo are already in your timetable.');
+        } else {
+          // Add all decoded courses directly, then ask for optional aliases across all unique courses altogether
+          onChangeSlots(sortTimetableSlots([...slots, ...created]));
+          if (!created.some((s) => s.day === selectedDay) && created[0]) {
+            setSelectedDay(created[0].day);
+          }
+          const uniqueCourseCount = new Set(created.map((s) => s.subject)).size;
+          setDecodeInfo(
+            `Decoded & added ${created.length} ${created.length === 1 ? 'session' : 'sessions'} across ${uniqueCourseCount} ${uniqueCourseCount === 1 ? 'course' : 'courses'}.`
+          );
+          setPendingDecodedSlots(created);
+          setCourseAliases({});
+        }
       }
     } catch (err: any) {
       setDecodeError(err?.message || 'Error decoding timetable image.');
     } finally {
       setIsDecoding(false);
     }
+  };
+
+  const decodedCourseSummaries = useMemo(() => {
+    if (!pendingDecodedSlots || pendingDecodedSlots.length === 0) return [];
+    const byCode = new Map<
+      string,
+      { code: string; sessionCount: number; days: WeekdayShort[]; rooms: string[] }
+    >();
+
+    for (const slot of pendingDecodedSlots) {
+      const code = slot.subject;
+      const existing = byCode.get(code) || {
+        code,
+        sessionCount: 0,
+        days: [],
+        rooms: [],
+      };
+      existing.sessionCount += 1;
+      if (!existing.days.includes(slot.day)) existing.days.push(slot.day);
+      if (slot.room && !existing.rooms.includes(slot.room)) existing.rooms.push(slot.room);
+      byCode.set(code, existing);
+    }
+
+    return Array.from(byCode.values()).map((entry) => ({
+      ...entry,
+      days: [...entry.days].sort((a, b) => WEEKDAYS.indexOf(a) - WEEKDAYS.indexOf(b)),
+    }));
+  }, [pendingDecodedSlots]);
+
+  const applyAliasesToAddedCourses = (applyAliases: boolean) => {
+    if (!pendingDecodedSlots || pendingDecodedSlots.length === 0) {
+      setPendingDecodedSlots(null);
+      setCourseAliases({});
+      return;
+    }
+
+    if (applyAliases) {
+      const targetIds = new Set(pendingDecodedSlots.map((s) => s.id));
+      const renamedCodes = new Set<string>();
+      const updatedSlots = slots.map((slot) => {
+        if (!targetIds.has(slot.id)) return slot;
+        const alias = (courseAliases[slot.subject] || '').trim();
+        if (alias && alias !== slot.subject) {
+          renamedCodes.add(slot.subject);
+          return { ...slot, subject: alias };
+        }
+        return slot;
+      });
+
+      if (renamedCodes.size > 0) {
+        onChangeSlots(sortTimetableSlots(updatedSlots));
+        setDecodeInfo(
+          `Applied ${renamedCodes.size} custom course ${renamedCodes.size === 1 ? 'alias' : 'aliases'} to your timetable.`
+        );
+      }
+    }
+
+    setPendingDecodedSlots(null);
+    setCourseAliases({});
   };
 
   const handleDeleteSlot = (id: string) => {
@@ -835,6 +960,111 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
         </form>
       </DashboardModal>
 
+      {/* Edit Lunch Time Modal */}
+      <DashboardModal
+        isOpen={showEditLunchModal}
+        onClose={() => setShowEditLunchModal(false)}
+        title="Edit Lunch Time"
+        subtitle="Set your daily lunch break window shown inside your timetable."
+        icon={<Utensils className="w-4 h-4" style={{ color: activePalette.primary }} />}
+        activePalette={activePalette}
+        darkMode={darkMode}
+        maxWidthClass="max-w-sm"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const nextStart = draftLunchStart.trim() || '13:10';
+            const nextEnd = draftLunchEnd.trim() || '13:15';
+            setLunchWindow({ startTime: nextStart, endTime: nextEnd });
+            setShowEditLunchModal(false);
+          }}
+          className="space-y-4"
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label
+                className={`block text-xs font-medium mb-1 ${
+                  darkMode ? 'text-slate-300' : 'text-slate-700'
+                }`}
+              >
+                Start Time
+              </label>
+              <input
+                type="time"
+                required
+                value={draftLunchStart}
+                onChange={(e) => setDraftLunchStart(e.target.value)}
+                className={`w-full px-3 py-2 rounded-xl text-xs sm:text-sm border focus:outline-none ${
+                  darkMode
+                    ? 'bg-slate-950 border-white/10 text-slate-100'
+                    : 'bg-slate-50 border-slate-300 text-slate-900'
+                }`}
+                style={{ borderColor: `${activePalette.primary}45` }}
+              />
+            </div>
+            <div>
+              <label
+                className={`block text-xs font-medium mb-1 ${
+                  darkMode ? 'text-slate-300' : 'text-slate-700'
+                }`}
+              >
+                End Time
+              </label>
+              <input
+                type="time"
+                required
+                value={draftLunchEnd}
+                onChange={(e) => setDraftLunchEnd(e.target.value)}
+                className={`w-full px-3 py-2 rounded-xl text-xs sm:text-sm border focus:outline-none ${
+                  darkMode
+                    ? 'bg-slate-950 border-white/10 text-slate-100'
+                    : 'bg-slate-50 border-slate-300 text-slate-900'
+                }`}
+                style={{ borderColor: `${activePalette.primary}45` }}
+              />
+            </div>
+          </div>
+
+          <div className="pt-1 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setDraftLunchStart('13:10');
+                setDraftLunchEnd('13:15');
+              }}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-medium transition ${
+                darkMode
+                  ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              Reset (13:10–13:15)
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowEditLunchModal(false)}
+                className={`px-3.5 py-2 rounded-xl text-xs transition ${
+                  darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-950 shadow hover:opacity-90 transition"
+                style={{
+                  background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+                }}
+              >
+                Save Lunch Time
+              </button>
+            </div>
+          </div>
+        </form>
+      </DashboardModal>
+
       {/* Google Calendar Events & Tasks Sync Modal */}
       <DashboardModal
         isOpen={showCalendarSyncModal}
@@ -1125,28 +1355,276 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
         </div>
       </DashboardModal>
 
-      <div className="flex flex-col gap-2 relative flex-1 min-h-0 overflow-y-auto pr-1">
-        <AnimatePresence mode="popLayout" initial={false}>
-          {filteredSlots.map((slot) => {
-            const isNow = Boolean(
-              slot.day === todayShort &&
-                slot.startTime &&
-                slot.endTime &&
-                nowHHMM >= slot.startTime &&
-                nowHHMM <= slot.endTime
-            );
-            const timeLabel =
-              slot.startTime && slot.endTime
-                ? `${slot.startTime}–${slot.endTime}`
-                : slot.startTime
-                ? `From ${slot.startTime}`
-                : slot.endTime
-                ? `Until ${slot.endTime}`
-                : 'Flexible';
+      {/* Post-Decode Course Alias Setup Modal */}
+      <DashboardModal
+        isOpen={Boolean(pendingDecodedSlots && pendingDecodedSlots.length > 0)}
+        onClose={() => applyAliasesToAddedCourses(false)}
+        title="Set Course Aliases?"
+        subtitle={
+          pendingDecodedSlots
+            ? `Added ${pendingDecodedSlots.length} ${
+                pendingDecodedSlots.length === 1 ? 'session' : 'sessions'
+              } across ${decodedCourseSummaries.length} ${
+                decodedCourseSummaries.length === 1 ? 'course' : 'courses'
+              }. Optionally rename any course codes below.`
+            : undefined
+        }
+        icon={<Tag className="w-4 h-4" style={{ color: activePalette.primary }} />}
+        activePalette={activePalette}
+        darkMode={darkMode}
+        maxWidthClass="max-w-lg"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            applyAliasesToAddedCourses(true);
+          }}
+          className="space-y-3"
+        >
+          <div
+            className={`px-3 py-2 rounded-xl border text-[11px] sm:text-xs flex items-start gap-2 ${
+              darkMode
+                ? 'bg-slate-950/60 border-white/10 text-slate-300'
+                : 'bg-slate-50 border-slate-200 text-slate-600'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: activePalette.primary }} />
+            <span>
+              All extracted courses have been added. Give any course code (like <strong className="font-mono">MAT3003</strong>) a friendly alias, or skip to keep the course codes as-is.
+            </span>
+          </div>
 
-            return (
+          <div className="max-h-[45vh] overflow-y-auto space-y-2 pr-1">
+            {decodedCourseSummaries.map((course) => (
+              <div
+                key={course.code}
+                className={`p-2.5 sm:p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 ${
+                  darkMode ? 'bg-slate-950/70 border-white/10' : 'bg-white border-slate-200'
+                }`}
+              >
+                <div className="min-w-0 sm:w-44 shrink-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span
+                      className="text-xs sm:text-sm font-mono font-bold truncate"
+                      style={{ color: activePalette.primary }}
+                    >
+                      {course.code}
+                    </span>
+                    <span
+                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
+                        darkMode ? 'bg-white/10 text-slate-300' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {course.sessionCount}x
+                    </span>
+                  </div>
+                  <p
+                    className={`text-[10px] sm:text-[11px] truncate mt-0.5 ${
+                      darkMode ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                  >
+                    {[course.rooms[0], course.days.join(', ')].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+
+                <input
+                  type="text"
+                  value={courseAliases[course.code] ?? ''}
+                  onChange={(e) =>
+                    setCourseAliases((prev) => ({
+                      ...prev,
+                      [course.code]: e.target.value,
+                    }))
+                  }
+                  placeholder={`Alias (leave blank for ${course.code})`}
+                  className={`flex-1 min-w-0 px-3 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm border focus:outline-none ${
+                    darkMode
+                      ? 'bg-slate-900 border-white/10 text-slate-100 placeholder-slate-500'
+                      : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'
+                  }`}
+                  style={
+                    (courseAliases[course.code] || '').trim()
+                      ? { borderColor: `${activePalette.primary}70` }
+                      : {}
+                  }
+                />
+              </div>
+            ))}
+          </div>
+
+          <div
+            className={`pt-2 border-t flex flex-wrap items-center justify-end gap-2 ${
+              darkMode ? 'border-white/10' : 'border-slate-200'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => applyAliasesToAddedCourses(false)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition ${
+                darkMode
+                  ? 'border-white/15 text-slate-200 hover:bg-white/10'
+                  : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              No, Keep Course Codes
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-950 transition hover:opacity-90 flex items-center gap-1.5"
+              style={{
+                background: `linear-gradient(135deg, ${activePalette.primary}, ${activePalette.accent})`,
+              }}
+            >
+              <span>Save Aliases</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </form>
+      </DashboardModal>
+
+      <div className="flex flex-col gap-2 relative flex-1 min-h-0 overflow-y-auto pr-1">
+        {isDecoding ? (
+          <motion.div
+            key="timetable-decoding-overlay"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="relative flex-1 min-h-[190px] sm:min-h-[220px] rounded-2xl border p-3 sm:p-4 overflow-hidden flex flex-col justify-between gap-3"
+            style={{
+              borderColor: `${activePalette.primary}45`,
+              background: darkMode
+                ? `linear-gradient(160deg, ${activePalette.primary}14, rgba(15, 23, 42, 0.55))`
+                : `linear-gradient(160deg, ${activePalette.primary}12, rgba(255, 255, 255, 0.72))`,
+            }}
+          >
+            {/* Sweeping optical scan beam */}
+            <motion.div
+              aria-hidden="true"
+              animate={{ top: ['6%', '88%', '6%'] }}
+              transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+              className="pointer-events-none absolute inset-x-0 h-0.5 z-10"
+              style={{
+                background: `linear-gradient(90deg, transparent, ${activePalette.primary}, ${activePalette.accent}, transparent)`,
+                boxShadow: `0 0 14px 2px ${activePalette.primary}80`,
+              }}
+            />
+
+            <div className="flex items-center justify-between gap-2 relative z-20">
+              <div className="flex items-center gap-2 min-w-0">
+                <div
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0"
+                  style={{
+                    backgroundColor: `${activePalette.primary}24`,
+                    color: activePalette.primary,
+                  }}
+                >
+                  <ScanLine className="w-4 h-4 animate-pulse" />
+                </div>
+                <div className="min-w-0">
+                  <p
+                    className={`text-xs sm:text-sm font-bold truncate ${
+                      darkMode ? 'text-slate-100' : 'text-slate-900'
+                    }`}
+                  >
+                    Decoding Timetable Matrix
+                  </p>
+                  <p
+                    className="text-[11px] font-medium truncate"
+                    style={{ color: activePalette.primary }}
+                  >
+                    {
+                      [
+                        'Scanning weekly grid & time headers…',
+                        'Filtering empty slots (B13, A23, Lunch)…',
+                        'Extracting course codes & room numbers…',
+                        'Building your weekly class schedule…',
+                      ][decodingPhaseIdx]
+                    }
+                  </p>
+                </div>
+              </div>
+              <Loader2
+                className="w-4 h-4 animate-spin shrink-0"
+                style={{ color: activePalette.primary }}
+              />
+            </div>
+
+            {/* Live token-unpacking visual hint */}
+            <div
+              className={`px-2.5 py-1.5 rounded-xl border text-[10px] sm:text-[11px] font-mono flex items-center justify-between gap-2 relative z-20 ${
+                darkMode
+                  ? 'bg-slate-950/60 border-white/10 text-slate-400'
+                  : 'bg-white/75 border-slate-200 text-slate-600'
+              }`}
+            >
+              <span className="truncate opacity-75">A11-MAT3003-LT-AB02-418-ALL</span>
+              <ArrowRight className="w-3 h-3 shrink-0" style={{ color: activePalette.primary }} />
+              <span className="font-bold shrink-0" style={{ color: activePalette.primary }}>
+                MAT3003 · AB02-418
+              </span>
+            </div>
+
+            {/* Pulsing skeleton rows */}
+            <div className="space-y-1.5 relative z-20">
+              {[0, 1, 2].map((row) => (
+                <motion.div
+                  key={row}
+                  animate={{ opacity: [0.35, 0.85, 0.35] }}
+                  transition={{
+                    duration: 1.4,
+                    repeat: Infinity,
+                    delay: row * 0.22,
+                    ease: 'easeInOut',
+                  }}
+                  className={`p-2 rounded-xl border flex items-center justify-between gap-2 ${
+                    darkMode
+                      ? 'bg-slate-900/45 border-white/10'
+                      : 'bg-white/65 border-slate-200/80'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div
+                      className="h-3 w-14 sm:w-16 rounded-md shrink-0"
+                      style={{ backgroundColor: `${activePalette.primary}30` }}
+                    />
+                    <div
+                      className={`h-3 rounded-md ${row === 1 ? 'w-32 sm:w-44' : 'w-24 sm:w-36'} ${
+                        darkMode ? 'bg-white/15' : 'bg-slate-300/70'
+                      }`}
+                    />
+                  </div>
+                  <div
+                    className={`h-2.5 w-12 sm:w-16 rounded-md shrink-0 ${
+                      darkMode ? 'bg-white/10' : 'bg-slate-200'
+                    }`}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        ) : (
+        <>
+        <AnimatePresence mode="popLayout" initial={false}>
+          {(() => {
+            const showLunchBar =
+              filteredSlots.length > 0 &&
+              (!q || 'lunch break'.includes(q) || lunchWindow.startTime.includes(q));
+            const rawInsertIdx = filteredSlots.findIndex(
+              (s) => (s.startTime || '99:99') >= lunchWindow.startTime
+            );
+            const lunchInsertIdx = rawInsertIdx === -1 ? filteredSlots.length : rawInsertIdx;
+            const isLunchNow = Boolean(
+              selectedDay === todayShort &&
+                lunchWindow.startTime &&
+                lunchWindow.endTime &&
+                nowHHMM >= lunchWindow.startTime &&
+                nowHHMM <= lunchWindow.endTime
+            );
+
+            const renderLunchBar = () => (
               <motion.div
-                key={slot.id}
+                key={`tt-lunch-${selectedDay}`}
                 layout="position"
                 initial={CARD_ITEM_INITIAL}
                 animate={CARD_ITEM_ANIMATE}
@@ -1156,43 +1634,46 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
               >
                 <div
                   className="group/item p-2.5 sm:p-3 rounded-xl border transition liquid-glass-tile flex items-center justify-between gap-2 sm:gap-3"
-                  style={isNow ? { borderColor: activePalette.primary } : {}}
+                  style={{
+                    borderColor: isLunchNow ? activePalette.primary : `${activePalette.primary}60`,
+                    background: `linear-gradient(135deg, ${activePalette.primary}22, ${activePalette.accent}18)`,
+                    boxShadow: isLunchNow
+                      ? `0 0 16px -4px ${activePalette.primary}55`
+                      : `inset 0 1px 0 ${activePalette.primary}20`,
+                  }}
                 >
                   <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                     <div className="text-[11px] sm:text-xs font-mono font-semibold tabular-nums shrink-0 w-[72px] sm:w-24">
-                      <div style={{ color: activePalette.primary }} className="truncate">{timeLabel}</div>
-                      <div className={darkMode ? 'text-slate-500' : 'text-slate-400'}>
-                        {slot.kind}
+                      <div style={{ color: activePalette.primary }} className="truncate">
+                        {lunchWindow.startTime}–{lunchWindow.endTime}
+                      </div>
+                      <div
+                        className="text-[10px] sm:text-[11px] font-medium opacity-80"
+                        style={{ color: activePalette.accent }}
+                      >
+                        Break
                       </div>
                     </div>
 
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        <p
-                          className={`text-xs sm:text-sm font-semibold truncate ${
-                            darkMode ? 'text-slate-100' : 'text-slate-900'
-                          }`}
+                    <div className="min-w-0 flex items-center gap-1.5 sm:gap-2">
+                      <Utensils
+                        className="w-3.5 h-3.5 shrink-0"
+                        style={{ color: activePalette.primary }}
+                      />
+                      <p
+                        className={`text-xs sm:text-sm font-semibold truncate ${
+                          darkMode ? 'text-slate-100' : 'text-slate-900'
+                        }`}
+                      >
+                        Lunch
+                      </p>
+                      {isLunchNow && (
+                        <span
+                          className="text-[10px] sm:text-[11px] font-bold shrink-0"
+                          style={{ color: activePalette.primary }}
                         >
-                          {slot.subject}
-                        </p>
-                        {isNow && (
-                          <span
-                            className="text-[10px] sm:text-[11px] font-bold shrink-0"
-                            style={{ color: activePalette.primary }}
-                          >
-                            Now
-                          </span>
-                        )}
-                      </div>
-                      {slot.room && (
-                        <p
-                          className={`text-[11px] sm:text-xs flex items-center gap-1 truncate ${
-                            darkMode ? 'text-slate-400' : 'text-slate-500'
-                          }`}
-                        >
-                          <MapPin className="w-3 h-3 shrink-0" />
-                          <span className="truncate">{slot.room}</span>
-                        </p>
+                          Now
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1200,27 +1681,15 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
                   <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
                     <button
                       type="button"
-                      onClick={() => handleDeleteSlot(slot.id)}
-                      className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
-                        darkMode
-                          ? 'text-slate-400 hover:text-white hover:bg-white/10'
-                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
-                      }`}
-                      title="Remove class block"
-                      aria-label="Remove class block"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openEditSlot(slot)}
-                      className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
-                        darkMode
-                          ? 'text-slate-400 hover:text-white hover:bg-white/10'
-                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
-                      }`}
-                      title="Edit class block"
-                      aria-label="Edit class block"
+                      onClick={() => {
+                        setDraftLunchStart(lunchWindow.startTime);
+                        setDraftLunchEnd(lunchWindow.endTime);
+                        setShowEditLunchModal(true);
+                      }}
+                      className="p-1 rounded-lg opacity-80 hover:opacity-100 transition"
+                      style={{ color: activePalette.primary }}
+                      title="Edit lunch times"
+                      aria-label="Edit lunch times"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
@@ -1228,7 +1697,121 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
                 </div>
               </motion.div>
             );
-          })}
+
+            const items: React.ReactNode[] = [];
+            filteredSlots.forEach((slot, idx) => {
+              if (showLunchBar && idx === lunchInsertIdx) {
+                items.push(renderLunchBar());
+              }
+
+              const isNow = Boolean(
+                slot.day === todayShort &&
+                  slot.startTime &&
+                  slot.endTime &&
+                  nowHHMM >= slot.startTime &&
+                  nowHHMM <= slot.endTime
+              );
+              const timeLabel =
+                slot.startTime && slot.endTime
+                  ? `${slot.startTime}–${slot.endTime}`
+                  : slot.startTime
+                  ? `From ${slot.startTime}`
+                  : slot.endTime
+                  ? `Until ${slot.endTime}`
+                  : 'Flexible';
+
+              items.push(
+                <motion.div
+                  key={slot.id}
+                  layout="position"
+                  initial={CARD_ITEM_INITIAL}
+                  animate={CARD_ITEM_ANIMATE}
+                  exit={CARD_ITEM_EXIT}
+                  transition={CARD_ITEM_TRANSITION}
+                  className="dashboard-item-motion"
+                >
+                  <div
+                    className="group/item p-2.5 sm:p-3 rounded-xl border transition liquid-glass-tile flex items-center justify-between gap-2 sm:gap-3"
+                    style={isNow ? { borderColor: activePalette.primary } : {}}
+                  >
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                      <div className="text-[11px] sm:text-xs font-mono font-semibold tabular-nums shrink-0 w-[72px] sm:w-24">
+                        <div style={{ color: activePalette.primary }} className="truncate">{timeLabel}</div>
+                        <div className={darkMode ? 'text-slate-500' : 'text-slate-400'}>
+                          {slot.kind}
+                        </div>
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                          <p
+                            className={`text-xs sm:text-sm font-semibold truncate ${
+                              darkMode ? 'text-slate-100' : 'text-slate-900'
+                            }`}
+                          >
+                            {slot.subject}
+                          </p>
+                          {isNow && (
+                            <span
+                              className="text-[10px] sm:text-[11px] font-bold shrink-0"
+                              style={{ color: activePalette.primary }}
+                            >
+                              Now
+                            </span>
+                          )}
+                        </div>
+                        {slot.room && (
+                          <p
+                            className={`text-[11px] sm:text-xs flex items-center gap-1 truncate ${
+                              darkMode ? 'text-slate-400' : 'text-slate-500'
+                            }`}
+                          >
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{slot.room}</span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSlot(slot.id)}
+                        className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
+                          darkMode
+                            ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
+                        }`}
+                        title="Remove class block"
+                        aria-label="Remove class block"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditSlot(slot)}
+                        className={`p-1 rounded-lg opacity-60 group-hover/item:opacity-100 transition ${
+                          darkMode
+                            ? 'text-slate-400 hover:text-white hover:bg-white/10'
+                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70'
+                        }`}
+                        title="Edit class block"
+                        aria-label="Edit class block"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            });
+
+            if (showLunchBar && lunchInsertIdx === filteredSlots.length) {
+              items.push(renderLunchBar());
+            }
+
+            return items;
+          })()}
 
           {inlineSyncedForSelectedDay.map((item) => (
             <motion.div
@@ -1339,6 +1922,8 @@ export const TimetableCard: React.FC<TimetableCardProps> = ({
               </button>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

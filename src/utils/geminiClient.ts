@@ -7,6 +7,8 @@ import {
   MemoryCategory,
   mergeLearnedMemories,
 } from './personalization';
+import { DecodedTimetableSlot, sanitizeDecodedTimetableSlots } from './timetableParser';
+import { prepareTimetableImagesForDecoding } from './timetableImagePrep';
 
 export interface GeminiModelInfo {
   id: string;
@@ -1136,19 +1138,30 @@ export async function decodeExamScheduleImage(options: {
 export async function decodeTimetableImage(options: {
   imageDataUrl: string;
   mimeType?: string;
-}): Promise<{ slots: Array<Record<string, string>>; modelUsed?: string }> {
+}): Promise<{ slots: DecodedTimetableSlot[]; modelUsed?: string }> {
   const { imageDataUrl, mimeType: explicitMime } = options;
   const apiKey = getActiveGeminiApiKey();
 
-  const backendRes = await postBackendJson<{ slots: Array<Record<string, string>>; modelUsed?: string }>(
+  const prepped = await prepareTimetableImagesForDecoding(imageDataUrl, explicitMime || 'image/png');
+
+  const backendRes = await postBackendJson<{ slots: Array<Record<string, any>>; modelUsed?: string }>(
     '/api/gemini/decode-timetable',
-    { imageDataUrl, mimeType: explicitMime, apiKey },
+    {
+      imageDataUrl,
+      mimeType: explicitMime,
+      imageParts: prepped.images,
+      isWidePanoramic: prepped.isWidePanoramic,
+      apiKey,
+    },
     apiKey,
-    45000
+    75000
   );
 
   if (backendRes.status === 'ok') {
-    return backendRes.data;
+    return {
+      slots: sanitizeDecodedTimetableSlots(backendRes.data.slots),
+      modelUsed: backendRes.data.modelUsed,
+    };
   }
   if (backendRes.status === 'http-error') {
     throw new Error(backendRes.error);
@@ -1158,33 +1171,51 @@ export async function decodeTimetableImage(options: {
     throw new Error('Gemini API key is missing. Please add it in Settings.');
   }
 
-  const [header, base64Data] = imageDataUrl.split('base64,');
-  let mimeType = explicitMime || '';
-  if (!mimeType || !mimeType.includes('/')) {
-    const match = header.match(/data:([^;]+);/);
-    mimeType = match?.[1] || 'image/png';
+  const parts: any[] = [];
+  for (const imgPart of prepped.images) {
+    const [hdr, b64] = imgPart.dataUrl.split('base64,');
+    if (!b64) continue;
+    let mType = imgPart.mimeType || explicitMime || '';
+    if (!mType || !mType.includes('/')) {
+      const m = hdr.match(/data:([^;]+);/);
+      mType = m?.[1] || 'image/png';
+    }
+    if (prepped.images.length > 1) {
+      parts.push({ text: `[Image view: ${imgPart.label}]` });
+    }
+    parts.push({ inlineData: { mimeType: mType, data: b64.trim() } });
   }
 
+  const multiViewNote =
+    prepped.images.length > 1 || prepped.isWidePanoramic
+      ? 'You are provided zoomed left and right views (each keeping the weekday/header labels on the left) plus the full overview so every small cell is legible. Align every class accurately to its row weekday and its column Start/End header times across the full table, and output each unique class ONCE without duplicates. '
+      : '';
+
   const extractionPrompt =
-    'Inspect this weekly timetable or class schedule image carefully. Extract every individual class, lecture, lab, tutorial, or study session block visible in the photo. ' +
-    'Return ONLY a JSON object with shape {"slots":[{"day":"Mon|Tue|Wed|Thu|Fri|Sat|Sun","subject":"","startTime":"HH:MM","endTime":"HH:MM","room":"","kind":"Lecture|Lab|Tutorial|Study"}]}.';
+    'Inspect this weekly timetable image carefully and extract EVERY SINGLE scheduled class across ALL days (Mon through Sun) and ALL time columns. ' +
+    'NEVER stop after 1 class or 1 day—scan every row and every column from start to finish! ' +
+    multiViewNote +
+    'STEP 1: Read the Start/End time header row left-to-right into "timeColumns" with 1-based colIndex, 24-hour HH:MM startTime/endTime, and isBreak (true for Lunch/Break). ' +
+    'STEP 2: For each weekday row, skip empty slot codes (like A11, A13, A21, B13, A23, D24, TAA1, L31+L32, Lunch, THEORY), and extract ALL actual class cells. ' +
+    'For hyphenated/slot-grid cells (e.g. A11-MAT3003-LT-AB02-418-ALL), put verbatim cell text in "rawCellText", drop ALL slot codes/prefixes, map type tag (P->Lab, T->Tutorial, LT/LTP->Lecture) and drop it, drop "-ALL", put ONLY course code in "subject", and ONLY room code in "room". ' +
+    'Return ONLY a JSON object with shape {"timeColumns":[{"colIndex":1,"startTime":"HH:MM","endTime":"HH:MM","isBreak":false}],"slots":[{"day":"Mon|Tue|Wed|Thu|Fri|Sat|Sun","colIndex":1,"startTime":"HH:MM","endTime":"HH:MM","rawCellText":"","subject":"","room":"","kind":"Lecture|Lab|Tutorial|Study"}]}.';
+
+  parts.push({ text: extractionPrompt });
 
   const restResult = await callDirectGoogleRest({
     apiKey,
-    model: 'gemini-3.5-flash-lite',
+    model: 'gemini-4-hydrogen',
     contents: [
       {
         role: 'user',
-        parts: [
-          { inlineData: { mimeType, data: base64Data.trim() } },
-          { text: extractionPrompt },
-        ],
+        parts,
       },
     ],
     generationConfig: { responseMimeType: 'application/json' },
+    timeoutMs: 75000,
   });
 
-  let parsed: { slots?: Array<Record<string, string>> } = { slots: [] };
+  let parsed: { timeColumns?: any[]; slots?: Array<Record<string, any>> } = { slots: [] };
   try {
     parsed = JSON.parse(restResult.text.trim());
   } catch {
@@ -1193,7 +1224,7 @@ export async function decodeTimetableImage(options: {
   }
 
   return {
-    slots: Array.isArray(parsed.slots) ? parsed.slots : [],
+    slots: sanitizeDecodedTimetableSlots(parsed.slots, 'Mon', parsed.timeColumns),
     modelUsed: restResult.modelUsed,
   };
 }
