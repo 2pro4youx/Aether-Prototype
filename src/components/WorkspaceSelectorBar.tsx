@@ -58,6 +58,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
   const [newWsDesc, setNewWsDesc] = useState('');
 
   const tileRafRef = useRef<number | null>(null);
+  const tileRectCacheRef = useRef<{ el: HTMLElement | null; rect: DOMRect | null }>({ el: null, rect: null });
 
   const handleTilePointerMove = (e: React.PointerEvent<HTMLElement>) => {
     const el = e.currentTarget;
@@ -67,7 +68,10 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
     if (!tileRafRef.current) {
       tileRafRef.current = requestAnimationFrame(() => {
         tileRafRef.current = null;
-        const rect = el.getBoundingClientRect();
+        if (tileRectCacheRef.current.el !== el || !tileRectCacheRef.current.rect) {
+          tileRectCacheRef.current = { el, rect: el.getBoundingClientRect() };
+        }
+        const rect = tileRectCacheRef.current.rect!;
         const x = clientX - rect.left;
         const y = clientY - rect.top;
         const ratio = Math.max(0, Math.min(1, x / (rect.width || 1)));
@@ -83,6 +87,7 @@ export const WorkspaceSelectorBar: React.FC<WorkspaceSelectorBarProps> = ({
       cancelAnimationFrame(tileRafRef.current);
       tileRafRef.current = null;
     }
+    tileRectCacheRef.current = { el: null, rect: null };
     const el = e.currentTarget;
     el.style.setProperty('--pointer-x', '-999px');
     el.style.setProperty('--pointer-y', '-999px');

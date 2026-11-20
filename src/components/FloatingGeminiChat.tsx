@@ -120,7 +120,9 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
     ]);
   };
 
-  // High-performance 120 FPS cursor tracking for the floating liquid glass tile
+  // High-performance 120 FPS cursor tracking for the floating liquid glass tile (zero per-frame layout reads)
+  const tileRectCacheRef = useRef<{ el: HTMLElement | null; rect: DOMRect | null }>({ el: null, rect: null });
+
   const handleTilePointerMove = (e: React.PointerEvent<HTMLElement>) => {
     const el = e.currentTarget;
     const clientX = e.clientX;
@@ -129,7 +131,10 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
     if (!tileRafRef.current) {
       tileRafRef.current = requestAnimationFrame(() => {
         tileRafRef.current = null;
-        const rect = el.getBoundingClientRect();
+        if (tileRectCacheRef.current.el !== el || !tileRectCacheRef.current.rect) {
+          tileRectCacheRef.current = { el, rect: el.getBoundingClientRect() };
+        }
+        const rect = tileRectCacheRef.current.rect!;
         const x = clientX - rect.left;
         const y = clientY - rect.top;
         const ratio = Math.max(0, Math.min(1, x / (rect.width || 1)));
@@ -145,6 +150,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
       cancelAnimationFrame(tileRafRef.current);
       tileRafRef.current = null;
     }
+    tileRectCacheRef.current = { el: null, rect: null };
     const el = e.currentTarget;
     el.style.setProperty('--pointer-x', '-999px');
     el.style.setProperty('--pointer-y', '-999px');
@@ -391,7 +397,7 @@ export const FloatingGeminiChat: React.FC<FloatingGeminiChatProps> = ({
                     {isModelDropdownOpen && (
                       <div
                         style={{ zIndex: 100 }}
-                        className={`absolute left-0 top-full mt-1.5 w-60 rounded-xl border p-1.5 shadow-2xl space-y-1 backdrop-blur-3xl animate-in fade-in duration-100 ${
+                        className={`absolute left-0 top-full mt-1.5 w-60 rounded-xl border p-1.5 shadow-2xl space-y-1 backdrop-blur-xl animate-in fade-in duration-100 ${
                           darkMode
                             ? 'bg-slate-900 border-white/20 text-slate-100 shadow-black/80'
                             : 'bg-white border-slate-300 text-slate-900 shadow-slate-400/50'

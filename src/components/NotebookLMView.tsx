@@ -1333,7 +1333,7 @@ export const NotebookLMView: React.FC<NotebookLMViewProps> = ({
                 {isModelDropdownOpen && (
                   <div
                     style={{ zIndex: 100 }}
-                    className={`absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border p-2 shadow-2xl z-[100] space-y-1.5 backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-150 ${
+                    className={`absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border p-2 shadow-2xl z-[100] space-y-1.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 ${
                       darkMode
                         ? 'bg-slate-900 border-white/20 text-slate-100 shadow-2xl shadow-black/80 ring-1 ring-white/10'
                         : 'bg-white border-slate-300 text-slate-900 shadow-2xl shadow-slate-400/50 ring-1 ring-black/5'

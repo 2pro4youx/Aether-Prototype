@@ -149,6 +149,43 @@ function safeSetLocalStorage(key: string, value: string): boolean {
   }
 }
 
+/**
+ * Keeps heavy fullscreen slide-over workspaces unmounted while closed,
+ * while preserving the full two-frame enter animation and exit slide-out duration.
+ */
+function useDelayedPresence(isOpen: boolean, exitDelayMs = 420) {
+  const [shouldRender, setShouldRender] = useState(isOpen);
+  const [isVisible, setIsVisible] = useState(isOpen);
+
+  useEffect(() => {
+    let raf1: number | null = null;
+    let raf2: number | null = null;
+    let exitTimer: ReturnType<typeof setTimeout> | null = null;
+
+    if (isOpen) {
+      setShouldRender(true);
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          setIsVisible(true);
+        });
+      });
+    } else {
+      setIsVisible(false);
+      exitTimer = setTimeout(() => {
+        setShouldRender(false);
+      }, exitDelayMs);
+    }
+
+    return () => {
+      if (raf1 !== null) cancelAnimationFrame(raf1);
+      if (raf2 !== null) cancelAnimationFrame(raf2);
+      if (exitTimer !== null) clearTimeout(exitTimer);
+    };
+  }, [isOpen, exitDelayMs]);
+
+  return { shouldRender, isVisible };
+}
+
 export default function App() {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(() => auth.currentUser);
   const firebaseUserRef = useRef<User | null>(firebaseUser);
@@ -182,6 +219,8 @@ export default function App() {
 
   const [isOneNoteOpen, setIsOneNoteOpen] = useState(false);
   const [isGeminiWorkspaceOpen, setIsGeminiWorkspaceOpen] = useState(false);
+  const oneNotePresence = useDelayedPresence(isOneNoteOpen, 420);
+  const geminiPresence = useDelayedPresence(isGeminiWorkspaceOpen, 420);
   const [isMetaverseEdit, setIsMetaverseEdit] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -449,12 +488,14 @@ export default function App() {
       setExamSchedules([]);
       setTimetableSlots([]);
       setLocalCalendarEvents([]);
+      liveDailyStudySecondsRef.current = {};
       setDailyStudySeconds({});
       setWorkspaces([]);
       setExpiredSourcesNotice([]);
       setActiveWorkspaceId('');
       setLibraryItems([]);
       setFolders(['Assorted Workspaces']);
+      liveWorkspaceSecondsRef.current = {};
       setWorkspaceSeconds({});
       setWorkspaceInteractions({});
       setAuditLogs([]);
@@ -500,13 +541,7 @@ export default function App() {
       return {};
     }
   });
-  useEffect(() => {
-    try {
-      localStorage.setItem('aether_daily_study_seconds_v1', JSON.stringify(dailyStudySeconds));
-    } catch {
-      // ignore storage quota errors
-    }
-  }, [dailyStudySeconds]);
+  const liveDailyStudySecondsRef = useRef<Record<string, number>>(dailyStudySeconds);
 
   const studyDays = useMemo(() => {
     const hoursMap: Record<string, number> = {};
@@ -818,6 +853,7 @@ export default function App() {
       return {};
     }
   });
+  const liveWorkspaceSecondsRef = useRef<Record<string, number>>(workspaceSeconds);
   const [workspaceInteractions, setWorkspaceInteractions] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('aether_workspace_interactions_v1');
@@ -844,15 +880,12 @@ export default function App() {
       localStorage.removeItem('aether_workspace_interactions_v1');
       localStorage.removeItem('aether_audit_logs_v2');
       localStorage.setItem('aether_analytics_reset_v1', 'true');
+      liveWorkspaceSecondsRef.current = {};
       setWorkspaceSeconds({});
       setWorkspaceInteractions({});
       setAuditLogs([]);
     }
   }, []);
-
-  useEffect(() => {
-    safeSetLocalStorage('aether_workspace_seconds_v1', JSON.stringify(workspaceSeconds));
-  }, [workspaceSeconds]);
 
   useEffect(() => {
     safeSetLocalStorage('aether_workspace_interactions_v1', JSON.stringify(workspaceInteractions));
@@ -1016,19 +1049,14 @@ export default function App() {
     localStorage.setItem('aether_smooth_scroll', JSON.stringify(smoothScroll));
   }, [smoothScroll]);
 
-  // Activate Smooth Momentum Scrolling
-  useSmoothScroll(smoothScroll);
-
-  // Pause main window Lenis while full-screen OneNote or Gemini workspace is open
-  useEffect(() => {
-    const lenis = getLenis();
-    if (isOneNoteOpen || isGeminiWorkspaceOpen) {
-      lenis?.stop();
-    } else if (smoothScroll) {
-      lenis?.start();
-      lenis?.resize();
-    }
-  }, [isOneNoteOpen, isGeminiWorkspaceOpen, smoothScroll]);
+  // Activate Smooth Momentum Scrolling only on window-scrolling pages (skip fixed full-viewport canvases)
+  const shouldEnableWindowSmoothScroll =
+    smoothScroll &&
+    activeTab !== 'lander' &&
+    activeTab !== 'notebooklm' &&
+    !isOneNoteOpen &&
+    !isGeminiWorkspaceOpen;
+  useSmoothScroll(shouldEnableWindowSmoothScroll);
 
   // Sync CSS variables on :root for instantaneous hardware-accelerated cursor colors
   useEffect(() => {
@@ -1595,11 +1623,17 @@ export default function App() {
             // Reset only 3D tilt on exit; leave --pointer-x/--pointer-y in place so CSS opacity fades out without streaking to -999px
             activeHoverTileRef.current.style.setProperty('--tilt-x', '0deg');
             activeHoverTileRef.current.style.setProperty('--tilt-y', '0deg');
+            cachedTileRect = null;
           }
           activeHoverTileRef.current = tile;
 
           if (tile) {
-            const rect = tile.getBoundingClientRect();
+            // Reuse cached DOMRect while hovering the same stationary card (zero per-frame layout reads)
+            if (!cachedTileRect || cachedTileEl !== tile) {
+              cachedTileEl = tile;
+              cachedTileRect = tile.getBoundingClientRect();
+            }
+            const rect = cachedTileRect;
             const x = pos.clientX - rect.left;
             const y = pos.clientY - rect.top;
             const ratio = rect.width > 0 ? Math.max(0, Math.min(1, x / rect.width)) : 0.5;
@@ -1643,10 +1677,15 @@ export default function App() {
             if (activeParentCardRef.current && activeParentCardRef.current !== nextParent) {
               activeParentCardRef.current.style.setProperty('--tilt-x', '0deg');
               activeParentCardRef.current.style.setProperty('--tilt-y', '0deg');
+              cachedParentRect = null;
             }
             activeParentCardRef.current = nextParent;
             if (activeParentCardRef.current) {
-              const pRect = activeParentCardRef.current.getBoundingClientRect();
+              if (!cachedParentRect || cachedParentEl !== activeParentCardRef.current) {
+                cachedParentEl = activeParentCardRef.current;
+                cachedParentRect = activeParentCardRef.current.getBoundingClientRect();
+              }
+              const pRect = cachedParentRect;
               const px = pos.clientX - pRect.left;
               const py = pos.clientY - pRect.top;
               const pRatio = pRect.width > 0 ? Math.max(0, Math.min(1, px / pRect.width)) : 0.5;
@@ -1658,14 +1697,29 @@ export default function App() {
             activeParentCardRef.current.style.setProperty('--tilt-x', '0deg');
             activeParentCardRef.current.style.setProperty('--tilt-y', '0deg');
             activeParentCardRef.current = null;
+            cachedParentRect = null;
           }
         });
       }
     };
 
+    let cachedTileEl: HTMLElement | null = null;
+    let cachedTileRect: DOMRect | null = null;
+    let cachedParentEl: HTMLElement | null = null;
+    let cachedParentRect: DOMRect | null = null;
+
+    const invalidateCachedRects = () => {
+      cachedTileRect = null;
+      cachedParentRect = null;
+    };
+
     let scrollEndTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handleScrollGlow = () => {
+      // Invalidate cached hover rects whenever the viewport scrolls
+      cachedTileRect = null;
+      cachedParentRect = null;
+
       // 1. High-frequency GPU-bound tile tracking (sub-0.01ms, zero document layout tree recalculation)
       if (!scrollGlowRafRef.current) {
         scrollGlowRafRef.current = requestAnimationFrame(() => {
@@ -1683,18 +1737,24 @@ export default function App() {
               pos.clientY >= rect.top &&
               pos.clientY <= rect.bottom
             ) {
+              cachedTileEl = tile;
+              cachedTileRect = rect;
               const y = pos.clientY - rect.top;
               tile.style.setProperty('--pointer-y', `${Math.round(y)}px`);
 
               const parentCard = activeParentCardRef.current;
               if (parentCard && parentCard.isConnected) {
                 const pRect = parentCard.getBoundingClientRect();
+                cachedParentEl = parentCard;
+                cachedParentRect = pRect;
                 parentCard.style.setProperty('--pointer-y', `${Math.round(pos.clientY - pRect.top)}px`);
               }
               return;
             } else {
               activeHoverTileRef.current = null;
               activeParentCardRef.current = null;
+              cachedTileRect = null;
+              cachedParentRect = null;
             }
           }
         });
@@ -1713,6 +1773,8 @@ export default function App() {
         activeHoverTileRef.current = tile;
         if (tile) {
           const rect = tile.getBoundingClientRect();
+          cachedTileEl = tile;
+          cachedTileRect = rect;
           const x = pos.clientX - rect.left;
           const y = pos.clientY - rect.top;
           const ratio = rect.width > 0 ? Math.max(0, Math.min(1, x / rect.width)) : 0.5;
@@ -1859,6 +1921,7 @@ export default function App() {
     window.addEventListener('pointerdown', handlePointerDown, { capture: true });
     window.addEventListener('pointermove', handlePointerMove, { capture: true, passive: true });
     window.addEventListener('scroll', handleScrollGlow, { passive: true });
+    window.addEventListener('resize', invalidateCachedRects, { passive: true });
     window.addEventListener('pointerup', handlePointerUp, { capture: true });
     window.addEventListener('pointercancel', handlePointerCancel, { capture: true });
     window.addEventListener('blur', handlePointerCancel);
@@ -1869,6 +1932,7 @@ export default function App() {
       window.removeEventListener('pointerdown', handlePointerDown, { capture: true });
       window.removeEventListener('pointermove', handlePointerMove, { capture: true });
       window.removeEventListener('scroll', handleScrollGlow);
+      window.removeEventListener('resize', invalidateCachedRects);
       window.removeEventListener('pointerup', handlePointerUp, { capture: true });
       window.removeEventListener('pointercancel', handlePointerCancel, { capture: true });
       window.removeEventListener('blur', handlePointerCancel);
@@ -1949,8 +2013,8 @@ export default function App() {
       localCalendarEvents,
     } as DashboardStatePayload,
     analytics: {
-      dailyStudySeconds,
-      workspaceSeconds,
+      dailyStudySeconds: liveDailyStudySecondsRef.current,
+      workspaceSeconds: liveWorkspaceSecondsRef.current,
       workspaceInteractions,
       auditLogs: auditLogs.slice(0, 150),
       folders,
@@ -1988,8 +2052,8 @@ export default function App() {
       localCalendarEvents,
     },
     analytics: {
-      dailyStudySeconds,
-      workspaceSeconds,
+      dailyStudySeconds: liveDailyStudySecondsRef.current,
+      workspaceSeconds: liveWorkspaceSecondsRef.current,
       workspaceInteractions,
       auditLogs: auditLogs.slice(0, 150),
       folders,
@@ -2034,10 +2098,16 @@ export default function App() {
   const applyAnalyticsRemote = useCallback((a: AnalyticsStatePayload) => {
     isApplyingRemoteRef.current = true;
     if (a.dailyStudySeconds && typeof a.dailyStudySeconds === 'object') {
-      setDailyStudySeconds(migrateAnalyticsRecord(a.dailyStudySeconds));
+      const migrated = migrateAnalyticsRecord(a.dailyStudySeconds);
+      liveDailyStudySecondsRef.current = migrated;
+      setDailyStudySeconds(migrated);
+      safeSetLocalStorage('aether_daily_study_seconds_v1', JSON.stringify(migrated));
     }
     if (a.workspaceSeconds && typeof a.workspaceSeconds === 'object') {
-      setWorkspaceSeconds(migrateAnalyticsRecord(a.workspaceSeconds));
+      const migrated = migrateAnalyticsRecord(a.workspaceSeconds);
+      liveWorkspaceSecondsRef.current = migrated;
+      setWorkspaceSeconds(migrated);
+      safeSetLocalStorage('aether_workspace_seconds_v1', JSON.stringify(migrated));
     }
     if (a.workspaceInteractions && typeof a.workspaceInteractions === 'object') {
       setWorkspaceInteractions(migrateAnalyticsRecord(a.workspaceInteractions));
@@ -2946,29 +3016,102 @@ export default function App() {
     };
   }, [floatingChatMessages, firebaseUser, isCloudSyncReady, markCloudSyncError, markCloudSyncOk]);
 
-  // Live 1-second active workspace study time ticker (real-time updates)
+  // Zero-render study time accumulator: counts every second in refs and only flushes React state/storage
+  // when needed (1s UI tick on Analytics, 30s batch on other tabs, plus instant flush on tab switch/hide/unload).
+  const persistStudyCountersToStorage = useCallback(() => {
+    safeSetLocalStorage('aether_workspace_seconds_v1', JSON.stringify(liveWorkspaceSecondsRef.current));
+    safeSetLocalStorage('aether_daily_study_seconds_v1', JSON.stringify(liveDailyStudySecondsRef.current));
+  }, []);
+
+  const flushStudyCountersToState = useCallback(
+    (persistStorage = false) => {
+      setWorkspaceSeconds({ ...liveWorkspaceSecondsRef.current });
+      setDailyStudySeconds({ ...liveDailyStudySecondsRef.current });
+      if (persistStorage) {
+        persistStudyCountersToStorage();
+      }
+    },
+    [persistStudyCountersToStorage]
+  );
+
+  // Flush exact live study counters immediately whenever opening Analytics or Dashboard
+  useEffect(() => {
+    if (activeTab === 'analytics' || activeTab === 'dashboard') {
+      flushStudyCountersToState(false);
+    }
+  }, [activeTab, flushStudyCountersToState]);
+
   useEffect(() => {
     if (!isAuthenticated || activeTab === 'lander') return;
+
+    let ticksSinceStateFlush = 0;
+    let ticksSinceStorageFlush = 0;
 
     const interval = setInterval(() => {
       if (document.visibilityState === 'hidden') return;
       const key = activeWorkspaceRef.current?.id || activeWorkspaceIdRef.current || GENERAL_SESSION_KEY;
-      setWorkspaceSeconds((prev) => ({
-        ...prev,
-        [key]: (prev[key] || 0) + 1,
-      }));
+      const nextWs = {
+        ...liveWorkspaceSecondsRef.current,
+        [key]: (liveWorkspaceSecondsRef.current[key] || 0) + 1,
+      };
+      liveWorkspaceSecondsRef.current = nextWs;
+
       const now = new Date();
       const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
         now.getDate()
       ).padStart(2, '0')}`;
-      setDailyStudySeconds((prev) => ({
-        ...prev,
-        [todayKey]: (prev[todayKey] || 0) + 1,
-      }));
+      const nextDaily = {
+        ...liveDailyStudySecondsRef.current,
+        [todayKey]: (liveDailyStudySecondsRef.current[todayKey] || 0) + 1,
+      };
+      liveDailyStudySecondsRef.current = nextDaily;
+
+      // Keep cloud sync slice pointing at exact second-accurate values
+      latestSlicesRef.current.analytics.workspaceSeconds = nextWs;
+      latestSlicesRef.current.analytics.dailyStudySeconds = nextDaily;
+
+      ticksSinceStateFlush += 1;
+      ticksSinceStorageFlush += 1;
+
+      const isViewingAnalytics = activeTabRef.current === 'analytics';
+      if (isViewingAnalytics) {
+        setWorkspaceSeconds(nextWs);
+      }
+      if (ticksSinceStateFlush >= 30) {
+        ticksSinceStateFlush = 0;
+        if (!isViewingAnalytics) {
+          setWorkspaceSeconds(nextWs);
+        }
+        setDailyStudySeconds(nextDaily);
+      }
+
+      if (ticksSinceStorageFlush >= 15) {
+        ticksSinceStorageFlush = 0;
+        persistStudyCountersToStorage();
+      }
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [isAuthenticated, activeTab]);
+    const handleVisibilityOrUnload = () => {
+      if (document.visibilityState === 'hidden') {
+        persistStudyCountersToStorage();
+      }
+    };
+    const handlePageHide = () => {
+      persistStudyCountersToStorage();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrUnload);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityOrUnload);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+      persistStudyCountersToStorage();
+    };
+  }, [isAuthenticated, activeTab, persistStudyCountersToStorage]);
 
   // Log an audit action with workspace, folder, full timestamp, and jump navigation metadata
   const logAudit = useCallback(
@@ -4100,11 +4243,11 @@ export default function App() {
         />
       )}
 
-      {/* FULLSCREEN ONENOTE WORKSPACE (SLIDES IN HORIZONTALLY FROM RIGHT IN HYPRLAND STYLE for full workspaces) */}
-      {activeWorkspace?.mode !== 'onenote-only' && (
+      {/* FULLSCREEN ONENOTE WORKSPACE (LAZY-MOUNTED WITH PRESERVED 360ms HYPRLAND SLIDE ANIMATION) */}
+      {activeWorkspace?.mode !== 'onenote-only' && oneNotePresence.shouldRender && (
         <OneNoteWorkspace
           notebooks={oneNoteNotebooks}
-          isOpen={isOneNoteOpen}
+          isOpen={oneNotePresence.isVisible}
           onCloseBack={() => {
             setIsOneNoteOpen(false);
           }}
@@ -4115,24 +4258,26 @@ export default function App() {
         />
       )}
 
-      {/* FULLSCREEN GEMINI WORKSPACE (SLIDES IN HORIZONTALLY FROM LEFT IN HYPRLAND STYLE) */}
-      <GeminiWorkspace
-        isOpen={isGeminiWorkspaceOpen}
-        onCloseBack={() => {
-          setIsGeminiWorkspaceOpen(false);
-        }}
-        activePalette={activePalette}
-        darkMode={darkMode}
-        conversations={geminiConversations}
-        onUpdateConversations={handleUpdateActiveConversations}
-        selectedModel={selectedModel}
-        onChangeModel={(m) => {
-          setSelectedModel(m);
-          logAudit('Model Changed', `Switched AI model to ${m}`, 'ai');
-        }}
-        smoothScroll={smoothScroll}
-        userName={activeUserName}
-      />
+      {/* FULLSCREEN GEMINI WORKSPACE (LAZY-MOUNTED WITH PRESERVED 360ms HYPRLAND SLIDE ANIMATION) */}
+      {geminiPresence.shouldRender && (
+        <GeminiWorkspace
+          isOpen={geminiPresence.isVisible}
+          onCloseBack={() => {
+            setIsGeminiWorkspaceOpen(false);
+          }}
+          activePalette={activePalette}
+          darkMode={darkMode}
+          conversations={geminiConversations}
+          onUpdateConversations={handleUpdateActiveConversations}
+          selectedModel={selectedModel}
+          onChangeModel={(m) => {
+            setSelectedModel(m);
+            logAudit('Model Changed', `Switched AI model to ${m}`, 'ai');
+          }}
+          smoothScroll={smoothScroll}
+          userName={activeUserName}
+        />
+      )}
 
       {/* Floating Gemini Chatbox on the Right with Liquid Glass Accent (Floats over OneNote window) */}
       {isAuthenticated && (

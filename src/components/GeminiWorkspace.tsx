@@ -294,8 +294,9 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     return () => window.removeEventListener('pointerdown', handleClickOutside);
   }, [isModelDropdownOpen]);
 
-  // High-performance 120 FPS cursor tracking for the main chat stage (ends strictly at sidebar margin)
+  // High-performance 120 FPS cursor tracking for the main chat stage (zero per-frame layout reads)
   const stageRafRef = useRef<number | null>(null);
+  const stageRectCacheRef = useRef<{ el: HTMLElement | null; rect: DOMRect | null }>({ el: null, rect: null });
 
   const handleStagePointerMove = (e: React.PointerEvent<HTMLElement>) => {
     const el = e.currentTarget;
@@ -305,7 +306,10 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     if (!stageRafRef.current) {
       stageRafRef.current = requestAnimationFrame(() => {
         stageRafRef.current = null;
-        const rect = el.getBoundingClientRect();
+        if (stageRectCacheRef.current.el !== el || !stageRectCacheRef.current.rect) {
+          stageRectCacheRef.current = { el, rect: el.getBoundingClientRect() };
+        }
+        const rect = stageRectCacheRef.current.rect!;
         const x = clientX - rect.left;
         const y = clientY - rect.top;
         const ratio = Math.max(0, Math.min(1, x / (rect.width || 1)));
@@ -321,13 +325,15 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
       cancelAnimationFrame(stageRafRef.current);
       stageRafRef.current = null;
     }
+    stageRectCacheRef.current = { el: null, rect: null };
     const el = e.currentTarget;
     el.style.setProperty('--pointer-x', '-999px');
     el.style.setProperty('--pointer-y', '-999px');
   };
 
-  // High-performance 120 FPS liquid glass tracking for conversation items (both minimized and maximized)
+  // High-performance 120 FPS liquid glass tracking for conversation items (zero per-frame layout reads)
   const itemRafRef = useRef<number | null>(null);
+  const itemRectCacheRef = useRef<{ el: HTMLElement | null; rect: DOMRect | null }>({ el: null, rect: null });
 
   const handleItemPointerMove = (e: React.PointerEvent<HTMLElement>) => {
     const el = e.currentTarget;
@@ -337,7 +343,10 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
     if (!itemRafRef.current) {
       itemRafRef.current = requestAnimationFrame(() => {
         itemRafRef.current = null;
-        const rect = el.getBoundingClientRect();
+        if (itemRectCacheRef.current.el !== el || !itemRectCacheRef.current.rect) {
+          itemRectCacheRef.current = { el, rect: el.getBoundingClientRect() };
+        }
+        const rect = itemRectCacheRef.current.rect!;
         const x = clientX - rect.left;
         const y = clientY - rect.top;
         const ratio = Math.max(0, Math.min(1, x / (rect.width || 1)));
@@ -353,6 +362,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
       cancelAnimationFrame(itemRafRef.current);
       itemRafRef.current = null;
     }
+    itemRectCacheRef.current = { el: null, rect: null };
     const el = e.currentTarget;
     el.style.setProperty('--pointer-x', '-999px');
     el.style.setProperty('--pointer-y', '-999px');
@@ -849,10 +859,10 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
 
       {/* ================= MAIN LIQUID FROST GLASS BUBBLE CONTAINER ================= */}
       <div className="flex-1 h-full p-2 md:p-6 flex flex-col min-w-0 overflow-hidden relative">
-        {/* Ambient atmospheric liquid frost aura radiating around the workspace bubble */}
+        {/* Ambient atmospheric liquid frost aura radiating around the workspace bubble (radial gradients already smoothly feathered; no redundant full-screen blur-3xl) */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 pointer-events-none -z-10 opacity-70 blur-3xl transition-opacity duration-700"
+          className="absolute inset-0 pointer-events-none -z-10 opacity-75 transition-opacity duration-700"
           style={{
             background: `radial-gradient(circle 800px at 70% 30%, ${activePalette.primary}22, transparent 70%), radial-gradient(circle 600px at 20% 70%, ${activePalette.accent}18, transparent 65%)`,
           }}
@@ -1368,7 +1378,7 @@ export const GeminiWorkspace: React.FC<GeminiWorkspaceProps> = ({
                   {isModelDropdownOpen && (
                     <div
                       style={{ zIndex: 100 }}
-                      className={`absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border p-2 shadow-2xl z-[100] space-y-1.5 backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-150 ${
+                      className={`absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border p-2 shadow-2xl z-[100] space-y-1.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 ${
                         darkMode
                           ? 'bg-slate-900 border-white/20 text-slate-100 shadow-2xl shadow-black/80 ring-1 ring-white/10'
                           : 'bg-white border-slate-300 text-slate-900 shadow-2xl shadow-slate-400/50 ring-1 ring-black/5'
