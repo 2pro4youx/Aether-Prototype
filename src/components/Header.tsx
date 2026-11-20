@@ -35,7 +35,11 @@ export const Header: React.FC<HeaderProps> = ({
   const [spinCount, setSpinCount] = useState(0);
   const [isEdgeRevealed, setIsEdgeRevealed] = useState(false);
   const [isNavHovered, setIsNavHovered] = useState(false);
+  const [isPoppingOut, setIsPoppingOut] = useState(false);
   const navHoveredRef = useRef(false);
+  const navRef = useRef<HTMLElement | null>(null);
+  const prevHiddenRef = useRef(false);
+  const popOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Trigger blur spinning animation on '+' icon when theme palette changes via lander/home interactions
   useEffect(() => {
@@ -97,10 +101,44 @@ export const Header: React.FC<HeaderProps> = ({
     return {};
   };
 
-  if (!isAuthenticated) return null;
-
   const isHeaderHidden =
     isWorkspaceSelectorOpen || (autoHideOnTopEdge && !isEdgeRevealed && !isNavHovered);
+
+  // Clear stale spotlight coordinates when hidden and suppress phantom mid-flight hover glow while popping out
+  useEffect(() => {
+    if (popOutTimerRef.current) {
+      clearTimeout(popOutTimerRef.current);
+      popOutTimerRef.current = null;
+    }
+
+    if (isHeaderHidden) {
+      setIsPoppingOut(false);
+      if (navRef.current) {
+        navRef.current.style.setProperty('--pointer-x', '-999px');
+        navRef.current.style.setProperty('--pointer-y', '-999px');
+      }
+    } else if (prevHiddenRef.current) {
+      setIsPoppingOut(true);
+      if (navRef.current) {
+        navRef.current.style.setProperty('--pointer-x', '-999px');
+        navRef.current.style.setProperty('--pointer-y', '-999px');
+      }
+      popOutTimerRef.current = setTimeout(() => {
+        setIsPoppingOut(false);
+        popOutTimerRef.current = null;
+      }, 340);
+    }
+
+    prevHiddenRef.current = isHeaderHidden;
+    return () => {
+      if (popOutTimerRef.current) {
+        clearTimeout(popOutTimerRef.current);
+        popOutTimerRef.current = null;
+      }
+    };
+  }, [isHeaderHidden]);
+
+  if (!isAuthenticated) return null;
 
   return (
     <>
@@ -312,23 +350,28 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
       {/* ================= DESKTOP FLOATING PILL HEADER (>= 768px IDENTICAL) ================= */}
+      {/* Animate pure Y translation (no opacity/scale reduction) so frosted backdrop-filter stays live on every frame */}
       <motion.header
-        initial={{ y: -90, opacity: 0, scale: 0.95 }}
+        initial={{ y: -96 }}
         animate={{
-          y: isHeaderHidden ? -84 : 0,
-          opacity: isHeaderHidden ? 0 : 1,
-          scale: isHeaderHidden ? 0.96 : 1,
+          y: isHeaderHidden ? -96 : 0,
+        }}
+        onAnimationComplete={() => {
+          if (!isHeaderHidden && isPoppingOut) {
+            setIsPoppingOut(false);
+          }
         }}
         transition={{
           type: 'spring',
           stiffness: 380,
-          damping: 30,
+          damping: 32,
           mass: 0.65,
         }}
         className="fixed top-4 inset-x-0 z-[200] hidden md:flex justify-center items-center pointer-events-none px-4"
       >
-        {/* Floating Pill Container with Liquid Glass - seamless smooth edges with zero gap */}
+        {/* Floating Pill Container with Frosted Liquid Glass - seamless smooth edges with zero gap */}
         <nav
+          ref={navRef}
           aria-label="Main Navigation"
           onPointerEnter={() => {
             navHoveredRef.current = true;
@@ -344,7 +387,9 @@ export const Header: React.FC<HeaderProps> = ({
           }}
           className={`${
             isHeaderHidden ? 'pointer-events-none' : 'pointer-events-auto'
-          } rounded-full px-5 py-2 flex items-center gap-2 sm:gap-3 shadow-2xl transition-all duration-300 liquid-glass no-lift overflow-hidden ${
+          } ${
+            isPoppingOut ? 'header-popping-out' : ''
+          } rounded-full px-5 py-2 flex items-center gap-2 sm:gap-3 shadow-2xl transition-[border-color,box-shadow,background-color] duration-200 liquid-glass no-lift overflow-hidden ${
             darkMode ? 'text-slate-200' : 'text-slate-800'
           }`}
         >

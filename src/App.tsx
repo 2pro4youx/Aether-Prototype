@@ -1139,95 +1139,150 @@ export default function App() {
     updateGlowMultiplier(glowMultiplier);
   }, []);
 
-  // Simple Right-Click Glow Wave Ripple Across All Visible Surfaces / Cards / Tiles
-  const triggerAllSurfacesGlowRipple = (clientX: number, clientY: number) => {
+  // Optimized Far-Reaching Right-Click Glow Ripple (Works on Dashboard & All App Views Except Lander; Zero Forced Reflows; Multi-Click Stacking)
+  const triggerAllSurfacesGlowRipple = (
+    clientX: number,
+    clientY: number,
+    clickedTarget: HTMLElement | null = null
+  ) => {
+    // Lander handles its own WebGL PolygonCanvas right-click theme wave
+    if (activeTabRef.current === 'lander') {
+      return;
+    }
+
     try {
-      const allSurfaces = Array.from(
-        document.querySelectorAll<HTMLElement>('.liquid-glass, .liquid-glass-tile')
-      );
-      if (!allSurfaces || allSurfaces.length === 0) return;
-
-      // Filter out redundant nested child tiles whose parent container is already rippling,
-      // and skip surfaces in the main bottom right workspace editor canvas
-      const cards = allSurfaces.filter((el) => {
-        // Skip void or input elements that cannot hold ripple overlays
-        if (el instanceof HTMLInputElement || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-          return false;
-        }
-        if (el.closest('.onenote-editor-canvas, .gemini-chat-canvas')) {
-          return false;
-        }
-        const parentGlass = el.parentElement?.closest('.liquid-glass');
-        return !parentGlass || parentGlass === el;
-      });
-
+      const BASE_TEXTURE_PX = 220;
+      const MAX_RIPPLE_SURFACES = 14;
+      const MAX_CONCURRENT_WAVES_PER_CARD = 4;
       const winWidth = window.innerWidth;
       const winHeight = window.innerHeight;
 
-      cards.forEach((card) => {
-        // Skip hidden or collapsed elements
-        if (card.offsetParent === null) return;
-        const rect = card.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return;
+      // Compute one unified viewport-wide wave scale so the wavefront travels far across every card smoothly
+      const maxCornerDist = Math.max(
+        Math.hypot(clientX, clientY),
+        Math.hypot(winWidth - clientX, clientY),
+        Math.hypot(clientX, winHeight - clientY),
+        Math.hypot(winWidth - clientX, winHeight - clientY)
+      );
+      const targetDiameter = Math.max(960, maxCornerDist * 2.15);
+      const endScale = Math.min(26, Math.max(4.5, Math.round((targetDiameter / BASE_TEXTURE_PX) * 100) / 100));
 
-        // Viewport Culling: Skip surfaces completely outside the visible viewport
+      const isEligibleSurface = (el: HTMLElement): boolean => {
         if (
-          rect.bottom < 0 ||
-          rect.top > winHeight ||
-          rect.right < 0 ||
-          rect.left > winWidth
+          el instanceof HTMLInputElement ||
+          el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.closest('.onenote-editor-canvas, .gemini-chat-canvas')
         ) {
-          return;
+          return false;
         }
+        return true;
+      };
 
-        // Concurrent Ripple Limiting: Cap active ripples to 2 per card, removing older ones upon rapid clicks
-        const existingRipples = card.querySelectorAll('.card-glow-ripple');
-        if (existingRipples.length >= 2) {
-          existingRipples[0].remove();
+      // Phase 1: Pure DOM geometry reads (zero style/DOM writes inside loop -> zero forced reflows)
+      const rawSurfaces = Array.from(document.querySelectorAll<HTMLElement>('.liquid-glass'));
+      const candidateSet = new Set<HTMLElement>();
+
+      if (clickedTarget && clickedTarget.isConnected && isEligibleSurface(clickedTarget)) {
+        const topHost = (clickedTarget.closest('.liquid-glass') as HTMLElement | null) || clickedTarget;
+        if (isEligibleSurface(topHost)) {
+          candidateSet.add(topHost);
+        }
+      }
+
+      for (const el of rawSurfaces) {
+        if (!isEligibleSurface(el)) continue;
+        const parentGlass = el.parentElement?.closest('.liquid-glass');
+        if (parentGlass && parentGlass !== el) continue;
+        candidateSet.add(el);
+      }
+
+      if (candidateSet.size === 0) return;
+
+      interface RippleMeasurement {
+        card: HTMLElement;
+        clickX: number;
+        clickY: number;
+        distSq: number;
+        isClicked: boolean;
+      }
+
+      const measurements: RippleMeasurement[] = [];
+      for (const card of candidateSet) {
+        const rect = card.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        if (rect.bottom < 0 || rect.top > winHeight || rect.right < 0 || rect.left > winWidth) {
+          continue;
         }
 
         const clickX = clientX - rect.left;
         const clickY = clientY - rect.top;
+        const clampedX = Math.max(0, Math.min(rect.width, clickX));
+        const clampedY = Math.max(0, Math.min(rect.height, clickY));
+        const dx = clickX - clampedX;
+        const dy = clickY - clampedY;
+        const distSq = dx * dx + dy * dy;
 
-        // Calculate maximum radius to ensure the wave sweeps across the entire card surface
-        const maxDist = Math.hypot(
-          Math.max(clickX, rect.width - clickX),
-          Math.max(clickY, rect.height - clickY)
-        );
-        const rippleDiameter = Math.max(rect.width, rect.height, maxDist * 2.2);
+        measurements.push({
+          card,
+          clickX: Math.round(clickX),
+          clickY: Math.round(clickY),
+          distSq,
+          isClicked: Boolean(clickedTarget && (card === clickedTarget || card.contains(clickedTarget))),
+        });
+      }
 
-        const ripple = document.createElement('span');
-        ripple.className = 'card-glow-ripple';
-        ripple.setAttribute('aria-hidden', 'true');
-        ripple.style.position = 'absolute';
-        ripple.style.left = `${Math.round(clickX)}px`;
-        ripple.style.top = `${Math.round(clickY)}px`;
-        ripple.style.width = `${Math.round(rippleDiameter)}px`;
-        ripple.style.height = `${Math.round(rippleDiameter)}px`;
-        ripple.style.margin = '0px';
-        ripple.style.marginTop = '0px';
-        ripple.style.marginBottom = '0px';
+      if (measurements.length === 0) return;
 
-        const prevPosition = window.getComputedStyle(card).position;
-        if (prevPosition === 'static') {
-          card.style.position = 'relative';
-        }
-        if (!card.classList.contains('overflow-hidden') && card.style.overflow !== 'hidden') {
-          card.style.overflow = 'hidden';
-        }
+      // Prioritize clicked card and sweep outward across all visible surfaces up to MAX_RIPPLE_SURFACES
+      measurements.sort((a, b) => {
+        if (a.isClicked !== b.isClicked) return a.isClicked ? -1 : 1;
+        return a.distSq - b.distSq;
+      });
 
-        // Prepend so that in legacy space-y containers, bottom children never lose :last-child status
-        card.prepend(ripple);
+      const targets = measurements.slice(0, MAX_RIPPLE_SURFACES);
 
-        const cleanupTimeoutMs = 1000;
-        const cleanup = () => {
-          if (ripple.parentNode === card) {
-            card.removeChild(ripple);
+      // Phase 2: Pure batched DOM writes in a single animation frame (supports multiple overlapping right clicks)
+      requestAnimationFrame(() => {
+        for (const item of targets) {
+          const { card, clickX, clickY } = item;
+          if (!card.isConnected) continue;
+
+          // Reuse existing clip layer so multiple rapid right-clicks stack cleanly without interrupting active waves
+          let clip = card.querySelector(':scope > .card-glow-ripple-clip') as HTMLSpanElement | null;
+          if (!clip) {
+            clip = document.createElement('span');
+            clip.className = 'card-glow-ripple-clip';
+            clip.setAttribute('aria-hidden', 'true');
+            card.prepend(clip);
           }
-        };
 
-        ripple.addEventListener('animationend', cleanup, { once: true });
-        setTimeout(cleanup, cleanupTimeoutMs);
+          // Cap simultaneous overlapping waves per card to keep GPU smooth during rapid clicking
+          while (clip.childElementCount >= MAX_CONCURRENT_WAVES_PER_CARD && clip.firstElementChild) {
+            clip.firstElementChild.remove();
+          }
+
+          const ripple = document.createElement('span');
+          ripple.className = 'card-glow-ripple';
+          ripple.style.left = `${clickX}px`;
+          ripple.style.top = `${clickY}px`;
+          ripple.style.setProperty('--ripple-end-scale', String(endScale));
+
+          clip.appendChild(ripple);
+
+          const hostClip = clip;
+          const cleanup = () => {
+            if (ripple.parentNode === hostClip) {
+              hostClip.removeChild(ripple);
+            }
+            if (hostClip.childElementCount === 0 && hostClip.parentNode === card) {
+              card.removeChild(hostClip);
+            }
+          };
+
+          ripple.addEventListener('animationend', cleanup, { once: true });
+          setTimeout(cleanup, 1020);
+        }
       });
     } catch {
       // Graceful fallback
@@ -1405,9 +1460,9 @@ export default function App() {
         const finalVal = glowMultiplierRef.current;
         setGlowMultiplier(finalVal);
         localStorage.setItem('aether_glow_multiplier_v3', String(finalVal));
-      } else {
-        // Simple right-click (no drag)!
-        // Trigger radiant glow ripple wave spreading across all visible surfaces/cards/tiles
+      } else if (activeTabRef.current !== 'lander') {
+        // Simple right-click (no drag) on Dashboard & all other non-Lander views:
+        // Trigger optimized far-reaching glow ripple (supports rapid multiple right-clicks)
         const isInteractiveInput = (e.target as HTMLElement | null)?.closest?.(
           'input, textarea, select, a, button'
         );
@@ -1415,7 +1470,7 @@ export default function App() {
           (e.target as HTMLElement | null)?.closest?.('.onenote-table-block, [data-table-block]')
         );
         if (!isInteractiveInput && !isTable) {
-          triggerAllSurfacesGlowRipple(e.clientX, e.clientY);
+          triggerAllSurfacesGlowRipple(e.clientX, e.clientY, clickedCardRef.current);
         }
       }
       clickedCardRef.current = null;

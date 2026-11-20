@@ -9,25 +9,116 @@ import { sanitizeDecodedTimetableSlots } from './src/utils/timetableParser';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env, falling back to .env.local and .env.example
+// Load .env and .env.local only (never load placeholder .env.example into runtime secrets)
 dotenv.config();
 if (!process.env.GEMINI_API_KEY) {
   dotenv.config({ path: path.resolve(__dirname, '.env.local') });
-}
-if (!process.env.GEMINI_API_KEY) {
-  dotenv.config({ path: path.resolve(__dirname, '.env.example') });
 }
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
+// Security Hardening: Hide Express stack signature and apply defensive HTTP headers
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('X-DNS-Prefetch-Control', 'off');
+  res.setHeader('X-XSS-Protection', '0');
+  next();
+});
+
+// Lightweight sliding-window per-IP rate limiter for /api/* routes (prevents brute-force & abuse)
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_CLEANUP_INTERVAL_MS = 60_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of rateLimitBuckets.entries()) {
+    if (now >= bucket.resetAt) {
+      rateLimitBuckets.delete(key);
+    }
+  }
+}, RATE_LIMIT_CLEANUP_INTERVAL_MS).unref();
+
+function createApiRateLimiter(maxRequests: number, windowMs: number, scope: string) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const forwarded = req.headers['x-forwarded-for'];
+    const rawIp =
+      (Array.isArray(forwarded) ? forwarded[0] : typeof forwarded === 'string' ? forwarded.split(',')[0] : '') ||
+      req.ip ||
+      req.socket?.remoteAddress ||
+      'unknown';
+    const key = `${scope}:${rawIp.trim()}`;
+    const now = Date.now();
+    const existing = rateLimitBuckets.get(key);
+
+    if (!existing || now >= existing.resetAt) {
+      rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+
+    if (existing.count >= maxRequests) {
+      const retryAfterSec = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        error: 'Too many requests. Please wait a moment before trying again.',
+        retryAfterSeconds: retryAfterSec,
+      });
+    }
+
+    existing.count += 1;
+    return next();
+  };
+}
+
+app.use('/api/gemini/verify', createApiRateLimiter(30, 60_000, 'verify'));
+app.use('/api/gemini/status', createApiRateLimiter(40, 60_000, 'status'));
+app.use('/api/gemini', createApiRateLimiter(80, 60_000, 'gemini'));
+
 app.use(express.json({ limit: '20mb' }));
+
+// Redact any accidentally embedded API keys or query-string credentials from logs/errors
+function redactSecrets(input: string): string {
+  return String(input || '')
+    .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED_API_KEY]')
+    .replace(/AQ\.[0-9A-Za-z._-]{16,}/g, '[REDACTED_API_KEY]')
+    .replace(/([?&]key=)[^&\s"']+/gi, '$1[REDACTED]');
+}
+
+function safeErrorMessage(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : fallback;
+  const cleaned = redactSecrets(raw).trim();
+  return cleaned || fallback;
+}
+
+const PLACEHOLDER_KEYS = new Set(['API_KEY', 'YOUR_API_KEY', 'MY_GEMINI_API_KEY', 'REPLACE_ME']);
 
 // Helper to extract clean API key from request or environment
 function resolveApiKey(req?: express.Request): string {
   const reqKey = (req?.headers['x-gemini-api-key'] as string) || (req?.body?.apiKey as string);
   const rawKey = reqKey || process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
-  return rawKey.replace(/^["']|["']$/g, '').trim();
+  const cleaned = rawKey.replace(/^["']|["']$/g, '').trim();
+  if (!cleaned || PLACEHOLDER_KEYS.has(cleaned.toUpperCase())) {
+    return '';
+  }
+  return cleaned;
+}
+
+const ALLOWED_IMAGE_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+  'application/pdf',
+]);
+
+function isAllowedMediaMime(mime: string): boolean {
+  return ALLOWED_IMAGE_MIMES.has(String(mime || '').toLowerCase().trim());
 }
 
 const vertexKeyCache = new Map<string, 'generativelanguage' | 'aiplatform'>();
@@ -244,13 +335,15 @@ app.post('/api/gemini/verify', async (req, res) => {
   return res.json(result);
 });
 
-// Health & Connection Check Endpoint
+// Health & Connection Check Endpoint (never expose raw or partial API keys)
 app.get('/api/gemini/status', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const apiKey = resolveApiKey(req);
   if (!apiKey) {
     return res.json({
       connected: false,
-      error: 'GEMINI_API_KEY is not configured in .env or request headers.',
+      keyConfigured: false,
+      error: 'Gemini API key is not configured.',
     });
   }
 
@@ -258,15 +351,15 @@ app.get('/api/gemini/status', async (req, res) => {
   if (check.valid) {
     return res.json({
       connected: true,
+      keyConfigured: true,
       model: check.model || 'gemini-3.5-flash-lite',
       reply: 'PONG',
-      keyPreview: `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}`,
     });
   }
   return res.json({
     connected: false,
-    error: check.error || 'API Check failed',
-    keyPreview: `${apiKey.substring(0, 6)}...`,
+    keyConfigured: true,
+    error: redactSecrets(check.error || 'API Check failed'),
   });
 });
 
@@ -340,7 +433,8 @@ function cleanGeminiReply(reply: string): string {
         ).trim();
 
         if (parsed.action === 'dalle.text2im' || prompt || thought) {
-          const cleanDesc = prompt || thought || 'Visual analysis';
+          const cleanDesc = String(prompt || thought || 'Visual analysis');
+          const safeAlt = cleanDesc.replace(/[\[\]()\r\n]/g, ' ').trim().slice(0, 60) || 'Visual analysis';
           const encodedPrompt = encodeURIComponent(cleanDesc.slice(0, 200));
           const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&nologo=true`;
 
@@ -348,7 +442,7 @@ function cleanGeminiReply(reply: string): string {
             `### 🎨 Visual Synthesis & Representation\n\n` +
             (thought ? `> **Visual Analysis**: ${thought}\n\n` : '') +
             (prompt ? `**Visual Specification & Analysis**:\n${prompt}\n\n` : '') +
-            `![Generated Visual: ${cleanDesc.slice(0, 60)}](${imageUrl})\n`;
+            `![Generated Visual: ${safeAlt}](${imageUrl})\n`;
 
           const before = trimmed.slice(0, extracted.start).trim();
           const after = trimmed.slice(extracted.end).trim();
@@ -446,11 +540,14 @@ app.post('/api/gemini/chat', async (req, res) => {
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'Message is required' });
     }
+    if (message.length > 100_000) {
+      return res.status(413).json({ error: 'Message exceeds maximum allowed length.' });
+    }
 
     const apiKey = resolveApiKey(req);
     if (!apiKey) {
       return res.status(401).json({
-        error: 'Gemini API key is missing. Please add GEMINI_API_KEY to your .env file or Settings panel.',
+        error: 'Gemini API key is missing. Please add a valid key in Settings.',
       });
     }
 
@@ -553,7 +650,7 @@ app.post('/api/gemini/chat', async (req, res) => {
                 mimeType = 'application/pdf';
               }
             }
-            if (mimeType.startsWith('image/') || mimeType === 'application/pdf') {
+            if (isAllowedMediaMime(mimeType)) {
               contentsParts.push({
                 inlineData: {
                   mimeType,
@@ -672,8 +769,8 @@ app.post('/api/gemini/chat', async (req, res) => {
       thinkingUsed: Boolean(enableThinking || targetModel === 'gemini-4-argon'),
     });
   } catch (err: unknown) {
-    console.error('Gemini API Error:', err);
-    const errorMessage = err instanceof Error ? err.message : 'Internal Gemini Server Error';
+    const errorMessage = safeErrorMessage(err, 'Internal Gemini Server Error');
+    console.error('Gemini API Error:', errorMessage);
     return res.status(500).json({ error: errorMessage });
   }
 });
@@ -692,6 +789,9 @@ app.post('/api/gemini/stream', async (req, res) => {
 
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'Message is required' });
+    }
+    if (message.length > 100_000) {
+      return res.status(413).json({ error: 'Message exceeds maximum allowed length.' });
     }
 
     const apiKey = resolveApiKey(req);
@@ -796,11 +896,12 @@ app.post('/api/gemini/stream', async (req, res) => {
     res.write(`data: [DONE]\n\n`);
     res.end();
   } catch (err: unknown) {
-    console.error('Gemini Stream Error:', err);
+    const errorMessage = safeErrorMessage(err, 'Streaming error');
+    console.error('Gemini Stream Error:', errorMessage);
     if (!res.headersSent) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Streaming error' });
+      res.status(500).json({ error: errorMessage });
     } else {
-      res.write(`data: ${JSON.stringify({ error: err instanceof Error ? err.message : 'Stream failed' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
       res.end();
     }
   }
@@ -923,8 +1024,8 @@ app.post('/api/gemini/synthesize', async (req, res) => {
       modelUsed,
     });
   } catch (err: unknown) {
-    console.error('Synthesis Error:', err);
-    const errorMessage = err instanceof Error ? err.message : 'Failed to synthesize content';
+    const errorMessage = safeErrorMessage(err, 'Failed to synthesize content');
+    console.error('Synthesis Error:', errorMessage);
     return res.status(500).json({ error: errorMessage });
   }
 });
@@ -953,6 +1054,9 @@ app.post('/api/gemini/decode-exam-schedule', async (req, res) => {
     if (!mimeType || !mimeType.includes('/')) {
       const match = header.match(/data:([^;]+);/);
       mimeType = match?.[1] || 'image/png';
+    }
+    if (!isAllowedMediaMime(mimeType)) {
+      return res.status(400).json({ error: 'Unsupported image format. Please upload PNG, JPEG, WEBP, GIF, or PDF.' });
     }
 
     const ai = new GoogleGenAI({
@@ -1068,8 +1172,8 @@ app.post('/api/gemini/decode-exam-schedule', async (req, res) => {
     const exams = Array.isArray(parsed.exams) ? parsed.exams : [];
     return res.json({ exams, modelUsed });
   } catch (err: unknown) {
-    console.error('Exam Schedule Decode Error:', err);
-    const errorMessage = err instanceof Error ? err.message : 'Failed to decode exam schedule image';
+    const errorMessage = safeErrorMessage(err, 'Failed to decode exam schedule image');
+    console.error('Exam Schedule Decode Error:', errorMessage);
     return res.status(500).json({ error: errorMessage });
   }
 });
@@ -1103,7 +1207,7 @@ app.post('/api/gemini/decode-timetable', async (req, res) => {
     }
 
     const mediaParts: Array<{ inlineData?: { mimeType: string; data: string }; text?: string }> = [];
-    for (const part of rawInputs) {
+    for (const part of rawInputs.slice(0, 6)) {
       const urlStr = String(part.dataUrl || '');
       const [header, base64Data] = urlStr.split('base64,');
       if (!base64Data) continue;
@@ -1112,8 +1216,11 @@ app.post('/api/gemini/decode-timetable', async (req, res) => {
         const match = header.match(/data:([^;]+);/);
         mimeType = match?.[1] || 'image/png';
       }
+      if (!isAllowedMediaMime(mimeType)) {
+        continue;
+      }
       if (part.label && rawInputs.length > 1) {
-        mediaParts.push({ text: `[Image view: ${part.label}]` });
+        mediaParts.push({ text: `[Image view: ${String(part.label).slice(0, 60)}]` });
       }
       mediaParts.push({
         inlineData: {
@@ -1121,6 +1228,9 @@ app.post('/api/gemini/decode-timetable', async (req, res) => {
           data: base64Data.trim(),
         },
       });
+    }
+    if (mediaParts.length === 0) {
+      return res.status(400).json({ error: 'Unsupported timetable image format. Please upload PNG, JPEG, WEBP, GIF, or PDF.' });
     }
 
     const ai = new GoogleGenAI({
@@ -1274,8 +1384,8 @@ app.post('/api/gemini/decode-timetable', async (req, res) => {
     const slots = parsePayload(rawText);
     return res.json({ slots, modelUsed });
   } catch (err: unknown) {
-    console.error('Timetable Decode Error:', err);
-    const errorMessage = err instanceof Error ? err.message : 'Failed to decode timetable image';
+    const errorMessage = safeErrorMessage(err, 'Failed to decode timetable image');
+    console.error('Timetable Decode Error:', errorMessage);
     return res.status(500).json({ error: errorMessage });
   }
 });

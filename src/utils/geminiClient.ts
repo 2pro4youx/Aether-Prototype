@@ -214,7 +214,8 @@ export function cleanGeminiReply(reply: string): string {
 
         // If it's a visual synthesis / DALL-E call
         if (parsed.action === 'dalle.text2im' || prompt || thought) {
-          const cleanDesc = prompt || thought || 'Visual analysis';
+          const cleanDesc = String(prompt || thought || 'Visual analysis');
+          const safeAlt = cleanDesc.replace(/[\[\]()\r\n]/g, ' ').trim().slice(0, 60) || 'Visual analysis';
           const encodedPrompt = encodeURIComponent(cleanDesc.slice(0, 200));
           const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&nologo=true`;
 
@@ -222,7 +223,7 @@ export function cleanGeminiReply(reply: string): string {
             `### 🎨 Visual Synthesis & Representation\n\n` +
             (thought ? `> **Visual Analysis**: ${thought}\n\n` : '') +
             (prompt ? `**Visual Specification & Analysis**:\n${prompt}\n\n` : '') +
-            `![Generated Visual: ${cleanDesc.slice(0, 60)}](${imageUrl})\n`;
+            `![Generated Visual: ${safeAlt}](${imageUrl})\n`;
 
           const before = trimmed.slice(0, extracted.start).trim();
           const after = trimmed.slice(extracted.end).trim();

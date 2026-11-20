@@ -12,6 +12,35 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Google Gemini API](https://img.shields.io/badge/Gemini_API-@google%2Fgenai-4285F4?style=flat-square&logo=googlegemini&logoColor=white)](https://ai.google.dev/)
 [![Firebase](https://img.shields.io/badge/Firebase-Auth_%26_Firestore-FFCA28?style=flat-square&logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![Android & Mobile Ready](https://img.shields.io/badge/Android_%26_Mobile-Optimized-3DDC84?style=flat-square&logo=android&logoColor=white)](#-whats-new--update-notes)
+
+---
+
+## 🚀 What's New & Update Notes
+
+> **Latest Release Highlights — Android & Mobile Optimization, Slot-Grid Timetable AI Decoder, Unified Cloud Sync & Liquid Glass Polish**
+
+### 📱 Android & Mobile Support
+* **Responsive Mobile Workspace Overhaul:** Compact, touch-first layouts across the **Dashboard**, **Stats (`AnalyticsView`)**, **Settings (`SettingsView`)**, and **Weekly Timetable** designed cleanly for Android and mobile screens (`viewport-fit=cover`, `mobile-web-app-capable`).
+* **Fixed Mobile Card Resizing & Movement:** Resolved touch-drag resize and vertical jumping glitches on dashboard cards so cards resize smoothly and stay anchored on Android browsers.
+* **Focused Mobile Dashboard:** Automatically hides the wide Annual Study Hours Matrix on compact mobile viewports to keep daily Tasks, Timetables, and Study controls clean and uncluttered.
+* **Compact Mobile Controls:** Streamlined action buttons, single-tap icon toolbars, and responsive modals (including full-list Course Alias editing and Lunch time editing) across smaller viewports.
+
+### ✨ New Features
+* **Smart Slot-Grid Timetable Photo Decoder (`gemini-4-hydrogen`):**
+  * Automatically upscales small screenshots and splits ultra-wide panoramic timetables into high-resolution left/right column views with `MEDIA_RESOLUTION_HIGH` and grid-anchored time-column alignment.
+  * Filters out empty/free slot placeholders (`B11`, `A23`, `B13`, `TAA1`, `L31+L32`, `Lunch`, `THEORY`) and unpacks compound course strings (`A11-MAT3003-LT-AB02-418-ALL`) into clean course codes (`MAT3003`), room numbers (`AB02-418`), and session types (`Lecture` / `Lab` / `Tutorial`).
+  * **Card-Body Decoding Animation:** Live optical scan-beam, rotating status steps, token-parsing preview, and animated skeleton rows inside the Weekly Timetable card while processing photos.
+  * **Unified Course Alias Prompt:** Adds all decoded courses immediately and prompts for optional custom aliases across every extracted course altogether in a single modal.
+* **Theme-Colored Editable Lunch Break Bar:** Chronologically positioned **Lunch** bar inside the daily timetable (default `13:10–13:15`) styled in your active palette with an inline **Edit** icon to customize start and end times.
+* **Movable & Pinnable Annual Study Hours Matrix (Desktop):** Drag and reposition the Annual Study Hours Matrix like any other dashboard card on desktop, secured by a default pin-lock toggle.
+* **Google Calendar Integration & Auto-Sync:** Two-way Google Calendar event/task sync (`calendar.events`) integrated directly into the primary `daw-9be97` auth flow, plus automatic sync on app start, reload, and prompt.
+
+### 🛠️ Bug Fixes & Stability
+* **Root Auth & Sync Restoration:** Consolidated authentication and Google Calendar OAuth back into the root `daw-9be97` Firebase project, fixing Lander sign-in inconsistencies and sync drift.
+* **Quota & Offline Error Fixes:** Resolved Firestore `Quota Exceeded` write spikes and false `Device Offline` errors during background and manual cloud synchronization.
+* **Timetable Multi-Course Extraction Fix:** Fixed an issue where panoramic ERP timetables only decoded a single misplaced class; now extracts full multi-day schedules with accurate weekday/time-column placement.
+* **Liquid Glass & Lander Theme Glitch Fixes:** Fixed `.liquid-glass` / `.liquid-glass-tile` / `.glow-button` pointer hover glow artifacts and eliminated theme-switch flickering on the interactive WebGL `PolygonCanvas` Lander.
 
 ---
 

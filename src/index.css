@@ -289,32 +289,64 @@ nav.liquid-glass,
   z-index: 2;
 }
 
-/* Rounded-full & Nav Capsule Edge Smoothing (Silky continuous curvature, eliminates all edge gaps & mask notches) */
+/* Rounded-full & Nav Capsule Edge Smoothing + Dedicated Frosted Glass Header Pill */
 .liquid-glass.rounded-full,
 nav.liquid-glass {
   border-radius: 9999px !important;
   overflow: hidden;
   box-shadow: 
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.4),
-    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.15),
-    inset 0 0 14px 2px rgba(255, 255, 255, 0.1),
-    0 10px 32px -6px rgba(0, 0, 0, 0.2),
-    0 2px 8px -1px rgba(0, 0, 0, 0.08);
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.08),
+    inset 0 0 14px 2px rgba(255, 255, 255, 0.14),
+    0 12px 34px -6px rgba(0, 0, 0, 0.16),
+    0 2px 8px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Uniform frosted blur surface on the desktop floating header bar (eliminates uneven left-side bright gradient) */
+nav.liquid-glass {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.62) 0%,
+    rgba(248, 250, 252, 0.48) 100%
+  );
+  -webkit-backdrop-filter: blur(32px) saturate(1.7) brightness(1.03);
+  backdrop-filter: blur(32px) saturate(1.7) brightness(1.03);
+  border: 1px solid rgba(255, 255, 255, 0.62);
 }
 
 .dark .liquid-glass.rounded-full,
 .dark nav.liquid-glass {
   box-shadow: 
     inset 0 1px 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.45),
-    inset 0 0 14px 2px rgba(255, 255, 255, 0.04),
-    0 14px 38px -8px rgba(0, 0, 0, 0.65),
-    0 2px 8px -2px rgba(0, 0, 0, 0.35);
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.42),
+    inset 0 0 16px 2px rgba(255, 255, 255, 0.04),
+    0 14px 40px -8px rgba(0, 0, 0, 0.62),
+    0 2px 10px -2px rgba(0, 0, 0, 0.32);
+}
+
+.dark nav.liquid-glass {
+  background: linear-gradient(
+    180deg,
+    rgba(15, 23, 42, 0.58) 0%,
+    rgba(9, 14, 26, 0.68) 100%
+  );
+  -webkit-backdrop-filter: blur(32px) saturate(1.65) brightness(1.05);
+  backdrop-filter: blur(32px) saturate(1.65) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .liquid-glass.rounded-full::before,
 nav.liquid-glass::before {
   border-radius: 9999px !important;
+}
+
+/* Suppress phantom hover glow while header pops out of its hidden top-edge state */
+nav.liquid-glass.header-popping-out::before,
+nav.liquid-glass.header-popping-out:hover::before,
+.dark nav.liquid-glass.header-popping-out::before,
+.dark nav.liquid-glass.header-popping-out:hover::before {
+  opacity: 0 !important;
+  transition: none !important;
 }
 
 /* Disable the XOR masked border-beam on pill containers to eliminate any subpixel tangent notch/gap artifacts */
@@ -419,14 +451,25 @@ body.glow-tuning-active .liquid-glass-tile::after {
   transform: scale(0.98);
 }
 
-/* Simple Right-Click Glow Ripple Wave Across All Surfaces, Cards & Tiles (GPU Composited) */
+/* Optimized Right-Click Glow Ripple (Lightweight 220px GPU Texture Scaled Viewport-Wide, Supports Multiple Concurrent Waves) */
+.card-glow-ripple-clip {
+  position: absolute !important;
+  inset: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: inherit !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  z-index: 20 !important;
+  contain: layout paint style !important;
+}
+
 .card-glow-ripple {
   position: absolute !important;
+  width: 220px !important;
+  height: 220px !important;
   margin: 0 !important;
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-  margin-block-start: 0 !important;
-  margin-block-end: 0 !important;
   padding: 0 !important;
   border: none !important;
   display: block !important;
@@ -434,28 +477,28 @@ body.glow-tuning-active .liquid-glass-tile::after {
   font-size: 0 !important;
   border-radius: 50% !important;
   pointer-events: none !important;
-  z-index: 20 !important;
-  contain: strict !important;
-  transform: translate3d(-50%, -50%, 0) scale(0.06);
+  transform: translate3d(-50%, -50%, 0) scale(0.18);
   background: radial-gradient(
     circle,
-    color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) 70%, white) 0%,
-    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 55%, transparent) 32%,
-    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 22%, transparent) 54%,
-    rgba(255, 255, 255, 0.10) 64%,
+    color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) 16%, transparent) 0%,
+    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 22%, transparent) 34%,
+    color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) 66%, white) 55%,
+    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 32%, transparent) 65%,
     transparent 74%
   );
   opacity: 0;
-  animation: glowCardRipple 0.95s cubic-bezier(0.16, 0.85, 0.45, 1) forwards;
+  animation: glowCardRipple 0.95s cubic-bezier(0.16, 0.84, 0.44, 1) forwards;
   will-change: transform, opacity;
 }
 
-/* Guard against space-y margin inheritance on ripple elements and siblings */
+/* Guard against space-y margin inheritance on ripple overlays and siblings */
+:where([class*="space-y-"] > .card-glow-ripple-clip),
 :where([class*="space-y-"] > .card-glow-ripple) {
   margin: 0 !important;
   margin-block-start: 0 !important;
   margin-block-end: 0 !important;
 }
+:where([class*="space-y-"] > :not(.card-glow-ripple-clip):has(+ .card-glow-ripple-clip)),
 :where([class*="space-y-"] > :not(.card-glow-ripple):has(+ .card-glow-ripple)) {
   margin-block-end: 0 !important;
 }
@@ -463,30 +506,27 @@ body.glow-tuning-active .liquid-glass-tile::after {
 .dark .card-glow-ripple {
   background: radial-gradient(
     circle,
-    color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) 80%, white) 0%,
-    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 60%, transparent) 32%,
-    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 25%, transparent) 54%,
-    rgba(255, 255, 255, 0.08) 64%,
+    color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) 18%, transparent) 0%,
+    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 24%, transparent) 34%,
+    color-mix(in srgb, var(--button-glow-start, var(--palette-primary)) 74%, white) 55%,
+    color-mix(in srgb, var(--button-glow-end, var(--palette-accent)) 36%, transparent) 65%,
     transparent 74%
   );
 }
 
 @keyframes glowCardRipple {
   0% {
-    transform: translate3d(-50%, -50%, 0) scale(0.06);
+    transform: translate3d(-50%, -50%, 0) scale(0.18);
     opacity: 0;
   }
-  15% {
-    opacity: min(0.65, calc(0.58 * var(--glow-opacity-multiplier, 0.95)));
+  12% {
+    opacity: min(0.62, calc(0.56 * var(--glow-opacity-multiplier, 0.95)));
   }
-  40% {
-    opacity: min(0.45, calc(0.40 * var(--glow-opacity-multiplier, 0.95)));
-  }
-  70% {
-    opacity: min(0.20, calc(0.18 * var(--glow-opacity-multiplier, 0.95)));
+  48% {
+    opacity: min(0.42, calc(0.38 * var(--glow-opacity-multiplier, 0.95)));
   }
   100% {
-    transform: translate3d(-50%, -50%, 0) scale(1.35);
+    transform: translate3d(-50%, -50%, 0) scale(var(--ripple-end-scale, 14));
     opacity: 0;
   }
 }

@@ -110,38 +110,48 @@ export function renderKatex(latex: string, displayMode = false): string {
       displayMode,
       throwOnError: false,
       strict: false,
+      trust: false,
+      maxSize: 500,
+      maxExpand: 1000,
       output: 'htmlAndMathml',
     });
-  } catch (err) {
-    const escaped = (latex || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    return `<span class="katex-error font-mono text-xs text-rose-400 bg-rose-500/10 px-1 py-0.5 rounded">${escaped}</span>`;
+  } catch {
+    return `<span class="katex-error font-mono text-xs text-rose-400 bg-rose-500/10 px-1 py-0.5 rounded">${escapeHtml(latex || '')}</span>`;
   }
 }
 
 /**
  * Parses markdown/plain-text containing inline $math$ or block $$math$$
- * and replaces with rendered KaTeX HTML.
+ * and replaces with rendered KaTeX HTML while HTML-escaping all non-math text.
  */
 export function parseAndRenderMath(text: string): { hasMath: boolean; html: string } {
   if (!text) return { hasMath: false, html: '' };
 
   let hasMath = false;
+  const renderedTokens: string[] = [];
 
-  // 1. Process block math: $$...$$
-  let processed = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+  const createPlaceholder = (renderedHtml: string): string => {
+    const idx = renderedTokens.length;
+    renderedTokens.push(renderedHtml);
+    return `\u0000KATEX_TOKEN_${idx}\u0000`;
+  };
+
+  // 1. Extract and render block math: $$...$$
+  let tokenized = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
     hasMath = true;
     const normalized = normalizeMathExpression(math);
-    return `<div class="katex-block-wrapper my-2.5 flex justify-center overflow-x-auto py-1 select-text">${renderKatex(normalized, true)}</div>`;
+    return createPlaceholder(
+      `<div class="katex-block-wrapper my-2.5 flex justify-center overflow-x-auto py-1 select-text">${renderKatex(normalized, true)}</div>`
+    );
   });
 
-  // 2. Process inline math: $...$ (ensure not preceded/followed by another $)
-  processed = processed.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (_, math) => {
+  // 2. Extract and render inline math: $...$ (ensure not preceded/followed by another $)
+  tokenized = tokenized.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (_, math) => {
     hasMath = true;
     const normalized = normalizeMathExpression(math);
-    return `<span class="katex-inline-wrapper mx-0.5 select-text">${renderKatex(normalized, false)}</span>`;
+    return createPlaceholder(
+      `<span class="katex-inline-wrapper mx-0.5 select-text">${renderKatex(normalized, false)}</span>`
+    );
   });
 
   // 3. Auto-detect plain-text formula ONLY on single isolated short lines (never multi-paragraph text)
@@ -166,18 +176,22 @@ export function parseAndRenderMath(text: string): { hasMath: boolean; html: stri
     }
   }
 
-  return { hasMath, html: processed };
+  // Escape all non-math text before restoring trusted KaTeX markup
+  const escaped = escapeHtml(tokenized).replace(/\n/g, '<br />');
+  const html = escaped.replace(/\u0000KATEX_TOKEN_(\d+)\u0000/g, (_, idxStr) => {
+    const idx = parseInt(idxStr, 10);
+    return renderedTokens[idx] || '';
+  });
+
+  return { hasMath, html };
 }
 
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-function escapeHtmlPreservingTags(str: string): string {
-  // KaTeX generated HTML contains <span class="katex">...</span>
-  // We only escape text outside of katex tags
-  return str;
-}

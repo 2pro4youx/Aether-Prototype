@@ -133,19 +133,29 @@ export function getCursorGradient(palette: ColorPalette, adapterPercent: number)
   };
 }
 
+function sanitizeSvgColor(value: string, fallback: string): string {
+  const cleaned = String(value || '').trim();
+  if (/^(#[0-9a-fA-F]{3,8}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)|var\(--[a-zA-Z0-9_-]+(?:,\s*#[0-9a-fA-F]{3,8})?\))$/.test(cleaned)) {
+    return cleaned;
+  }
+  return fallback;
+}
+
 export function generateCursorSvg(
   style: CursorStyleId,
   color1: string = 'var(--cursor-color-1, #ffffff)',
   color2: string = 'var(--cursor-color-2, #ffffff)'
 ): string {
+  const safeColor1 = sanitizeSvgColor(color1, '#ffffff');
+  const safeColor2 = sanitizeSvgColor(color2, '#ffffff');
   const norm = normalizeCursorStyle(style);
   const gradId = `cursorGrad_${norm}`;
 
   const gradDef = `
     <defs>
       <linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="${color1}"/>
-        <stop offset="100%" stop-color="${color2}"/>
+        <stop offset="0%" stop-color="${safeColor1}"/>
+        <stop offset="100%" stop-color="${safeColor2}"/>
       </linearGradient>
     </defs>`;
 
@@ -183,8 +193,8 @@ export function generateCursorSvg(
       <line x1="8" y1="16" x2="24" y2="16" stroke="#050811" stroke-width="2.8" stroke-linecap="square" stroke-opacity="0.8"/>
 
       <!-- Slender, thin precision plus with single cohesive white base (+ adapter tint) -->
-      <line x1="16" y1="8" x2="16" y2="24" stroke="${color1}" stroke-width="1.2" stroke-linecap="square"/>
-      <line x1="8" y1="16" x2="24" y2="16" stroke="${color1}" stroke-width="1.2" stroke-linecap="square"/>
+      <line x1="16" y1="8" x2="16" y2="24" stroke="${safeColor1}" stroke-width="1.2" stroke-linecap="square"/>
+      <line x1="8" y1="16" x2="24" y2="16" stroke="${safeColor1}" stroke-width="1.2" stroke-linecap="square"/>
     </svg>`;
   }
 
@@ -196,8 +206,8 @@ export function generateCursorSvg(
         <line x1="8" y1="16" x2="24" y2="16" stroke="#050811" stroke-width="2.8" stroke-linecap="square" stroke-opacity="0.8"/>
 
         <!-- Slender, thin precision diagonal cross with single cohesive white base (+ adapter tint) -->
-        <line x1="16" y1="8" x2="16" y2="24" stroke="${color1}" stroke-width="1.2" stroke-linecap="square"/>
-        <line x1="8" y1="16" x2="24" y2="16" stroke="${color1}" stroke-width="1.2" stroke-linecap="square"/>
+        <line x1="16" y1="8" x2="16" y2="24" stroke="${safeColor1}" stroke-width="1.2" stroke-linecap="square"/>
+        <line x1="8" y1="16" x2="24" y2="16" stroke="${safeColor1}" stroke-width="1.2" stroke-linecap="square"/>
       </g>
     </svg>`;
   }
